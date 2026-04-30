@@ -66,6 +66,11 @@ class LCDHandler(BaseHandler):
         self._data_dir = data_dir
         self._is_visible = is_visible_fn or (lambda: True)
         self.log: logging.Logger = log  # module-level until apply_device_config
+        # UI focus state — inactive handlers must not mutate shared widgets.
+        # Multi-display: multiple LCDHandler instances share one widget set;
+        # only the active handler writes to preview / progress bar (PR #120,
+        # jwcrowley).
+        self._ui_active = False
 
         # Per-device state
         self._device_key = ''
@@ -78,6 +83,9 @@ class LCDHandler(BaseHandler):
         # QPixmap cache keyed by frame index: {index: (id(qimage), QPixmap)}
         # Avoids QImage→QPixmap conversion on every tick when L3 cache is warm.
         self._pixmap_cache: dict[int, tuple[int, QPixmap]] = {}
+        # Last image identity rendered + sent — guards against redundant
+        # preview updates when nothing changed (PR #120 perf).
+        self._last_render_id: int | None = None
 
         # Thread-safe notifier for background data download → UI refresh
         self._data_notifier = _DataReadyNotifier()
@@ -104,6 +112,7 @@ class LCDHandler(BaseHandler):
         """First-time device setup + full widget refresh."""
         self.log.info("apply_device_config: device_index=%d %04x:%04x %dx%d",
                       device.device_index, device.vid, device.pid, w, h)
+        self._ui_active = True
         self._device_key = Settings.device_config_key(
             device.device_index, device.vid, device.pid)
         # Per-device child logger — tags handler logs with device index
@@ -115,7 +124,39 @@ class LCDHandler(BaseHandler):
 
     def reactivate(self, w: int, h: int) -> None:
         """Return to known device — device already configured from connect()."""
+        self._ui_active = True
         self._refresh(w, h)
+
+    def restore_inactive_state(self) -> None:
+        """Restore last theme for an inactive LCD without touching shared widgets.
+
+        Multi-display scenario (PR #120, jwcrowley): all LCDs should keep
+        playing their video even when not selected in the GUI sidebar.
+        This restores the device state and starts the per-device video
+        timer, but skips updating the shared preview/settings widgets
+        (which the active handler owns).
+        """
+        self._ui_active = False
+        # Clear stale pixmap cache from any previous session so we start fresh.
+        self._pixmap_cache.clear()
+        if not self._lcd.connected:
+            return
+        try:
+            self._lcd.restore_device_settings()
+            result = self._lcd.restore_last_theme()
+        except Exception:
+            self.log.exception("restore_inactive_state: failed")
+            return
+
+        if not result.get("success"):
+            return
+        if result.get("is_animated") and self._lcd.playing:
+            interval = max(1, int(self._lcd.interval or 33))
+            if not self._animation_timer.isActive():
+                self.log.info(
+                    "restore_inactive_state: starting background video timer "
+                    "interval=%dms", interval)
+                self._animation_timer.start(interval)
 
     def _refresh(self, w: int, h: int) -> None:
         """Update widgets from the device's current state.
@@ -497,14 +538,15 @@ class LCDHandler(BaseHandler):
         if frame_index is not None and frame_index % 30 == 0:
             self.log.debug("_on_video_tick: frame=%d encoded=%s", frame_index, result.get('encoded') is not None)
 
-        # Update progress bar
-        progress = result.get('progress')
-        if progress is not None:
-            percent, current_time, total_time = progress
-            self._w['preview'].set_progress(percent, current_time, total_time)
+        # Update progress bar (active UI only — widget is shared across handlers)
+        if self._ui_active:
+            progress = result.get('progress')
+            if progress is not None:
+                percent, current_time, total_time = progress
+                self._w['preview'].set_progress(percent, current_time, total_time)
 
-        # Skip preview update when window is minimized
-        if self._is_visible():
+        # Preview update — active UI only, and skip when window is minimized
+        if self._ui_active and self._is_visible():
             preview = result.get('preview')
             if preview is not None:
                 index = result.get('frame_index')
@@ -512,6 +554,9 @@ class LCDHandler(BaseHandler):
                     cached = self._pixmap_cache.get(index)
                     preview_id = id(preview)
                     if cached is None or cached[0] != preview_id:
+                        # Cap cache to bound memory in long-running videos.
+                        if len(self._pixmap_cache) >= 256:
+                            self._pixmap_cache.clear()
                         pixmap = QPixmap.fromImage(preview)
                         self._pixmap_cache[index] = (preview_id, pixmap)
                     else:
@@ -750,15 +795,23 @@ class LCDHandler(BaseHandler):
         """Render overlay + send to LCD, update preview.
 
         Skipped when video/screencast is active — those own the device.
+        Dedups identical re-renders (PR #120 perf): if the source image
+        identity hasn't changed since the last send, skip the round-trip.
         """
         self.log.debug("_render_and_send: playing=%s overlay_enabled=%s has_image=%s",
                   self._lcd.playing, self._lcd.enabled,
                   self._lcd.current_image is not None)
         if self._lcd.playing:
             return
+        current = self._lcd.current_image
+        render_id = id(current) if current is not None else None
+        if render_id is not None and render_id == self._last_render_id:
+            self.log.debug("_render_and_send: skip duplicate render id=%s", render_id)
+            return
         result = self._lcd.render_and_send()
+        self._last_render_id = render_id
         image = result.get('image')
-        if image:
+        if image and self._ui_active:
             self._w['preview'].set_image(image)
 
     def render_and_preview(self) -> Any:
@@ -833,11 +886,24 @@ class LCDHandler(BaseHandler):
     def cleanup(self) -> None:
         """Stop timers and release device resources."""
         self.deactivate()
+        self._pixmap_cache.clear()
+        self._last_render_id = None
         self._cleanup_device()
 
     def deactivate(self) -> None:
-        """Pause handler — stop timers when switching away from this device."""
+        """Full pause — stop all timers (called from cleanup)."""
         self._animation_timer.stop()
+        self._slideshow_timer.stop()
+        self._flash_timer.stop()
+
+    def set_inactive(self) -> None:
+        """Soft pause for sidebar switch — keep video playing in background.
+
+        Multi-display: dropping `_ui_active` stops shared-widget writes
+        without killing the per-device animation timer, so the LCD keeps
+        showing its theme while another device owns the GUI panel.
+        """
+        self._ui_active = False
         self._slideshow_timer.stop()
         self._flash_timer.stop()
 

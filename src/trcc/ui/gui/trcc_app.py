@@ -426,14 +426,12 @@ class TRCCApp(QMainWindow):
         else:
             log.warning("_rebuild_all_handlers: no device to activate")
 
-        # Restore saved themes on inactive LCD devices so they don't sit blank
+        # Restore saved themes on inactive LCD devices so they keep playing
+        # video in the background even when not selected in the GUI sidebar.
         for path, handler in self._handlers.items():
             if path != target and isinstance(handler, LCDHandler):
-                lcd = handler.display
-                if lcd.connected and lcd.device_info:
-                    log.info("_rebuild_all_handlers: restoring inactive LCD %s", path)
-                    lcd.restore_device_settings()
-                    lcd.restore_last_theme()
+                log.info("_rebuild_all_handlers: restoring inactive LCD %s", path)
+                handler.restore_inactive_state()
 
     def _add_handler(self, device: Any) -> None:
         """Create handler for one new device."""
@@ -525,10 +523,14 @@ class TRCCApp(QMainWindow):
         if path == self._active_path:
             return
         log.info("_activate_device: %s", path)
-        # Deactivate previous device before switching
+        # Deactivate previous device before switching. LCDs go into a
+        # soft-pause so their video keeps playing on the device while
+        # another LCD owns the GUI; LEDs/others use the full stop.
         if self._active_path:
             prev = self._handlers.get(self._active_path)
-            if prev:
+            if isinstance(prev, LCDHandler):
+                prev.set_inactive()
+            elif prev is not None:
                 prev.deactivate()
         self._active_path = path
         handler = self._handlers.get(path)
