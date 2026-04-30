@@ -265,6 +265,7 @@ Bare `patch`, `minor`, or `major` → full release workflow:
 - **First install auto-load**: `EnsureDataCommand` extracts in background → `notify_data_ready()` → `_update_theme_directories()` → auto-loads first theme if `current_image is None`
 - **Delegate pattern**: Settings tab → `invoke_delegate(CMD_*, data)` → main window
 - **`_update_selected(**fields)`**: Single entry point for element property changes
+- **Multi-LCD shared widgets**: All `LCDHandler` instances share one preview/progress widget set. Only the *active* handler may write to those widgets — gated by `self._ui_active`. `apply_device_config` / `reactivate` set it `True`; `set_inactive` (sidebar A→B switch) and `restore_inactive_state` (initial-scan keep-alive) set it `False`. `_on_video_tick` and `_render_and_send` honor the gate. Cleanup uses full `deactivate()` (stops all timers); sidebar switch uses `set_inactive()` (keeps animation timer running so the LCD's physical screen doesn't go dark when another device owns the GUI).
 
 ## Reference Docs
 - Architecture history: `doc/HISTORY_ARCHITECTURE.md`
