@@ -1,70 +1,104 @@
-"""CLI composition root — builds a Trcc ready for one-shot use.
+"""CLI composition root — returns a `Trcc` or a `TrccProxy`.
 
-The CLI is an adapter; this module wires concrete dependencies
-(offscreen Qt renderer, device discovery, sensor metrics) into the
-framework-neutral Trcc. Every CLI subcommand calls `trcc()` once and
-exits.
+Every CLI subcommand calls ``trcc()`` once and exits. What it gets back
+depends on whether daemon mode is enabled:
 
-Composition pattern (production):
-    from trcc.ui.cli._boot import trcc
-    result = trcc().lcd.set_brightness(0, 50)
-    typer.echo(result.format())
-    return result.exit_code
+  ``TRCC_DAEMON`` unset (default)
+      A real `Trcc` — built once per process, cached, scans for devices
+      directly. Identical to today's behaviour.
 
-Test/dev injection — pass a Platform explicitly:
-    from tests.mock_platform import MockPlatform
-    from trcc.ui.cli._boot import trcc
-    app = trcc(MockPlatform(specs))   # subsequent trcc() calls reuse it
+  ``TRCC_DAEMON=1`` (and AF_UNIX available)
+      A `TrccProxy` connected to the running daemon, auto-spawning one
+      via :func:`trcc.daemon.ensure_daemon` if not already up. Same
+      surface as `Trcc`, so call sites are unchanged::
+
+          trcc().lcd.set_brightness(0, 75)   # works identically either way
+
+Falls back to in-process mode automatically when AF_UNIX is unavailable
+(Windows builds older than 17063), so the flag is safe to leave set on
+every OS — daemon mode just no-ops where the transport doesn't exist.
+
+Test / dev injection still works: pass a `Platform` explicitly to
+build a fresh in-process `Trcc` against a `MockPlatform`.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import os
+import socket
+from typing import TYPE_CHECKING, cast
 
 from trcc.core.trcc import Trcc
 
 if TYPE_CHECKING:
     from trcc.core.ports import Platform
 
-# Cached per-process Trcc — built on first call (production: from
-# `make_platform()`; test/dev: from the injected platform). Subsequent
-# calls return the cached instance so commands within one CLI invocation
-# share state and devices stay open for the duration.
+# Cached per-process Trcc — built on first call. In daemon mode this is
+# actually a `TrccProxy`, but it's a structural drop-in for `Trcc` so
+# call sites are statically typed against the same surface either way.
 _cached: Trcc | None = None
+
+# Env flag values that count as "on". Mirrors the rest of the codebase.
+_TRUTHY_FLAG = frozenset({'1', 'true', 'yes', 'on'})
+
+
+def _daemon_mode_enabled() -> bool:
+    """True when ``TRCC_DAEMON`` is set truthy AND the platform supports it.
+
+    Returns False on Windows builds older than 17063 where ``AF_UNIX``
+    is unavailable — the user gets in-process mode silently rather than
+    a hard error, so the flag is safe to set on every OS.
+    """
+    if os.environ.get('TRCC_DAEMON', '').lower() not in _TRUTHY_FLAG:
+        return False
+    return hasattr(socket, 'AF_UNIX')
 
 
 def trcc(platform: Platform | None = None) -> Trcc:
-    """Build + bootstrap + attach offscreen Qt renderer + discover devices.
+    """Return the per-process `Trcc` (or `TrccProxy` in daemon mode).
 
-    Caches per process — first call builds, subsequent calls reuse. Pass
-    ``platform`` to inject a specific Platform (dev/mock_cli, tests);
-    omit for production where ``make_platform()`` handles OS detection
-    and ``TRCC_MOCK``.
+    Caches the first result. Passing ``platform`` forces an in-process
+    `Trcc` build against that platform, ignoring the daemon flag — used
+    by tests and ``dev/mock_cli.py`` to inject a `MockPlatform`.
 
-    If a ``TrccApp`` has already been initialised (production CLI/GUI
-    composition root path), return its composed inner ``Trcc`` — single
-    source of truth for connected devices, no duplicate registries.
+    Composition pattern (unchanged from before)::
 
-    Also seeds each connected device with one fresh metrics snapshot so
-    sensor-linked LED modes (temp_linked, load_linked) and overlay
-    sensors render real values when the CLI is the only UI running on a
-    headless box (issue #130).
+        from trcc.ui.cli._boot import trcc
+        result = trcc().lcd.set_brightness(0, 50)
+        typer.echo(result.format())
+        return result.exit_code
     """
     global _cached
     if _cached is not None:
         return _cached
 
-    # Production path: TrccApp.init() ran first via cli/__init__.py::main().
-    # Reuse its composed Trcc so callers see the same connected devices.
+    # Daemon mode — auto-spawn the daemon if not running, return a proxy.
+    # Skipped when a Platform is injected (tests / mock_cli always run
+    # in-process so they can supply their own fake hardware).
+    if platform is None and _daemon_mode_enabled():
+        from trcc.core.trcc_proxy import TrccProxy
+        from trcc.daemon import ensure_daemon
+        if not ensure_daemon():
+            raise RuntimeError(
+                "TRCC_DAEMON=1 but no daemon is reachable. "
+                "Start one explicitly with `trcc daemon`.")
+        # TrccProxy is a structural drop-in for Trcc — same surface
+        # (.lcd, .led, .control_center, .events) so call sites are
+        # statically typed against Trcc and just work at runtime.
+        _cached = cast(Trcc, TrccProxy())
+        return _cached
+
+    # Production in-process path: TrccApp.init() ran first via
+    # cli/__init__.py::main(). Reuse its composed Trcc so callers see
+    # the same connected devices — single source of truth.
     from trcc.core.app import TrccApp
     if TrccApp._instance is not None and platform is None:
         inner = TrccApp._instance._trcc
-        # If TrccApp hasn't scanned yet (init_platform without scan), do it
-        # now so callers get connected devices on first access.
         if not inner:
             TrccApp._instance.scan()
         _cached = inner
         return _cached
 
+    # Standalone (`python -m trcc.daemon` or test path with explicit platform)
     from trcc.core.builder import ControllerBuilder
     from trcc.services.system import set_instance
     from trcc.ui.cli import _make_cli_renderer
