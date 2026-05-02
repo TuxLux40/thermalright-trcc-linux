@@ -3,27 +3,50 @@
 When another trcc instance owns the device, callers route through it
 instead of touching USB directly. Two transport types:
 
-  - IPCTransport — Unix domain socket to GUI
+  - IPCTransport — Unix domain socket to GUI / daemon
   - APITransport — HTTP to ``trcc serve``
 
 Detection: ``core.instance.find_active()`` checks GUI socket, then API
 health endpoint, returns InstanceKind or None.
 
-Protocol (IPC):
-  Request:  {"cmd": "device.send_color", "args": [255, 0, 0], "kwargs": {}}\n
-  Response: {"success": true, "message": "..."}\n
+Protocol — two wire formats coexist during the daemon migration:
+
+  Legacy (single-device mode used by the GUI today)::
+
+      Request:  {"cmd": "device.send_color", "args": [255, 0, 0], "kwargs": {}}
+      Response: {"success": true, "message": "..."}
+
+  Manifold (multi-device, used by the daemon and `IpcDispatcher`)::
+
+      Request:  {"role": "lcd", "method": "send_color", "index": 1,
+                 "kwargs": {"r": 255, "g": 0, "b": 0}}
+      Response: {"success": true, "message": "..."}
+
+The server detects which format is in use by looking at the request
+keys, dispatches accordingly, and returns the same response shape.
+The legacy format is kept working through the cutover so existing GUI
+clients aren't broken; new clients (`IpcDispatcher`) speak the manifold
+format and address devices by index.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
 import socket
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice
+
+from .core.results import Frame, OpResult
+
+if TYPE_CHECKING:
+    from .core.dispatch import Event, Subscription
+    from .core.trcc import Trcc
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +86,48 @@ def _sanitize(result: dict) -> dict:
     return {k: v for k, v in result.items() if k not in _NON_SERIALIZABLE}
 
 
+def _result_to_dict(result: OpResult) -> dict[str, Any]:
+    """Serialize an OpResult (or subclass) into a JSON-safe dict.
+
+    `Frame` and any other non-JSON value is dropped — the wire format only
+    carries the success / error envelope plus simple extras (is_animated,
+    interval_ms, latest_version, etc.). UIs that need pixels subscribe to
+    the EventBus stream instead of pulling them out of dispatch results.
+    """
+    out: dict[str, Any] = {
+        "success": result.success,
+        "message": result.message,
+        "error": result.error,
+    }
+    for f in dataclasses.fields(result):
+        if f.name in {"success", "message", "error"}:
+            continue
+        v = getattr(result, f.name)
+        if isinstance(v, Frame) or v is None:
+            continue
+        try:
+            json.dumps(v)
+        except (TypeError, ValueError):
+            continue
+        out[f.name] = v
+    return out
+
+
+def _result_from_dict(data: dict[str, Any]) -> OpResult:
+    """Build a generic OpResult from a wire-format dict.
+
+    Subclass-specific extras are dropped at this boundary — the IPC
+    contract is OpResult shape (success/message/error). Phase 4 keeps it
+    minimal; richer typed results travel via the EventBus stream that
+    Phase 4b wires up alongside this dispatcher.
+    """
+    return OpResult(
+        success=bool(data.get("success", False)),
+        message=str(data.get("message", "")),
+        error=data.get("error"),
+    )
+
+
 # =========================================================================
 # Server (runs in the GUI process, Qt event loop)
 # =========================================================================
@@ -76,11 +141,19 @@ class IPCServer:
     and local.
     """
 
-    def __init__(self, device: Any = None):
+    def __init__(self, device: Any = None, *, trcc: Trcc | None = None):
+        # Two operating modes coexist during the daemon cutover:
+        #   - device-bound: legacy single-device mode used by the GUI today
+        #   - trcc-bound:   multi-device manifold used by the daemon
+        # `bind_trcc` flips on the manifold dispatch path; legacy
+        # `device` setter still works so existing GUI code is undisturbed.
         self._device = device
+        self._trcc: Trcc | None = trcc
         self._sock: socket.socket | None = None
         self._notifier: Any = None  # QSocketNotifier
         self._current_frame: Any = None  # Last frame sent to LCD (QImage)
+        # Lazy InProcessDispatcher built on first manifold dispatch.
+        self._in_proc: Any = None
 
     @property
     def device(self) -> Any:
@@ -110,6 +183,18 @@ class IPCServer:
     def capture_frame(self, image: Any) -> None:
         """Store the latest frame sent to LCD (called by on_frame_sent callback)."""
         self._current_frame = image
+
+    def bind_trcc(self, trcc: Trcc) -> None:
+        """Attach a `Trcc` so manifold-format requests can dispatch.
+
+        Idempotent — call again with a new Trcc to refresh the wiring.
+        Legacy `device.X` requests keep working against ``self._device``
+        (or, if not set, fall back to the Trcc's first-of-kind devices).
+        """
+        from .core.dispatch import InProcessDispatcher
+        self._trcc = trcc
+        self._in_proc = InProcessDispatcher(trcc)
+        log.info("IPC server bound to Trcc (manifold mode active)")
 
     def start(self) -> None:
         """Bind and listen on Unix domain socket (Unix only)."""
@@ -175,7 +260,15 @@ class IPCServer:
                 pass
 
     def _dispatch(self, request: dict) -> dict:
-        """Route request to device method."""
+        """Route request to the matching dispatcher.
+
+        Two wire formats coexist; presence of a ``role`` key picks the
+        manifold dispatcher (Phase 4+, multi-device by index), otherwise
+        the legacy single-device dispatcher handles ``cmd: "device.X"``.
+        """
+        if "role" in request:
+            return self._dispatch_manifold(request)
+
         cmd = request.get("cmd", "")
         args = request.get("args", [])
         kwargs = request.get("kwargs", {})
@@ -187,6 +280,34 @@ class IPCServer:
                 return self._dispatch_device(method, cmd, args, kwargs)
             case _:
                 return {"success": False, "error": f"Invalid command: {cmd}"}
+
+    def _dispatch_manifold(self, request: dict) -> dict:
+        """Manifold format: route by (role, method, index) through the Trcc.
+
+        Falls back to constructing an `InProcessDispatcher` from
+        ``self._trcc`` on first use.  Without a bound Trcc the request
+        fails cleanly so a legacy server (no ``bind_trcc`` call) tells
+        the client what's wrong instead of crashing.
+        """
+        if self._trcc is None:
+            return {
+                "success": False,
+                "error": "IPC server not bound to a Trcc — manifold "
+                         "dispatch unavailable on this instance.",
+            }
+        if self._in_proc is None:
+            from .core.dispatch import InProcessDispatcher
+            self._in_proc = InProcessDispatcher(self._trcc)
+
+        from .core.dispatch import Command
+        cmd = Command(
+            role=str(request.get("role", "")),
+            method=str(request.get("method", "")),
+            index=int(request.get("index", 0)),
+            kwargs=dict(request.get("kwargs", {})),
+        )
+        result = self._in_proc.dispatch(cmd)
+        return _result_to_dict(result)
 
     def _dispatch_device(self, method: str, cmd: str,
                          args: list, kwargs: dict) -> dict:
@@ -510,3 +631,109 @@ def create_device_proxy(kind: Any) -> DeviceProxy:
 # Backward-compat aliases — remove after one release cycle
 create_lcd_proxy = create_device_proxy
 create_led_proxy = create_device_proxy
+
+
+# =========================================================================
+# IpcDispatcher — Dispatcher that talks to a running daemon over the
+# Unix socket using the manifold wire format.
+# =========================================================================
+
+class IpcDispatcher:
+    """`Dispatcher` implementation backed by the Unix-socket IPC server.
+
+    Used by remote UIs (CLI clients, the GUI when running standalone, the
+    API server) to send `Command`\\ s into a daemon's `Trcc` and receive
+    `OpResult`\\ s back. Each :meth:`dispatch` call opens a one-shot
+    connection — short-lived, lock-free, and sufficient for request/
+    response. Subscriptions need a long-lived connection (Phase 4b).
+
+    Constructed without arguments; uses the standard socket path. Pass
+    a custom path for tests.
+    """
+
+    __slots__ = ('_path', '_timeout')
+
+    def __init__(self, *, socket_path: Path | None = None,
+                 timeout: float = 10.0) -> None:
+        self._path = socket_path or _socket_path()
+        self._timeout = timeout
+
+    @staticmethod
+    def daemon_running(*, socket_path: Path | None = None) -> bool:
+        """Probe the daemon socket without sending a request."""
+        if not hasattr(socket, 'AF_UNIX'):
+            return False
+        path = socket_path or _socket_path()
+        if not path.exists():
+            return False
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.settimeout(1.0)
+            s.connect(str(path))
+            s.close()
+            return True
+        except OSError:
+            return False
+
+    def dispatch(self, cmd: Any) -> OpResult:
+        """Send a `Command` to the daemon and return its `OpResult`.
+
+        Catches all transport-level errors and converts them into a
+        failed OpResult — same contract as `InProcessDispatcher`, so UI
+        code can treat dispatch as total without per-call try/except.
+        """
+        from .core.dispatch import Command
+        if not isinstance(cmd, Command):
+            return OpResult(success=False,
+                            error=f"IpcDispatcher: expected Command, "
+                                  f"got {type(cmd).__name__}")
+        request = {
+            "role": cmd.role,
+            "method": cmd.method,
+            "index": cmd.index,
+            "kwargs": dict(cmd.kwargs),
+        }
+        try:
+            data = self._send_request(request)
+        except (TimeoutError, OSError, json.JSONDecodeError) as e:
+            return OpResult(success=False,
+                            error=f"IPC transport: {type(e).__name__}: {e}")
+        return _result_from_dict(data)
+
+    def subscribe(self, topic: str,
+                  handler: Callable[[Event], None]) -> Subscription:
+        """Subscribe to events on ``topic``.
+
+        Phase 4 ships request/response only. Long-lived event streaming
+        lands in a follow-up that reuses the same socket with a tagged
+        connection mode. Today this raises so callers get a clear error
+        rather than a silent no-op.
+        """
+        raise NotImplementedError(
+            "IpcDispatcher.subscribe is wired in Phase 4b — UIs that "
+            "need event streams use InProcessDispatcher for now.")
+
+    # ── transport ───────────────────────────────────────────────────────────
+
+    def _send_request(self, request: dict) -> dict:
+        if not hasattr(socket, 'AF_UNIX'):
+            raise OSError("AF_UNIX not available on this platform")
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(self._timeout)
+        try:
+            s.connect(str(self._path))
+            s.sendall(json.dumps(request).encode() + b"\n")
+            chunks: list[bytes] = []
+            while True:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                if b"\n" in chunk:
+                    break
+        finally:
+            s.close()
+        payload = b"".join(chunks).decode().strip()
+        if not payload:
+            raise OSError("Empty response from daemon")
+        return json.loads(payload)
