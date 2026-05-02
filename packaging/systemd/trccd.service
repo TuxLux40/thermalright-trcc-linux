@@ -1,0 +1,31 @@
+[Unit]
+# trccd — TRCC Linux singleton background process.
+# Owns USB device(s), serves CLI/API/GUI clients over the IPC socket
+# at $XDG_RUNTIME_DIR/trcc-linux.sock.
+#
+# This is a USER unit. Install with:
+#     systemctl --user enable --now trccd.service
+#
+# Prefer `trcc setup` if it has been wired to install + enable this
+# unit (Phase 11). The unit is opt-in — auto-spawn from any client
+# UI continues to work without it; this just makes the daemon
+# survive reboots.
+Description=TRCC Linux background service
+Documentation=https://github.com/Lexonight1/thermalright-trcc-linux
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/trcc daemon
+Restart=on-failure
+RestartSec=5
+# QApplication needs at least an offscreen platform; trccd sets this
+# itself but adding it here means systemctl can launch the daemon
+# without a graphical session (truly headless).
+Environment=QT_QPA_PLATFORM=offscreen
+# Daemon writes its log via StandardLoggingConfigurator to
+# ~/.trcc/trcc.log; nothing to redirect here.
+
+[Install]
+WantedBy=default.target

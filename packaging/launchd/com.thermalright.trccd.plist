@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  trccd — TRCC Linux singleton background process (macOS LaunchAgent).
+
+  Install with:
+      cp packaging/launchd/com.thermalright.trccd.plist \
+         ~/Library/LaunchAgents/
+      launchctl load ~/Library/LaunchAgents/com.thermalright.trccd.plist
+
+  Or via `trcc setup` once Phase 11 wires it.
+
+  Opt-in. Auto-spawn from any client UI also works; this just makes
+  the daemon survive logout/login.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.thermalright.trccd</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/trcc</string>
+        <string>daemon</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>QT_QPA_PLATFORM</key>
+        <string>offscreen</string>
+    </dict>
+
+    <!-- StandardLoggingConfigurator already writes to ~/.trcc/trcc.log;
+         direct stdout/stderr away to avoid duplicate noise. -->
+    <key>StandardOutPath</key>
+    <string>/dev/null</string>
+    <key>StandardErrorPath</key>
+    <string>/dev/null</string>
+</dict>
+</plist>
