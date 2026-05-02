@@ -42,11 +42,11 @@ log = logging.getLogger(__name__)
 def run_daemon(*, verbosity: int = 0) -> int:
     """Run the daemon. Blocks until shutdown. Returns a process exit code."""
     from .adapters.infra.diagnostics import StandardLoggingConfigurator
-    from .ipc import IpcDispatcher, IPCServer
+    from .ipc import IPCServer, daemon_running
 
     # Singleton — bail out early with a clear message if another daemon
     # is already serving on the socket.
-    if IpcDispatcher.daemon_running():
+    if daemon_running():
         log.warning("trccd: another daemon is already running on the socket; "
                     "refusing to start a second one.")
         return 1
@@ -83,9 +83,9 @@ def ensure_daemon(*, timeout: float = 10.0) -> bool:
     The spawned daemon runs in its own session (``start_new_session``),
     so it survives the calling process and stdin/stdout are detached.
     """
-    from .ipc import IpcDispatcher
+    from .ipc import daemon_running
 
-    if IpcDispatcher.daemon_running():
+    if daemon_running():
         return True
 
     cmd = _daemon_spawn_cmd()
@@ -102,7 +102,7 @@ def ensure_daemon(*, timeout: float = 10.0) -> bool:
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if IpcDispatcher.daemon_running():
+        if daemon_running():
             log.info("Daemon ready (waited %.2fs)",
                      time.monotonic() - (deadline - timeout))
             return True

@@ -36,7 +36,6 @@ import logging
 import os
 import socket
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -45,7 +44,6 @@ from PySide6.QtCore import QBuffer, QByteArray, QIODevice
 from .core.results import Frame, OpResult
 
 if TYPE_CHECKING:
-    from .core.dispatch import Event, Subscription
     from .core.trcc import Trcc
 
 log = logging.getLogger(__name__)
@@ -152,8 +150,6 @@ class IPCServer:
         self._sock: socket.socket | None = None
         self._notifier: Any = None  # QSocketNotifier
         self._current_frame: Any = None  # Last frame sent to LCD (QImage)
-        # Lazy InProcessDispatcher built on first manifold dispatch.
-        self._in_proc: Any = None
 
     @property
     def device(self) -> Any:
@@ -188,12 +184,11 @@ class IPCServer:
         """Attach a `Trcc` so manifold-format requests can dispatch.
 
         Idempotent — call again with a new Trcc to refresh the wiring.
-        Legacy `device.X` requests keep working against ``self._device``
-        (or, if not set, fall back to the Trcc's first-of-kind devices).
+        Legacy ``cmd: "device.X"`` requests keep working against
+        ``self._device``; clients using `TrccProxy` send the manifold
+        format and reach the bound Trcc directly.
         """
-        from .core.dispatch import InProcessDispatcher
         self._trcc = trcc
-        self._in_proc = InProcessDispatcher(trcc)
         log.info("IPC server bound to Trcc (manifold mode active)")
 
     def start(self) -> None:
@@ -282,12 +277,18 @@ class IPCServer:
                 return {"success": False, "error": f"Invalid command: {cmd}"}
 
     def _dispatch_manifold(self, request: dict) -> dict:
-        """Manifold format: route by (role, method, index) through the Trcc.
+        """Manifold format: route by (role, method) on the bound Trcc.
 
-        Falls back to constructing an `InProcessDispatcher` from
-        ``self._trcc`` on first use.  Without a bound Trcc the request
-        fails cleanly so a legacy server (no ``bind_trcc`` call) tells
-        the client what's wrong instead of crashing.
+        Wire format::
+
+            {"role": "lcd", "method": "set_brightness",
+             "args": [0, 75], "kwargs": {}}
+
+        The role names a facade on the Trcc (``lcd`` / ``led`` /
+        ``control_center``); the method is invoked on it as
+        ``fn(*args, **kwargs)``.  No translation layer — the wire shape
+        mirrors the Python call shape exactly, which is what makes
+        `TrccProxy` a transparent drop-in replacement for `Trcc`.
         """
         if self._trcc is None:
             return {
@@ -295,18 +296,39 @@ class IPCServer:
                 "error": "IPC server not bound to a Trcc — manifold "
                          "dispatch unavailable on this instance.",
             }
-        if self._in_proc is None:
-            from .core.dispatch import InProcessDispatcher
-            self._in_proc = InProcessDispatcher(self._trcc)
 
-        from .core.dispatch import Command
-        cmd = Command(
-            role=str(request.get("role", "")),
-            method=str(request.get("method", "")),
-            index=int(request.get("index", 0)),
-            kwargs=dict(request.get("kwargs", {})),
-        )
-        result = self._in_proc.dispatch(cmd)
+        role = str(request.get("role", ""))
+        method = str(request.get("method", ""))
+        args = tuple(request.get("args", ()))
+        kwargs = dict(request.get("kwargs", {}))
+
+        target = {
+            "lcd": self._trcc.lcd,
+            "led": self._trcc.led,
+            "control_center": self._trcc.control_center,
+        }.get(role)
+        if target is None:
+            return {"success": False, "error": f"Unknown role: {role!r}"}
+
+        if method.startswith("_"):
+            return {"success": False, "error": f"Private method: {method!r}"}
+
+        fn = getattr(target, method, None)
+        if not callable(fn):
+            return {"success": False,
+                    "error": f"Unknown method: {role}.{method}"}
+
+        try:
+            result = fn(*args, **kwargs)
+        except Exception as e:
+            log.exception("manifold dispatch %s.%s failed", role, method)
+            return {"success": False,
+                    "error": f"{type(e).__name__}: {e}"}
+
+        if not isinstance(result, OpResult):
+            return {"success": False,
+                    "error": f"{role}.{method} did not return an OpResult "
+                             f"(got {type(result).__name__})"}
         return _result_to_dict(result)
 
     def _dispatch_device(self, method: str, cmd: str,
@@ -634,106 +656,69 @@ create_led_proxy = create_device_proxy
 
 
 # =========================================================================
-# IpcDispatcher — Dispatcher that talks to a running daemon over the
-# Unix socket using the manifold wire format.
+# Manifold-format client helpers — used by `TrccProxy` in core/trcc_proxy.py.
+# Kept here so the wire format stays in one module (server + client side).
 # =========================================================================
 
-class IpcDispatcher:
-    """`Dispatcher` implementation backed by the Unix-socket IPC server.
-
-    Used by remote UIs (CLI clients, the GUI when running standalone, the
-    API server) to send `Command`\\ s into a daemon's `Trcc` and receive
-    `OpResult`\\ s back. Each :meth:`dispatch` call opens a one-shot
-    connection — short-lived, lock-free, and sufficient for request/
-    response. Subscriptions need a long-lived connection (Phase 4b).
-
-    Constructed without arguments; uses the standard socket path. Pass
-    a custom path for tests.
-    """
-
-    __slots__ = ('_path', '_timeout')
-
-    def __init__(self, *, socket_path: Path | None = None,
-                 timeout: float = 10.0) -> None:
-        self._path = socket_path or _socket_path()
-        self._timeout = timeout
-
-    @staticmethod
-    def daemon_running(*, socket_path: Path | None = None) -> bool:
-        """Probe the daemon socket without sending a request."""
-        if not hasattr(socket, 'AF_UNIX'):
-            return False
-        path = socket_path or _socket_path()
-        if not path.exists():
-            return False
-        try:
-            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            s.settimeout(1.0)
-            s.connect(str(path))
-            s.close()
-            return True
-        except OSError:
-            return False
-
-    def dispatch(self, cmd: Any) -> OpResult:
-        """Send a `Command` to the daemon and return its `OpResult`.
-
-        Catches all transport-level errors and converts them into a
-        failed OpResult — same contract as `InProcessDispatcher`, so UI
-        code can treat dispatch as total without per-call try/except.
-        """
-        from .core.dispatch import Command
-        if not isinstance(cmd, Command):
-            return OpResult(success=False,
-                            error=f"IpcDispatcher: expected Command, "
-                                  f"got {type(cmd).__name__}")
-        request = {
-            "role": cmd.role,
-            "method": cmd.method,
-            "index": cmd.index,
-            "kwargs": dict(cmd.kwargs),
-        }
-        try:
-            data = self._send_request(request)
-        except (TimeoutError, OSError, json.JSONDecodeError) as e:
-            return OpResult(success=False,
-                            error=f"IPC transport: {type(e).__name__}: {e}")
-        return _result_from_dict(data)
-
-    def subscribe(self, topic: str,
-                  handler: Callable[[Event], None]) -> Subscription:
-        """Subscribe to events on ``topic``.
-
-        Phase 4 ships request/response only. Long-lived event streaming
-        lands in a follow-up that reuses the same socket with a tagged
-        connection mode. Today this raises so callers get a clear error
-        rather than a silent no-op.
-        """
-        raise NotImplementedError(
-            "IpcDispatcher.subscribe is wired in Phase 4b — UIs that "
-            "need event streams use InProcessDispatcher for now.")
-
-    # ── transport ───────────────────────────────────────────────────────────
-
-    def _send_request(self, request: dict) -> dict:
-        if not hasattr(socket, 'AF_UNIX'):
-            raise OSError("AF_UNIX not available on this platform")
+def daemon_running(*, socket_path: Path | None = None) -> bool:
+    """Probe the daemon socket without sending a request."""
+    if not hasattr(socket, 'AF_UNIX'):
+        return False
+    path = socket_path or _socket_path()
+    if not path.exists():
+        return False
+    try:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.settimeout(self._timeout)
-        try:
-            s.connect(str(self._path))
-            s.sendall(json.dumps(request).encode() + b"\n")
-            chunks: list[bytes] = []
-            while True:
-                chunk = s.recv(65536)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                if b"\n" in chunk:
-                    break
-        finally:
-            s.close()
+        s.settimeout(1.0)
+        s.connect(str(path))
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+def send_manifold_request(role: str, method: str,
+                          args: tuple, kwargs: dict,
+                          *, socket_path: Path | None = None,
+                          timeout: float = 10.0) -> dict:
+    """Send a manifold-format request to the daemon, return the response dict.
+
+    Wire format (request)::
+
+        {"role": "lcd", "method": "set_brightness",
+         "args": [0, 75], "kwargs": {}}
+
+    Transport-level errors (no daemon, timeout, malformed reply) come
+    back as ``{"success": False, "error": "<details>"}`` — every call
+    produces a result, never raises.
+    """
+    request = {"role": role, "method": method,
+               "args": list(args), "kwargs": kwargs}
+    if not hasattr(socket, 'AF_UNIX'):
+        return {"success": False,
+                "error": "IPC transport: AF_UNIX not available"}
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    try:
+        s.connect(str(socket_path or _socket_path()))
+        s.sendall(json.dumps(request).encode() + b"\n")
+        chunks: list[bytes] = []
+        while True:
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            if b"\n" in chunk:
+                break
         payload = b"".join(chunks).decode().strip()
         if not payload:
-            raise OSError("Empty response from daemon")
+            return {"success": False, "error": "IPC: empty response"}
         return json.loads(payload)
+    except (TimeoutError, OSError, json.JSONDecodeError) as e:
+        return {"success": False,
+                "error": f"IPC transport: {type(e).__name__}: {e}"}
+    finally:
+        try:
+            s.close()
+        except OSError:
+            pass
