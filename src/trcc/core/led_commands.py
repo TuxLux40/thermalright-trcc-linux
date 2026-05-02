@@ -47,6 +47,8 @@ class LEDCommands:
             return LEDResult(success=False, error=f'LED {led} not found')
         result = dev.set_zone_color(zone, r, g, b) if zone is not None \
             else dev.set_color(r, g, b)
+        if result.get('success'):
+            self._events.publish('led.color', led, r, g, b, zone)
         return LEDResult(
             success=result.get('success', False),
             message=result.get('message', ''),
@@ -63,6 +65,8 @@ class LEDCommands:
             return LEDResult(success=False, error=f'LED {led} not found')
         result = dev.set_zone_mode(zone, mode) if zone is not None \
             else dev.set_mode(mode)
+        if result.get('success'):
+            self._events.publish('led.mode', led, mode, zone)
         return LEDResult(
             success=result.get('success', False),
             message=result.get('message', ''),
@@ -78,6 +82,8 @@ class LEDCommands:
             return LEDResult(success=False, error=f'LED {led} not found')
         result = dev.set_zone_brightness(zone, percent) if zone is not None \
             else dev.set_brightness(percent)
+        if result.get('success'):
+            self._events.publish('led.brightness', led, percent, zone)
         return LEDResult(
             success=result.get('success', False),
             message=result.get('message', ''),
@@ -91,6 +97,8 @@ class LEDCommands:
             return LEDResult(success=False, error=f'LED {led} not found')
         result = dev.toggle_zone(zone, on) if zone is not None \
             else dev.toggle_global(on)
+        if result.get('success'):
+            self._events.publish('led.toggled', led, on, zone)
         return LEDResult(
             success=result.get('success', False),
             message=result.get('message', ''),
@@ -134,6 +142,8 @@ class LEDCommands:
                 dev.set_zone_sync_zone(z, True)
                 log.debug('zone_sync include zone=%d (iter=%d)', z, idx)
         r = dev.set_zone_sync(enabled, interval_s)
+        if r.get('success'):
+            self._events.publish('led.zone_sync', led, enabled, interval_s)
         return OpResult(
             success=r.get('success', False),
             message=r.get('message', ''),
@@ -147,6 +157,8 @@ class LEDCommands:
         if dev is None:
             return OpResult(success=False, error=f'LED {led} not found')
         r = dev.set_clock_format(is_24h)
+        if r.get('success'):
+            self._events.publish('led.clock', led, is_24h)
         return OpResult(
             success=r.get('success', False),
             message=r.get('message', ''),
@@ -202,6 +214,8 @@ class LEDCommands:
         if dev is None:
             return OpResult(success=False, error=f'LED {led} not found')
         r = dev.set_sensor_source(source)
+        if r.get('success'):
+            self._events.publish('led.sensor', led, source)
         return OpResult(
             success=r.get('success', False),
             message=r.get('message', ''),

@@ -64,6 +64,7 @@ class ControlCenterCommands:
                 self._platform.autostart_enable()
             else:
                 self._platform.autostart_disable()
+            self._events.publish('control_center.autostart', enabled)
             return OpResult(
                 success=True,
                 message=f'Autostart {"enabled" if enabled else "disabled"}',
@@ -84,14 +85,17 @@ class ControlCenterCommands:
                     error=f"Invalid temp unit '{unit}' — must be 'C' or 'F'",
                 )
         conf.settings.set_temp_unit(unit_int)
+        self._events.publish('control_center.temp_unit', unit.upper())
         return OpResult(success=True, message=f'Temperature unit: °{unit.upper()}')
 
     def set_language(self, lang: str) -> OpResult:
         conf.settings.lang = lang
+        self._events.publish('control_center.language', lang)
         return OpResult(success=True, message=f'Language: {lang}')
 
     def set_hdd_enabled(self, enabled: bool) -> OpResult:
         conf.settings.set_hdd_enabled(enabled)
+        self._events.publish('control_center.hdd', enabled)
         return OpResult(
             success=True,
             message=f'HDD metrics {"enabled" if enabled else "disabled"}',
@@ -104,10 +108,12 @@ class ControlCenterCommands:
                 error=f'Refresh must be 1-100 seconds, got {seconds}',
             )
         conf.settings.set_refresh_interval(seconds)
+        self._events.publish('control_center.refresh', seconds)
         return OpResult(success=True, message=f'Refresh interval: {seconds}s')
 
     def set_gpu_device(self, gpu_key: str) -> OpResult:
         conf.settings.set_gpu_device(gpu_key)
+        self._events.publish('control_center.gpu', gpu_key)
         return OpResult(success=True, message=f'GPU: {gpu_key}')
 
     # ── Updates ──────────────────────────────────────────────────────

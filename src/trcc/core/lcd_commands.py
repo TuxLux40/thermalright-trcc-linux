@@ -85,6 +85,8 @@ class LCDCommands:
         if dev is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
         r = dev.set_brightness(percent)
+        if r.get('success'):
+            self._events.publish('lcd.brightness', lcd, percent)
         return FrameResult(
             success=r.get('success', False),
             message=r.get('message', ''),
@@ -97,6 +99,8 @@ class LCDCommands:
         if dev is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
         r = dev.set_rotation(degrees)
+        if r.get('success'):
+            self._events.publish('lcd.rotation', lcd, degrees)
         return FrameResult(
             success=r.get('success', False),
             message=r.get('message', ''),
@@ -109,6 +113,8 @@ class LCDCommands:
         if dev is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
         r = dev.set_split_mode(mode)
+        if r.get('success'):
+            self._events.publish('lcd.split_mode', lcd, mode)
         return FrameResult(
             success=r.get('success', False),
             message=r.get('message', ''),
@@ -121,6 +127,8 @@ class LCDCommands:
         if dev is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
         r = dev.set_fit_mode(mode)
+        if r.get('success'):
+            self._events.publish('lcd.fit_mode', lcd, mode)
         return FrameResult(
             success=r.get('success', False),
             message=r.get('message', ''),
@@ -138,10 +146,12 @@ class LCDCommands:
             return ThemeResult(success=False, error=f'Theme not found: {path}')
         theme = ThemeInfo(name=path.name, path=path)
         r = dev.select(theme)
-        if r.get('success') and (key := self._device_key(dev)):
-            Settings.save_device_settings(
-                key, theme_name=path.name, theme_type='local', mask_id='',
-            )
+        if r.get('success'):
+            if key := self._device_key(dev):
+                Settings.save_device_settings(
+                    key, theme_name=path.name, theme_type='local', mask_id='',
+                )
+            self._events.publish('lcd.theme', lcd, path.name, 'local')
         return ThemeResult(
             success=r.get('success', False),
             message=r.get('message', ''),
@@ -156,10 +166,12 @@ class LCDCommands:
             return ThemeResult(success=False, error=f'LCD {lcd} not found')
         # Delegate to Device's cloud-theme resolution via select
         r = dev.load_theme_by_name(theme_id)
-        if r.get('success') and (key := self._device_key(dev)):
-            Settings.save_device_settings(
-                key, theme_name=theme_id, theme_type='cloud',
-            )
+        if r.get('success'):
+            if key := self._device_key(dev):
+                Settings.save_device_settings(
+                    key, theme_name=theme_id, theme_type='cloud',
+                )
+            self._events.publish('lcd.theme', lcd, theme_id, 'cloud')
         return ThemeResult(
             success=r.get('success', False),
             message=r.get('message', ''),
@@ -270,10 +282,12 @@ class LCDCommands:
         if dev is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
         r = dev.load_mask_standalone(str(path))
-        if r.get('success') and (key := self._device_key(dev)):
-            Settings.save_device_settings(
-                key, mask_id=path.name, mask_custom=is_custom,
-            )
+        if r.get('success'):
+            if key := self._device_key(dev):
+                Settings.save_device_settings(
+                    key, mask_id=path.name, mask_custom=is_custom,
+                )
+            self._events.publish('lcd.mask', lcd, path.name)
         return FrameResult(
             success=r.get('success', False),
             message=r.get('message', ''),
@@ -333,12 +347,14 @@ class LCDCommands:
         if dev is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
         r = dev.enable_overlay(enabled)
-        if r.get('success') and (key := self._device_key(dev)):
-            prev = Settings.get_device_config(key).get('overlay', {})
-            Settings.save_device_setting(key, 'overlay', {
-                'enabled': enabled,
-                'config': prev.get('config', {}),
-            })
+        if r.get('success'):
+            if key := self._device_key(dev):
+                prev = Settings.get_device_config(key).get('overlay', {})
+                Settings.save_device_setting(key, 'overlay', {
+                    'enabled': enabled,
+                    'config': prev.get('config', {}),
+                })
+            self._events.publish('lcd.overlay_enabled', lcd, enabled)
         return FrameResult(
             success=r.get('success', False),
             message=r.get('message', ''),
@@ -350,11 +366,13 @@ class LCDCommands:
         if dev is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
         r = dev.set_config(config)
-        if r.get('success') and (key := self._device_key(dev)):
-            Settings.save_device_setting(key, 'overlay', {
-                'enabled': dev.enabled,
-                'config': config,
-            })
+        if r.get('success'):
+            if key := self._device_key(dev):
+                Settings.save_device_setting(key, 'overlay', {
+                    'enabled': dev.enabled,
+                    'config': config,
+                })
+            self._events.publish('lcd.overlay', lcd, config)
         return FrameResult(
             success=r.get('success', False),
             message=r.get('message', ''),

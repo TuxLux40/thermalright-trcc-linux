@@ -8,14 +8,48 @@ Framework-neutral: no Qt, no asyncio. Thread-safe via a single lock so
 background-thread publishes (video tick, sensor poll, USB hotplug) deliver
 safely to subscribers.
 
-Event names are strings by convention — keep them flat and stable:
+Event names are strings by convention — keep them flat and stable.
 
-    'frame'              → (device_idx: int, frame: Frame)
-    'metrics'            → dict   (HardwareMetrics.__dict__ or adjacent)
-    'device.connected'   → DeviceInfo
-    'device.disconnected'→ DeviceInfo
-    'data.ready'         → None   (theme/web/mask archives extracted)
-    'update.available'   → UpdateResult
+Lifecycle / streaming::
+
+    'frame'                  → (device_idx: int, frame: Frame)
+    'progress'               → (device_idx: int, percent, current, total)
+    'metrics'                → dict   (HardwareMetrics.__dict__ or adjacent)
+    'device.connected'       → DeviceInfo
+    'device.disconnected'    → DeviceInfo
+    'data.ready'             → None   (theme/web/mask archives extracted)
+    'update.available'       → UpdateResult
+
+LCD state changes (multi-UI sync — published by `LCDCommands` after
+each successful mutation)::
+
+    'lcd.brightness'         → (lcd: int, percent: int)
+    'lcd.rotation'           → (lcd: int, degrees: int)
+    'lcd.split_mode'         → (lcd: int, mode: int)
+    'lcd.fit_mode'           → (lcd: int, mode: str)
+    'lcd.theme'              → (lcd: int, name: str, kind: 'local'|'cloud')
+    'lcd.mask'               → (lcd: int, name: str)
+    'lcd.overlay_enabled'    → (lcd: int, enabled: bool)
+    'lcd.overlay'            → (lcd: int, config: dict)
+
+LED state changes (published by `LEDCommands`)::
+
+    'led.color'              → (led: int, r: int, g: int, b: int, zone: int | None)
+    'led.mode'               → (led: int, mode, zone: int | None)
+    'led.brightness'         → (led: int, percent: int, zone: int | None)
+    'led.toggled'            → (led: int, on: bool, zone: int | None)
+    'led.zone_sync'          → (led: int, enabled: bool, interval_s: int | None)
+    'led.clock'              → (led: int, is_24h: bool)
+    'led.sensor'             → (led: int, source: str)
+
+App-level state changes (published by `ControlCenterCommands`)::
+
+    'control_center.autostart'  → enabled: bool
+    'control_center.temp_unit'  → unit: 'C' | 'F'
+    'control_center.language'   → lang: str
+    'control_center.hdd'        → enabled: bool
+    'control_center.refresh'    → seconds: int
+    'control_center.gpu'        → gpu_key: str
 """
 from __future__ import annotations
 
