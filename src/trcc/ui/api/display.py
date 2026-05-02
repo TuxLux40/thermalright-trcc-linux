@@ -56,45 +56,45 @@ def _result(result) -> dict:
 @router.post("/color")
 def set_color(body: HexColorRequest, lcd: int = 0) -> dict:
     """Send solid color to LCD."""
+    from trcc._boot import trcc
     from trcc.ui.api import stop_overlay_loop, stop_video_playback
-    from trcc.ui.api._boot import get_trcc
 
     stop_video_playback()
     stop_overlay_loop()
     r, g, b = parse_hex_or_400(body.hex)
-    return _result(get_trcc().lcd.send_color(lcd, r, g, b))
+    return _result(trcc().lcd.send_color(lcd, r, g, b))
 
 
 @router.post("/brightness")
 def set_brightness(body: BrightnessRequest, lcd: int = 0) -> dict:
     """Set display brightness (1=25%, 2=50%, 3=100%). Persists to config."""
-    from trcc.ui.api._boot import get_trcc
-    return _result(get_trcc().lcd.set_brightness(lcd, body.level))
+    from trcc._boot import trcc
+    return _result(trcc().lcd.set_brightness(lcd, body.level))
 
 
 @router.post("/rotation")
 def set_rotation(body: RotationRequest, lcd: int = 0) -> dict:
     """Set display rotation (0, 90, 180, 270). Persists to config."""
-    from trcc.ui.api._boot import get_trcc
-    return _result(get_trcc().lcd.set_rotation(lcd, body.degrees))
+    from trcc._boot import trcc
+    return _result(trcc().lcd.set_rotation(lcd, body.degrees))
 
 
 @router.post("/split")
 def set_split(body: SplitRequest, lcd: int = 0) -> dict:
     """Set split mode (0=off, 1-3=Dynamic Island). Persists to config."""
-    from trcc.ui.api._boot import get_trcc
-    return _result(get_trcc().lcd.set_split_mode(lcd, body.mode))
+    from trcc._boot import trcc
+    return _result(trcc().lcd.set_split_mode(lcd, body.mode))
 
 
 @router.post("/reset")
 def reset_display(lcd: int = 0) -> dict:
     """Reset device by sending solid red frame."""
+    from trcc._boot import trcc
     from trcc.ui.api import stop_overlay_loop, stop_video_playback
-    from trcc.ui.api._boot import get_trcc
 
     stop_video_playback()
     stop_overlay_loop()
-    return _result(get_trcc().lcd.reset(lcd))
+    return _result(trcc().lcd.reset(lcd))
 
 
 @router.post("/mask")
@@ -103,7 +103,7 @@ async def load_mask(image: UploadFile, lcd: int = 0) -> dict:
     import tempfile
     from pathlib import Path
 
-    from trcc.ui.api._boot import get_trcc
+    from trcc._boot import trcc
 
     data = await image.read()
     if len(data) > 10 * 1024 * 1024:
@@ -113,7 +113,7 @@ async def load_mask(image: UploadFile, lcd: int = 0) -> dict:
         tmp.write(data)
         tmp_path = Path(tmp.name)
     try:
-        return _result(get_trcc().lcd.apply_mask(lcd, tmp_path))
+        return _result(trcc().lcd.apply_mask(lcd, tmp_path))
     finally:
         tmp_path.unlink(missing_ok=True)
 
@@ -147,10 +147,10 @@ def display_status(lcd: int = 0) -> dict:
 
     New callers should use /display/snapshot for the full typed state.
     """
-    from trcc.ui.api._boot import get_trcc
-    snap = get_trcc().lcd.snapshot(lcd)
+    from trcc._boot import trcc
+    snap = trcc().lcd.snapshot(lcd)
     # pylint: disable=protected-access
-    dev = get_trcc()._lcd_devices[lcd] if lcd < len(get_trcc()._lcd_devices) else None
+    dev = trcc()._lcd_devices[lcd] if lcd < len(trcc()._lcd_devices) else None
     device_path = dev.device_path if dev else None
     return {
         "connected": snap.connected,
@@ -164,8 +164,8 @@ def display_snapshot(lcd: int = 0) -> dict:
     """Full LCD snapshot via Trcc — all state in one call."""
     from dataclasses import asdict
 
-    from trcc.ui.api._boot import get_trcc
-    return asdict(get_trcc().lcd.snapshot(lcd))
+    from trcc._boot import trcc
+    return asdict(trcc().lcd.snapshot(lcd))
 
 
 # ── Video playback endpoints ──────────────────────────────────────────

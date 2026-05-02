@@ -12,9 +12,9 @@ import os
 
 import typer
 
+from trcc._boot import trcc
 from trcc.core.models import parse_hex_color as _parse_hex
 from trcc.ui.cli import _cli_handler
-from trcc.ui.cli._boot import trcc
 
 log = logging.getLogger(__name__)
 
@@ -54,8 +54,8 @@ def test(device=None, loop=False, preview=False):
     try:
         import time
 
+        from trcc._boot import trcc as _trcc
         from trcc.services import ImageService
-        from trcc.ui.cli._boot import trcc as _trcc
 
         log.debug("test display device=%s loop=%s", device, loop)
         if (rc := _connect_or_fail(device)):
@@ -211,8 +211,8 @@ def screencast(builder=None, *, device=None, x=0, y=0, w=0, h=0, fps=10, preview
 
     from PySide6.QtGui import QImage
 
+    from trcc._boot import trcc as _trcc
     from trcc.services import ImageService
-    from trcc.ui.cli._boot import trcc as _trcc
 
     log.debug("screencast device=%s region=(%d,%d,%d,%d) fps=%d", device, x, y, w, h, fps)
     if (rc := _connect_or_fail(device)):
@@ -332,9 +332,9 @@ def load_mask(mask_path, *, lcd: int = 0, device=None, preview=False):
 def render_overlay(builder, dc_path, *, device=None, send=False, output=None,
                    preview=False):
     """Render overlay from DC config file."""
+    from trcc._boot import trcc as _trcc
     from trcc.services.system import get_all_metrics
     from trcc.ui.cli import _ensure_system
-    from trcc.ui.cli._boot import trcc as _trcc
 
     if (rc := _connect_or_fail(device)):
         return rc

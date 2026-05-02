@@ -65,8 +65,8 @@ def _ensure_system(builder=None) -> None:
     if _system_svc is None:
         from trcc.services.system import set_instance
         if builder is None:
+            from trcc._boot import trcc as _trcc
             from trcc.core.builder import ControllerBuilder
-            from trcc.ui.cli._boot import trcc as _trcc
             builder = ControllerBuilder(_trcc().os)
         svc = builder.build_system()
         set_instance(svc)
@@ -1004,8 +1004,8 @@ def _cmd_led_select_zone(
 @_cli_handler
 def _cmd_gpu_list() -> int:
     """List available GPUs."""
+    from trcc._boot import trcc as _trcc
     from trcc.core.builder import ControllerBuilder
-    from trcc.ui.cli._boot import trcc as _trcc
     svc = ControllerBuilder(_trcc().os).build_system()
     gpu_list = svc.enumerator.get_gpu_list()
     if not gpu_list:
@@ -1027,9 +1027,9 @@ def _cmd_gpu_set(
     )],
 ) -> int:
     """Set the active GPU for metrics."""
+    from trcc._boot import trcc as _trcc
     from trcc.conf import settings
     from trcc.core.builder import ControllerBuilder
-    from trcc.ui.cli._boot import trcc as _trcc
     svc = ControllerBuilder(_trcc().os).build_system()
     valid_keys = [k for k, _ in svc.enumerator.get_gpu_list()]
     if gpu_key not in valid_keys:

@@ -78,8 +78,8 @@ def list_themes(resolution: str, lcd: int = 0,
         source: 'all' | 'local' | 'user' | 'cloud'
     """
     _parse_resolution(resolution)   # validate format
-    from trcc.ui.api._boot import get_trcc
-    themes = get_trcc().lcd.list_themes(lcd, source=source)
+    from trcc._boot import trcc
+    themes = trcc().lcd.list_themes(lcd, source=source)
     return [
         ThemeResponse(
             name=t.name,
@@ -200,8 +200,8 @@ def list_masks(resolution: str, lcd: int = 0,
         source: 'all' | 'builtin' | 'custom'
     """
     _parse_resolution(resolution)   # validate format
-    from trcc.ui.api._boot import get_trcc
-    masks = get_trcc().lcd.list_masks(lcd, source=source)
+    from trcc._boot import trcc
+    masks = trcc().lcd.list_masks(lcd, source=source)
     return [
         MaskResponse(
             name=m.name,
@@ -294,8 +294,8 @@ def load_theme(body: ThemeLoadRequest) -> dict:
 @router.post("/save")
 def save_theme(body: ThemeSaveRequest, lcd: int = 0) -> dict:
     """Save current device display as a named theme via Trcc."""
-    from trcc.ui.api._boot import get_trcc
-    result = get_trcc().lcd.save_theme(lcd, body.name)
+    from trcc._boot import trcc
+    result = trcc().lcd.save_theme(lcd, body.name)
     if not result.success:
         raise HTTPException(
             status_code=409,
@@ -308,10 +308,10 @@ def save_theme(body: ThemeSaveRequest, lcd: int = 0) -> dict:
 def delete_theme(name: str, lcd: int = 0) -> dict:
     """Delete a user theme directory via Trcc."""
 
-    from trcc.ui.api._boot import get_trcc
+    from trcc._boot import trcc
 
     # Resolve name → path from the orientation's theme_dir
-    t = get_trcc()
+    t = trcc()
     # pylint: disable=protected-access
     if not (0 <= lcd < len(t._lcd_devices)):
         raise HTTPException(status_code=404, detail=f"LCD {lcd} not found")
@@ -338,8 +338,8 @@ class SlideshowRequest(BaseModel):
 @router.post("/slideshow/configure")
 def configure_slideshow(body: SlideshowRequest, lcd: int = 0) -> dict:
     """Set which themes cycle and at what interval (persists)."""
-    from trcc.ui.api._boot import get_trcc
-    result = get_trcc().lcd.configure_slideshow(lcd, body.themes, body.interval_s)
+    from trcc._boot import trcc
+    result = trcc().lcd.configure_slideshow(lcd, body.themes, body.interval_s)
     if not result.success:
         raise HTTPException(status_code=400, detail=result.error)
     return {"success": True, "message": result.message}
@@ -348,8 +348,8 @@ def configure_slideshow(body: SlideshowRequest, lcd: int = 0) -> dict:
 @router.post("/slideshow/toggle")
 def set_slideshow(enabled: bool, lcd: int = 0) -> dict:
     """Turn the slideshow on or off."""
-    from trcc.ui.api._boot import get_trcc
-    result = get_trcc().lcd.set_slideshow(lcd, enabled)
+    from trcc._boot import trcc
+    result = trcc().lcd.set_slideshow(lcd, enabled)
     if not result.success:
         raise HTTPException(status_code=400, detail=result.error)
     return {"success": True, "message": result.message, "enabled": enabled}

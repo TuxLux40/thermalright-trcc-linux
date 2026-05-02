@@ -47,7 +47,7 @@ app = FastAPI(title="TRCC Linux", version=__version__)
 
 # ── Shared state ───────────────────────────────────────────────────────
 
-# Device registry now lives on the Trcc singleton (api._boot.get_trcc()).
+# Device registry now lives on the Trcc singleton (api._boot.trcc()).
 # Endpoints look up devices via Trcc; this module owns only the
 # in-flight per-process state below.
 
@@ -329,8 +329,8 @@ def start_screencast(
         if not shutil.which('ffmpeg'):
             return {"success": False, "error": "ffmpeg not found"}
 
-        from trcc.ui.api._boot import get_trcc
-        capture = get_trcc().os.screen_capture_params(x, y, w, h)
+        from trcc._boot import trcc
+        capture = trcc().os.screen_capture_params(x, y, w, h)
         if capture is None:
             return {"success": False, "error": "Screencast not supported on this platform"}
         fmt, inp, region_args = capture

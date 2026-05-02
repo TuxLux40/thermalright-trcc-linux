@@ -48,8 +48,8 @@ def _device_to_response(idx: int, info: DeviceInfo) -> DeviceResponse:
 def _all_devices() -> list[LCDDevice | LEDDevice]:
     """All connected devices via Trcc — LCDs first, then LEDs (stable
     indexing for /devices/{id})."""
-    from trcc.ui.api._boot import get_trcc
-    return list(get_trcc())
+    from trcc._boot import trcc
+    return list(trcc())
 
 
 def _get_device_by_id(device_id: int) -> LCDDevice | LEDDevice:
@@ -76,8 +76,8 @@ def list_devices() -> list[DeviceResponse]:
 @router.post("/devices/detect")
 def detect_devices() -> list[DeviceResponse]:
     """Rescan USB for devices via Trcc.discover()."""
-    from trcc.ui.api._boot import get_trcc
-    get_trcc().discover()
+    from trcc._boot import trcc
+    trcc().discover()
     return list_devices()
 
 

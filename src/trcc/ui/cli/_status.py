@@ -10,7 +10,7 @@ from dataclasses import asdict
 
 import typer
 
-from trcc.ui.cli._boot import trcc as _boot_trcc
+from trcc._boot import trcc as _boot_trcc
 
 
 def _echo_json(payload) -> int:
