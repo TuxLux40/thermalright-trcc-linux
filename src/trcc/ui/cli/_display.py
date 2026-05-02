@@ -294,8 +294,8 @@ def screencast(builder=None, *, device=None, x=0, y=0, w=0, h=0, fps=10, preview
 
 def send_image(image_path, *, lcd: int = 0, device=None, preview=False):
     """Send image to LCD."""
-    from ._ui import emit, handle
-    return emit(handle("lcd.send_image", index=lcd, path=str(image_path)))
+    from pathlib import Path
+    return _emit(trcc().lcd.send_image(lcd, Path(image_path)))
 
 
 def send_color(hex_color, *, lcd: int = 0, device=None, preview=False):
@@ -304,20 +304,17 @@ def send_color(hex_color, *, lcd: int = 0, device=None, preview=False):
         typer.echo("Error: Invalid hex color. Use format: ff0000", err=True)
         return 1
     r, g, b = rgb
-    from ._ui import emit, handle
-    return emit(handle("lcd.send_color", index=lcd, r=r, g=g, b=b))
+    return _emit(trcc().lcd.send_color(lcd, r, g, b))
 
 
 def set_brightness(level, *, lcd: int = 0, device=None):
     """Set display brightness level (1=25%, 2=50%, 3=100%)."""
-    from ._ui import emit, handle
-    return emit(handle("lcd.set_brightness", index=lcd, percent=level))
+    return _emit(trcc().lcd.set_brightness(lcd, level))
 
 
 def set_rotation(degrees, *, lcd: int = 0, device=None):
     """Set display rotation (0, 90, 180, 270)."""
-    from ._ui import emit, handle
-    return emit(handle("lcd.set_rotation", index=lcd, degrees=degrees))
+    return _emit(trcc().lcd.set_rotation(lcd, degrees))
 
 
 def set_split_mode(mode, *, lcd: int = 0, device=None, preview=False):

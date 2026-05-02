@@ -638,10 +638,7 @@ create_led_proxy = create_device_proxy
 # Unix socket using the manifold wire format.
 # =========================================================================
 
-from .core.dispatch import Dispatcher as _Dispatcher  # noqa: E402
-
-
-class IpcDispatcher(_Dispatcher):
+class IpcDispatcher:
     """`Dispatcher` implementation backed by the Unix-socket IPC server.
 
     Used by remote UIs (CLI clients, the GUI when running standalone, the
