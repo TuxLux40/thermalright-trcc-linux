@@ -1323,6 +1323,22 @@ def _cmd_download(
         pack=pack, show_list=show_list, force=force, show_info=show_info)
 
 
+@app.command("daemon", rich_help_panel="Interfaces")
+def _cmd_daemon() -> int:
+    """Run TRCC as a singleton background daemon.
+
+    Owns USB and serves CLI / API / GUI clients over the IPC socket.
+    Refuses to start if another daemon is already running. Exits cleanly
+    on SIGTERM / SIGINT.
+
+    Opt-in today — UIs default to in-process Trcc unless ``TRCC_DAEMON=1``
+    is set or ``trcc daemon`` is started explicitly. Phase 12 flips the
+    default after the soak period in the v10 cutover plan.
+    """
+    from trcc.daemon import run_daemon
+    return run_daemon(verbosity=_verbose)
+
+
 @app.command("gui", rich_help_panel="Interfaces")
 def _cmd_gui(
     decorated: Annotated[bool, typer.Option(
