@@ -363,10 +363,14 @@ class IPCServer:
     def _dispatch(self, request: dict) -> dict:
         """Route request to the matching dispatcher.
 
-        Two wire formats coexist; presence of a ``role`` key picks the
-        manifold dispatcher (Phase 4+, multi-device by index), otherwise
-        the legacy single-device dispatcher handles ``cmd: "device.X"``.
+        Three wire formats coexist:
+          - ``{"kill": true}``      — daemon-control, ack and self-shutdown
+          - ``{"role": ...}``       — manifold (multi-device by index)
+          - ``{"cmd": "device.X"}`` — legacy single-device, kept for one
+                                      release while clients migrate
         """
+        if request.get("kill"):
+            return self._handle_kill()
         if "role" in request:
             return self._dispatch_manifold(request)
 
@@ -381,6 +385,36 @@ class IPCServer:
                 return self._dispatch_device(method, cmd, args, kwargs)
             case _:
                 return {"success": False, "error": f"Invalid command: {cmd}"}
+
+    def _handle_kill(self) -> dict:
+        """Acknowledge a kill request, then schedule a clean shutdown.
+
+        Shutdown is deferred via a single-shot timer so the ack flushes
+        back to the client before the Qt event loop tears down. The
+        client's send_manifold_request returns the ack; the client can
+        then poll daemon_running() to confirm the daemon is gone.
+        """
+        try:
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(50, self._kill_now)
+        except Exception:
+            log.exception("kill: failed to schedule shutdown — falling through")
+            self._kill_now()
+        return {"success": True, "message": "Daemon shutting down"}
+
+    def _kill_now(self) -> None:
+        """Tear down the IPC server and quit the daemon's Qt event loop."""
+        try:
+            self.shutdown()
+        except Exception:
+            log.exception("_kill_now: server.shutdown raised")
+        try:
+            from PySide6.QtWidgets import QApplication
+            qapp = QApplication.instance()
+            if qapp is not None:
+                qapp.quit()
+        except Exception:
+            log.exception("_kill_now: qapp.quit raised")
 
     def _dispatch_manifold(self, request: dict) -> dict:
         """Manifold format: route by (role, method) on the bound Trcc.

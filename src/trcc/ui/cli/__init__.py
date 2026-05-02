@@ -1323,6 +1323,23 @@ def _cmd_download(
         pack=pack, show_list=show_list, force=force, show_info=show_info)
 
 
+@app.command("kill", rich_help_panel="Interfaces")
+def _cmd_kill() -> int:
+    """Stop the running TRCC daemon (no-op if none is running).
+
+    Sends a graceful shutdown request over the IPC socket; the daemon
+    acks, tears down its event loop, and exits. Other UI clients (GUI
+    windows, API server) will lose their daemon connection — they can
+    reconnect by re-launching, which auto-spawns a fresh daemon.
+    """
+    from trcc.daemon import kill_daemon
+    if kill_daemon():
+        typer.echo("Daemon stopped.")
+        return 0
+    typer.echo("Daemon did not stop within timeout.", err=True)
+    return 1
+
+
 @app.command("daemon", rich_help_panel="Interfaces")
 def _cmd_daemon() -> int:
     """Run TRCC as a singleton background daemon.

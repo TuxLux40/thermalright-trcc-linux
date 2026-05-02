@@ -113,6 +113,58 @@ def ensure_daemon(*, timeout: float = 10.0) -> bool:
 
 
 # =============================================================================
+# kill — graceful shutdown of a running daemon from any client.
+# =============================================================================
+
+def kill_daemon(*, timeout: float = 5.0) -> bool:
+    """Send a kill request to the running daemon, wait for it to exit.
+
+    The daemon acks the request immediately and tears down via a
+    single-shot Qt timer so the ack flushes back before the event loop
+    quits. We poll the socket until it disappears (or hit the timeout).
+
+    Returns True when the daemon is no longer reachable, False on timeout
+    or if the kill request couldn't be delivered. Idempotent — calling
+    when no daemon is running is a fast no-op that returns True.
+    """
+    import json
+    import socket as _socket
+
+    from .ipc import _socket_path, daemon_running
+
+    if not daemon_running():
+        return True
+
+    if not hasattr(_socket, 'AF_UNIX'):
+        return False
+
+    # Direct socket round-trip with the {"kill": true} shape. Bypasses
+    # send_manifold_request because the kill payload doesn't fit the
+    # manifold role/method format.
+    s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    s.settimeout(2.0)
+    try:
+        s.connect(str(_socket_path()))
+        s.sendall(json.dumps({"kill": True}).encode() + b"\n")
+        s.recv(4096)  # drain the ack so the daemon's buffer flushes
+    except OSError as e:
+        log.warning("kill_daemon: %s", e)
+        return False
+    finally:
+        try:
+            s.close()
+        except OSError:
+            pass
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not daemon_running():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+# =============================================================================
 # Internals
 # =============================================================================
 
@@ -170,8 +222,25 @@ def _build_trcc() -> Any:
     return trcc
 
 
+# Module-level holder so the Qt heartbeat timer survives past the function
+# that creates it (Qt drops QObject children without a Python ref).
+_HEARTBEAT_TIMER: Any = None
+
+
 def _install_signal_handlers(qapp: Any, server: Any) -> None:
-    """SIGTERM / SIGINT shut the server cleanly and break the event loop."""
+    """SIGTERM / SIGINT shut the server cleanly and break the event loop.
+
+    Qt's C++ event loop yields to Python only between Python opcodes; on
+    a fully-idle daemon the next opcode may be many seconds away, leaving
+    a registered ``signal.signal`` handler unprocessed. A 100 ms QTimer
+    that does nothing is the standard, reliable fix — every tick
+    transitions through Python, which is when CPython runs pending
+    signal handlers. Cheap (no real work, no I/O) and robust across
+    every Qt platform plugin.
+    """
+    global _HEARTBEAT_TIMER
+    from PySide6.QtCore import QTimer
+
     def _shutdown(signo: int, _frame: Any) -> None:
         name = signal.Signals(signo).name
         log.info("trccd: received %s — shutting down", name)
@@ -183,6 +252,12 @@ def _install_signal_handlers(qapp: Any, server: Any) -> None:
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
+
+    timer = QTimer()
+    timer.setInterval(100)
+    timer.timeout.connect(lambda: None)
+    timer.start()
+    _HEARTBEAT_TIMER = timer  # keep alive past this function
 
 
 def _daemon_spawn_cmd() -> list[str]:

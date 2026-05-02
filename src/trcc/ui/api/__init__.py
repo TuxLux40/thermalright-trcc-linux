@@ -606,6 +606,7 @@ from trcc.ui.api.i18n import router as i18n_router  # noqa: E402
 from trcc.ui.api.led import router as led_router  # noqa: E402
 from trcc.ui.api.system import router as system_router  # noqa: E402
 from trcc.ui.api.themes import router as themes_router  # noqa: E402
+from trcc.ui.api.trcc import router as trcc_router  # noqa: E402
 
 app.include_router(control_center_router)
 app.include_router(devices_router)
@@ -614,3 +615,4 @@ app.include_router(i18n_router)
 app.include_router(led_router)
 app.include_router(themes_router)
 app.include_router(system_router)
+app.include_router(trcc_router)
