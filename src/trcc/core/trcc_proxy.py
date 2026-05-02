@@ -25,7 +25,10 @@ working because they hold a real `Trcc` and never see the proxy.
 """
 from __future__ import annotations
 
+import json
 import logging
+import socket
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -109,35 +112,143 @@ class ControlCenterFacadeProxy(_FacadeProxy):
 # =============================================================================
 
 class EventBusProxy:
-    """Subscribe-only proxy. ``publish`` raises — events flow daemon→client.
+    """Subscribe over IPC to events the daemon's EventBus publishes.
 
-    R3 stubs out subscribe + unsubscribe with a clear error so callers
-    fail loud rather than silently no-op. R5 ships the long-lived IPC
-    connection that streams `Event` JSON lines back from the daemon.
+    Each :meth:`subscribe` call opens its own long-lived Unix socket to
+    the daemon and spawns a daemon thread that reads JSON event lines
+    and dispatches them to the registered callback. :meth:`unsubscribe`
+    closes the socket; the reader exits naturally on the next read.
+
+    ``publish`` is intentionally not supported — events flow daemon →
+    client only. In-process publishers (the daemon's own facades) call
+    `Trcc.events.publish` directly, never through a proxy.
     """
 
-    __slots__ = ('_socket_path', '_timeout')
+    __slots__ = ('_lock', '_next_id', '_socket_path', '_subs', '_timeout')
 
     def __init__(self, socket_path: Path | None = None,
                  timeout: float = 10.0) -> None:
         self._socket_path = socket_path
         self._timeout = timeout
+        self._lock = threading.Lock()
+        self._next_id = 0
+        # sub_id → (sock, reader_thread). Reader closes sock on exit;
+        # unsubscribe shuts the sock to wake a blocked recv().
+        self._subs: dict[int, tuple[socket.socket, threading.Thread]] = {}
 
     def subscribe(self, event: str, callback: Callable[..., Any]) -> int:
-        raise NotImplementedError(
-            "EventBusProxy.subscribe is wired in R5. UIs running in the "
-            "daemon process subscribe to Trcc.events directly; only "
-            "remote UIs need IPC subscription, and those are gated until "
-            "R5 ships the long-lived connection.")
+        """Subscribe to ``event``. Returns a local sub_id for unsubscribe.
+
+        Spawns a background daemon thread that reads from the socket
+        and calls ``callback(*payload)`` for each event. Errors in the
+        callback are logged and don't break the subscription.
+        """
+        from ..ipc import _socket_path
+
+        path = self._socket_path or _socket_path()
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(self._timeout)
+        try:
+            s.connect(str(path))
+            s.sendall(json.dumps({"subscribe": event}).encode() + b"\n")
+        except OSError as e:
+            try:
+                s.close()
+            except OSError:
+                pass
+            raise RuntimeError(
+                f"EventBusProxy.subscribe: cannot reach daemon at "
+                f"{path}: {e}") from e
+
+        # Read the ack — server confirms the subscription before events flow.
+        ack_line = _read_line(s)
+        ack = json.loads(ack_line) if ack_line else {}
+        if not ack.get("success"):
+            try:
+                s.close()
+            except OSError:
+                pass
+            err = ack.get("error", "unknown error")
+            raise RuntimeError(f"EventBusProxy.subscribe: server rejected: {err}")
+
+        # Drop timeout — events arrive when they arrive.
+        s.settimeout(None)
+
+        def _reader() -> None:
+            try:
+                buf = b""
+                while True:
+                    chunk = s.recv(65536)
+                    if not chunk:
+                        return
+                    buf += chunk
+                    while b"\n" in buf:
+                        line, _, buf = buf.partition(b"\n")
+                        text = line.decode().strip()
+                        if not text:
+                            continue
+                        try:
+                            msg = json.loads(text)
+                            payload = tuple(msg.get("payload", ()))
+                            callback(*payload)
+                        except Exception:
+                            log.exception(
+                                "EventBusProxy: callback for %r raised",
+                                event)
+            except OSError:
+                pass
+            finally:
+                try:
+                    s.close()
+                except OSError:
+                    pass
+
+        thread = threading.Thread(
+            target=_reader, daemon=True,
+            name=f"EventBusProxy-{event}",
+        )
+        thread.start()
+
+        with self._lock:
+            sub_id = self._next_id
+            self._next_id += 1
+            self._subs[sub_id] = (s, thread)
+        log.debug("EventBusProxy: subscribed id=%d event=%r", sub_id, event)
+        return sub_id
 
     def unsubscribe(self, sub_id: int) -> None:
-        raise NotImplementedError(
-            "EventBusProxy.unsubscribe is wired in R5.")
+        """Cancel a subscription. Closes the socket so the reader exits."""
+        with self._lock:
+            sub = self._subs.pop(sub_id, None)
+        if sub is None:
+            return
+        s, _thread = sub
+        try:
+            s.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            s.close()
+        except OSError:
+            pass
+        log.debug("EventBusProxy: unsubscribed id=%d", sub_id)
 
     def publish(self, event: str, *payload: Any) -> None:
         raise RuntimeError(
             "TrccProxy clients cannot publish — events flow daemon → client. "
             "Use Trcc.events.publish from inside the daemon process.")
+
+
+def _read_line(s: socket.socket) -> str:
+    """Read a single newline-terminated JSON line from a Unix socket."""
+    buf = b""
+    while b"\n" not in buf:
+        chunk = s.recv(4096)
+        if not chunk:
+            break
+        buf += chunk
+    line, _, _ = buf.partition(b"\n")
+    return line.decode().strip()
 
 
 # =============================================================================

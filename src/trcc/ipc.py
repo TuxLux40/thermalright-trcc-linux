@@ -150,6 +150,9 @@ class IPCServer:
         self._sock: socket.socket | None = None
         self._notifier: Any = None  # QSocketNotifier
         self._current_frame: Any = None  # Last frame sent to LCD (QImage)
+        # Long-lived event subscriber connections — each is (sub_id, sock).
+        # Tracked so shutdown() can unsubscribe + close them cleanly.
+        self._event_subs: list[tuple[int, socket.socket]] = []
 
     @property
     def device(self) -> Any:
@@ -215,6 +218,24 @@ class IPCServer:
 
     def shutdown(self) -> None:
         """Close socket and clean up."""
+        # Unsubscribe + close every long-lived event subscriber.
+        if self._trcc is not None:
+            for sub_id, _client in self._event_subs:
+                try:
+                    self._trcc.events.unsubscribe(sub_id)
+                except Exception:
+                    log.exception("shutdown: events.unsubscribe(%d) raised", sub_id)
+        for _sub_id, client in self._event_subs:
+            try:
+                client.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                client.close()
+            except OSError:
+                pass
+        self._event_subs.clear()
+
         if self._notifier:
             self._notifier.setEnabled(False)
             self._notifier = None
@@ -227,7 +248,12 @@ class IPCServer:
         log.info("IPC server shut down")
 
     def _on_connection(self) -> None:
-        """Accept client, read request, dispatch, respond, close."""
+        """Accept client, classify request, dispatch.
+
+        Two modes: one-shot dispatch (close after responding) and
+        long-lived subscription (keep open, write events back until
+        the client disconnects).
+        """
         if not self._sock:
             return
         try:
@@ -235,12 +261,26 @@ class IPCServer:
         except OSError:
             return
 
+        request: dict = {}
+        is_subscribe = False
         try:
             client.settimeout(5.0)
             if not (data := client.recv(65536)):
                 return
 
-            request = json.loads(data.decode().strip())
+            parsed = json.loads(data.decode().strip())
+            if not isinstance(parsed, dict):
+                _send_error(client, "Request must be a JSON object")
+                return
+            request = parsed
+
+            # Long-lived subscription connection — keep socket open.
+            if "subscribe" in request:
+                is_subscribe = True
+                self._handle_subscribe(client, str(request["subscribe"]))
+                return
+
+            # One-shot dispatch — respond and close.
             result = self._dispatch(request)
             client.sendall(json.dumps(result).encode() + b"\n")
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
@@ -249,10 +289,76 @@ class IPCServer:
             log.warning("IPC dispatch error: %s", e)
             _send_error(client, str(e))
         finally:
+            # Subscription connections stay open; one-shot connections close.
+            if not is_subscribe:
+                try:
+                    client.close()
+                except OSError:
+                    pass
+
+    def _handle_subscribe(self, client: socket.socket, topic: str) -> None:
+        """Register a subscription that forwards EventBus events to ``client``.
+
+        Sends a one-line ack ({success}) then keeps the socket open. Each
+        publish on ``topic`` writes a JSON line to the client. Write
+        failures (client disconnected) trigger automatic cleanup.
+        """
+        if self._trcc is None:
+            try:
+                client.sendall(json.dumps({
+                    "success": False,
+                    "error": "IPC server not bound to a Trcc.",
+                }).encode() + b"\n")
+            finally:
+                try:
+                    client.close()
+                except OSError:
+                    pass
+            return
+
+        # Ack the subscription before any events flow.
+        try:
+            client.sendall(json.dumps({"success": True}).encode() + b"\n")
+        except OSError:
             try:
                 client.close()
             except OSError:
                 pass
+            return
+        # Drop the recv timeout — the connection now lives until the
+        # client disconnects.
+        client.settimeout(None)
+
+        # Forwarder: serializes the EventBus payload and writes to the
+        # client. On write failure, unsubscribes itself.
+        sub_id_holder: list[int] = []
+
+        def _forward(*payload: Any) -> None:
+            line = json.dumps({"topic": topic, "payload": list(payload)}) + "\n"
+            try:
+                client.sendall(line.encode())
+            except OSError:
+                # Client gone — unsubscribe and remove from tracking.
+                if not sub_id_holder:
+                    return
+                sid = sub_id_holder[0]
+                try:
+                    if self._trcc is not None:
+                        self._trcc.events.unsubscribe(sid)
+                except Exception:
+                    log.exception("subscribe forwarder: unsubscribe raised")
+                self._event_subs[:] = [
+                    (i, c) for (i, c) in self._event_subs if i != sid
+                ]
+                try:
+                    client.close()
+                except OSError:
+                    pass
+
+        sub_id = self._trcc.events.subscribe(topic, _forward)
+        sub_id_holder.append(sub_id)
+        self._event_subs.append((sub_id, client))
+        log.info("IPC subscription registered: id=%d topic=%r", sub_id, topic)
 
     def _dispatch(self, request: dict) -> dict:
         """Route request to the matching dispatcher.
