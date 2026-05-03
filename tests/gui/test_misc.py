@@ -62,14 +62,14 @@ from trcc.ui.gui.uc_video_cut import (
 # ============================================================================
 
 _ASSETS_PATCH_TARGETS = [
-    "trcc.gui.uc_image_cut.Assets",
-    "trcc.gui.uc_video_cut.Assets",
-    "trcc.gui.uc_about.Assets",
-    "trcc.gui.uc_sensor_picker.Assets",
-    "trcc.gui.uc_sensor_picker.set_background_pixmap",
-    "trcc.gui.uc_about.set_background_pixmap",
-    "trcc.gui.uc_about.create_image_button",
-    "trcc.gui.assets.Assets",
+    "trcc.ui.gui.uc_image_cut.Assets",
+    "trcc.ui.gui.uc_video_cut.Assets",
+    "trcc.ui.gui.uc_about.Assets",
+    "trcc.ui.gui.uc_sensor_picker.Assets",
+    "trcc.ui.gui.uc_sensor_picker.set_background_pixmap",
+    "trcc.ui.gui.uc_about.set_background_pixmap",
+    "trcc.ui.gui.uc_about.create_image_button",
+    "trcc.ui.gui.assets.Assets",
 ]
 
 
@@ -602,7 +602,7 @@ class TestAboutWidget:
         from unittest.mock import MagicMock
         mock_platform = MagicMock()
         mock_platform.autostart_enabled.return_value = False
-        with patch("trcc.gui.uc_about.Thread"):
+        with patch("trcc.ui.gui.uc_about.Thread"):
             w = UCAbout(platform=mock_platform)
         return w
 

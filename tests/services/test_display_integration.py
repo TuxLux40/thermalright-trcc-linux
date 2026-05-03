@@ -26,7 +26,7 @@ from trcc.services.theme_persistence import ThemePersistence
 
 @pytest.fixture()
 def renderer() -> Any:
-    return ImageService._r()
+    return ImageService.renderer()
 
 
 @pytest.fixture()

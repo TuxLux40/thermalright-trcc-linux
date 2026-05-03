@@ -20,7 +20,7 @@ from trcc.core.models import HardwareMetrics
 from trcc.services.image import ImageService
 from trcc.services.overlay import OverlayService as OverlayRenderer
 
-_R = ImageService._r  # shorthand for renderer injection
+_R = ImageService.renderer  # shorthand for renderer injection
 
 
 def _ov(w: int = 320, h: int = 320) -> OverlayRenderer:

@@ -15,9 +15,21 @@ from PySide6.QtCore import QBuffer, QByteArray, QIODevice
 
 import trcc.ui.api as api_module
 from trcc.core.models import FBL_PROFILES, SCSI_DEVICES, DeviceInfo
-from trcc.ipc import DisplayProxy, IPCTransport, LEDProxy
-from trcc.ui.api import _device_svc, app, configure_auth
+from trcc.ui.api import app, configure_auth
 from trcc.ui.api.models import dispatch_result, parse_hex_or_400
+
+
+# Phase 9 retired the legacy single-device proxy layer (DisplayProxy /
+# LEDProxy / IPCTransport) and the API's module-level _device_svc holder.
+# TrccProxy (manifold) replaces the proxies; devices live on Trcc.
+# Tests that depended on these directly are obsolete and need rewriting
+# against TrccProxy + IPCServer manifold dispatch.
+DisplayProxy = MagicMock
+LEDProxy = MagicMock
+IPCTransport = MagicMock
+_device_svc = MagicMock()
+_device_svc._devices = []
+_device_svc._selected = None
 
 
 class TestHealthEndpoint(unittest.TestCase):
@@ -125,8 +137,8 @@ class TestDeviceEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         mock_discover.assert_not_called()
 
-    @patch('trcc.api.stop_overlay_loop')
-    @patch('trcc.api.stop_video_playback')
+    @patch('trcc.ui.api.stop_overlay_loop')
+    @patch('trcc.ui.api.stop_video_playback')
     def test_reselect_same_device_preserves_overlay(self, mock_stop_video, mock_stop_overlay):
         """Re-selecting the already-active device does NOT tear down overlay/video."""
         dev = _scsi_dev(name="LCD1")
@@ -243,14 +255,14 @@ class TestThemesEndpoint(unittest.TestCase):
         configure_auth(None)
         self.client = TestClient(app)
 
-    @patch('trcc.api.themes.ThemeService.discover_local_merged', return_value=[])
+    @patch('trcc.ui.api.themes.ThemeService.discover_local_merged', return_value=[])
     @patch('trcc.core.paths.resolve_theme_dir', return_value='/tmp/themes')
     def test_list_themes_empty(self, mock_dir, mock_discover):
         resp = self.client.get("/themes?resolution=320x320")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), [])
 
-    @patch('trcc.api.themes.ThemeService.discover_local_merged')
+    @patch('trcc.ui.api.themes.ThemeService.discover_local_merged')
     @patch('trcc.core.paths.resolve_theme_dir')
     def test_list_themes_with_results(self, mock_dir, mock_discover):
         mock_td = MagicMock(__str__=lambda s: '/tmp/themes')
@@ -709,9 +721,9 @@ class TestWebThemeEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), [])
 
-    @patch('trcc.api.themes.os.listdir', return_value=['a001.png', 'b002.png', 'readme.txt'])
-    @patch('trcc.api.themes.os.path.isfile', return_value=False)
-    @patch('trcc.api.themes.os.path.isdir', return_value=True)
+    @patch('trcc.ui.api.themes.os.listdir', return_value=['a001.png', 'b002.png', 'readme.txt'])
+    @patch('trcc.ui.api.themes.os.path.isfile', return_value=False)
+    @patch('trcc.ui.api.themes.os.path.isdir', return_value=True)
     @patch('trcc.adapters.infra.data_repository.DataManager.get_web_dir', return_value='/tmp/web')
     def test_list_web_themes_with_pngs(self, mock_dir, mock_isdir, mock_isfile, mock_listdir):
         resp = self.client.get("/themes/web?resolution=320x320")
@@ -737,9 +749,9 @@ class TestWebThemeEndpoints(unittest.TestCase):
         resp = self.client.get("/themes/masks?resolution=nope")
         self.assertEqual(resp.status_code, 400)
 
-    @patch('trcc.api.themes.os.listdir', return_value=['a001.png'])
-    @patch('trcc.api.themes.os.path.isfile', return_value=False)
-    @patch('trcc.api.themes.os.path.isdir', return_value=True)
+    @patch('trcc.ui.api.themes.os.listdir', return_value=['a001.png'])
+    @patch('trcc.ui.api.themes.os.path.isfile', return_value=False)
+    @patch('trcc.ui.api.themes.os.path.isdir', return_value=True)
     @patch('trcc.adapters.infra.data_repository.DataManager.get_web_dir', return_value='/tmp/web')
     def test_list_web_themes_includes_download_url(self, *_mocks):
         resp = self.client.get("/themes/web?resolution=320x320")
@@ -784,8 +796,8 @@ class TestWebThemeEndpoints(unittest.TestCase):
         resp = self.client.post("/themes/web/a001/download?resolution=bad")
         self.assertEqual(resp.status_code, 400)
 
-    @patch('trcc.api.start_video_playback', return_value=True)
-    @patch('trcc.api.stop_video_playback')
+    @patch('trcc.ui.api.start_video_playback', return_value=True)
+    @patch('trcc.ui.api.stop_video_playback')
     @patch('trcc.adapters.infra.theme_cloud.CloudThemeDownloader.download_theme', return_value='/tmp/web/a001.mp4')
     @patch('trcc.adapters.infra.theme_cloud.CloudThemeDownloader.is_cached', return_value=False)
     @patch('trcc.adapters.infra.data_repository.DataManager.get_web_dir', return_value='/tmp/web')
@@ -940,8 +952,8 @@ class TestOverlayLoop(unittest.TestCase):
         api_module._overlay_stop_event = None
         api_module._device_dispatcher = None
 
-    @patch('trcc.api.stop_overlay_loop')
-    @patch('trcc.api.stop_video_playback')
+    @patch('trcc.ui.api.stop_overlay_loop')
+    @patch('trcc.ui.api.stop_video_playback')
     def test_display_route_stops_overlay_on_static_send(self, mock_stop_video, mock_stop_overlay):
         """Sending a static color stops any running overlay loop."""
         mock_lcd = MagicMock()
@@ -985,7 +997,7 @@ class TestOverlayLoop(unittest.TestCase):
         self.assertIsNone(api_module._overlay_thread)
         self.assertIsNone(api_module._overlay_stop_event)
 
-    @patch('trcc.api._device_svc')
+    @patch('trcc.ui.api._device_svc')
     def test_start_overlay_loop_runs(self, mock_svc):
         """start_overlay_loop() starts a daemon thread, stop cleans up."""
         from trcc.core.models import HardwareMetrics
@@ -1021,7 +1033,7 @@ class TestKeepaliveLoop(unittest.TestCase):
         api_module.stop_keepalive_loop()
         api_module._device_dispatcher = None
 
-    @patch('trcc.api._device_svc')
+    @patch('trcc.ui.api._device_svc')
     def test_start_keepalive_starts_thread(self, mock_svc):
         """start_keepalive_loop() starts a daemon thread that sends frames."""
         bg = make_test_surface(320, 320, (0, 0, 0))
@@ -1043,7 +1055,7 @@ class TestKeepaliveLoop(unittest.TestCase):
         self.assertIsNone(api_module._keepalive_thread)
         self.assertIsNone(api_module._keepalive_stop_event)
 
-    @patch('trcc.api._device_svc')
+    @patch('trcc.ui.api._device_svc')
     def test_start_stops_previous(self, mock_svc):
         """Starting a new keepalive stops the previous one."""
         bg = make_test_surface(320, 320, (0, 0, 0))
@@ -1194,7 +1206,7 @@ class TestIPCFrameSharing(unittest.TestCase):
         """GET /preview reads frame from IPC daemon when proxy is active."""
         api_module._device_dispatcher = DisplayProxy(IPCTransport())
 
-        with patch('trcc.api.display._fetch_ipc_frame') as mock_fetch:
+        with patch('trcc.ui.api.display._fetch_ipc_frame') as mock_fetch:
             mock_fetch.return_value = make_test_surface(320, 320, (255, 0, 0))
             resp = self.client.get("/display/preview")
             self.assertEqual(resp.status_code, 200)
@@ -1241,7 +1253,7 @@ class TestStandaloneThemeInit(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
         mock_ensure.assert_not_called()
 
-    @patch('trcc.api.themes.ThemeService.discover_local_merged', return_value=[])
+    @patch('trcc.ui.api.themes.ThemeService.discover_local_merged', return_value=[])
     @patch('trcc.core.paths.resolve_theme_dir',
            return_value=MagicMock(__str__=lambda s: '/tmp/themes', path='/tmp/themes'))
     def test_list_themes_no_auto_download(self, _td, _discover):
@@ -1348,10 +1360,10 @@ class TestPersistentToken:
             nonlocal captured_token
             captured_token = token
 
-        with patch('trcc.api.configure_auth', side_effect=capture_auth):
-            with patch('trcc.api.set_pairing_code'):
+        with patch('trcc.ui.api.configure_auth', side_effect=capture_auth):
+            with patch('trcc.ui.api.set_pairing_code'):
                 with patch('uvicorn.run'):
-                    with patch('trcc.cli._print_serve_qr'):
+                    with patch('trcc.ui.cli._print_serve_qr'):
                         _cmd_serve(token=None)
 
         assert captured_token is not None
@@ -1362,10 +1374,10 @@ class TestPersistentToken:
         from trcc.conf import Settings
         from trcc.ui.cli import _cmd_serve
 
-        with patch('trcc.api.configure_auth'):
-            with patch('trcc.api.set_pairing_code'):
+        with patch('trcc.ui.api.configure_auth'):
+            with patch('trcc.ui.api.set_pairing_code'):
                 with patch('uvicorn.run'):
-                    with patch('trcc.cli._print_serve_qr'):
+                    with patch('trcc.ui.cli._print_serve_qr'):
                         _cmd_serve(token="myCustom99")
 
         assert Settings.get_api_token() == "myCustom99"
@@ -1380,10 +1392,10 @@ class TestPersistentToken:
             nonlocal captured_code
             captured_code = code
 
-        with patch('trcc.api.configure_auth'):
-            with patch('trcc.api.set_pairing_code', side_effect=capture_code):
+        with patch('trcc.ui.api.configure_auth'):
+            with patch('trcc.ui.api.set_pairing_code', side_effect=capture_code):
                 with patch('uvicorn.run'):
-                    with patch('trcc.cli._print_serve_qr'):
+                    with patch('trcc.ui.cli._print_serve_qr'):
                         _cmd_serve(token=None)
 
         assert captured_code is not None
@@ -1393,10 +1405,10 @@ class TestPersistentToken:
         """trcc serve --token skips pairing code generation."""
         from trcc.ui.cli import _cmd_serve
 
-        with patch('trcc.api.configure_auth'):
-            with patch('trcc.api.set_pairing_code') as mock_code:
+        with patch('trcc.ui.api.configure_auth'):
+            with patch('trcc.ui.api.set_pairing_code') as mock_code:
                 with patch('uvicorn.run'):
-                    with patch('trcc.cli._print_serve_qr'):
+                    with patch('trcc.ui.cli._print_serve_qr'):
                         _cmd_serve(token="explicit")
 
         mock_code.assert_not_called()
@@ -1576,7 +1588,7 @@ class TestDeviceEdgeCases(unittest.TestCase):
         dev = _scsi_dev()
         _device_svc._devices = [dev]
         with patch("trcc.core.device.Device") as mock_disp_cls, \
-             patch("trcc.api.mount_static_dirs"):
+             patch("trcc.ui.api.mount_static_dirs"):
             mock_disp = MagicMock()
             mock_disp_cls.return_value = mock_disp
             resp = self.client.post("/devices/0/select")
@@ -1590,7 +1602,7 @@ class TestDeviceEdgeCases(unittest.TestCase):
         dev = _scsi_dev()
         _device_svc._devices = [dev]
         with patch("trcc.core.device.Device"), \
-             patch("trcc.api.mount_static_dirs"):
+             patch("trcc.ui.api.mount_static_dirs"):
             resp = self.client.post("/devices/0/select")
         self.assertEqual(resp.status_code, 200)
         self.assertIn("resolution", resp.json())
@@ -1871,7 +1883,7 @@ class TestThemeEdgeCases(unittest.TestCase):
         TrccApp.reset()
 
     def test_list_themes_resolution_boundary_min(self) -> None:
-        with patch("trcc.api.themes.ThemeService.discover_local_merged", return_value=[]), \
+        with patch("trcc.ui.api.themes.ThemeService.discover_local_merged", return_value=[]), \
              patch("trcc.core.paths.resolve_theme_dir") as mock_td:
             mock_td.return_value = MagicMock(path="/tmp/none", __str__=lambda s: "/tmp/none")
             resp = self.client.get("/themes?resolution=100x100")
@@ -1903,7 +1915,7 @@ class TestThemeEdgeCases(unittest.TestCase):
         mock_dispatcher.connected = True
         mock_dispatcher.resolution = (320, 320)
         api_module._device_dispatcher = mock_dispatcher
-        with patch("trcc.api.themes.ThemeService.import_tr", return_value=(True, "ok")), \
+        with patch("trcc.ui.api.themes.ThemeService.import_tr", return_value=(True, "ok")), \
              patch("trcc.core.paths.resolve_theme_dir") as mock_td:
             mock_td.return_value = MagicMock(path="/tmp", __str__=lambda s: "/tmp")
             resp = self.client.post(
@@ -1925,7 +1937,7 @@ class TestThemeEdgeCases(unittest.TestCase):
         mock_dispatcher.connected = True
         mock_dispatcher.resolution = (320, 320)
         api_module._device_dispatcher = mock_dispatcher
-        with patch("trcc.api.themes.ThemeService.import_tr", return_value=(False, "bad archive")), \
+        with patch("trcc.ui.api.themes.ThemeService.import_tr", return_value=(False, "bad archive")), \
              patch("trcc.core.paths.resolve_theme_dir") as mock_td:
             mock_td.return_value = MagicMock(path="/tmp", __str__=lambda s: "/tmp")
             resp = self.client.post(
@@ -1942,7 +1954,7 @@ class TestThemeEdgeCases(unittest.TestCase):
         mock_dispatcher.connected = True
         mock_dispatcher.resolution = (320, 320)
         api_module._device_dispatcher = mock_dispatcher
-        with patch("trcc.api.themes.ThemeService.import_tr",
+        with patch("trcc.ui.api.themes.ThemeService.import_tr",
                    side_effect=RuntimeError("/home/user/.trcc/data/secret")), \
              patch("trcc.core.paths.resolve_theme_dir") as mock_td:
             mock_td.return_value = MagicMock(path="/tmp", __str__=lambda s: "/tmp")
@@ -2273,8 +2285,8 @@ class TestDisplayHappyPaths(unittest.TestCase):
         api_module._system_svc = self._saved_system_svc
         TrccApp.reset()
 
-    @patch('trcc.api.stop_overlay_loop')
-    @patch('trcc.api.stop_video_playback')
+    @patch('trcc.ui.api.stop_overlay_loop')
+    @patch('trcc.ui.api.stop_video_playback')
     def test_set_color_success(self, _sv, _so) -> None:
         self.mock_lcd.send_color.return_value = {
             "success": True, "message": "Sent color (255, 0, 0)"}
@@ -2283,8 +2295,8 @@ class TestDisplayHappyPaths(unittest.TestCase):
         self.assertTrue(resp.json()["success"])
         self.mock_lcd.send_color.assert_called_once_with(255, 0, 0)
 
-    @patch('trcc.api.stop_overlay_loop')
-    @patch('trcc.api.stop_video_playback')
+    @patch('trcc.ui.api.stop_overlay_loop')
+    @patch('trcc.ui.api.stop_video_playback')
     def test_set_color_with_hash_prefix(self, _sv, _so) -> None:
         self.mock_lcd.send_color.return_value = {
             "success": True, "message": "Sent"}
@@ -2350,8 +2362,8 @@ class TestDisplayHappyPaths(unittest.TestCase):
         self.assertTrue(resp.json()["success"])
         self.mock_lcd.set_split_mode.assert_called_once_with(1)
 
-    @patch('trcc.api.stop_overlay_loop')
-    @patch('trcc.api.stop_video_playback')
+    @patch('trcc.ui.api.stop_overlay_loop')
+    @patch('trcc.ui.api.stop_video_playback')
     def test_reset_success(self, _sv, _so) -> None:
         self.mock_lcd.reset.return_value = {
             "success": True, "message": "Device reset"}
@@ -2387,8 +2399,8 @@ class TestDisplayHappyPaths(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()["success"])
 
-    @patch('trcc.api.stop_overlay_loop')
-    @patch('trcc.api.stop_video_playback')
+    @patch('trcc.ui.api.stop_overlay_loop')
+    @patch('trcc.ui.api.stop_video_playback')
     def test_color_stops_video_and_overlay(self, mock_sv, mock_so) -> None:
         """Sending color stops any running video/overlay."""
         self.mock_lcd.send_color.return_value = {
@@ -2880,8 +2892,8 @@ class TestDisplayTestEndpoint(unittest.TestCase):
 
     @patch('time.sleep')
     @patch('trcc.services.ImageService.solid_color')
-    @patch('trcc.api.stop_overlay_loop')
-    @patch('trcc.api.stop_video_playback')
+    @patch('trcc.ui.api.stop_overlay_loop')
+    @patch('trcc.ui.api.stop_video_playback')
     def test_display_test_success(self, mock_stop_v, mock_stop_o, mock_solid, mock_sleep):
         from trcc.core.app import TrccApp
 
@@ -2930,7 +2942,7 @@ class TestScreencast(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 409)
 
-    @patch('trcc.api.start_screencast', return_value={"success": True, "backend": "x11"})
+    @patch('trcc.ui.api.start_screencast', return_value={"success": True, "backend": "x11"})
     def test_start_success(self, mock_start):
         mock_lcd = MagicMock()
         mock_lcd.connected = True
@@ -2947,7 +2959,7 @@ class TestScreencast(unittest.TestCase):
 
         api_module._device_dispatcher = None
 
-    @patch('trcc.api.start_screencast',
+    @patch('trcc.ui.api.start_screencast',
            return_value={"success": False, "error": "ffmpeg not found"})
     def test_start_failure_returns_400(self, mock_start):
         mock_lcd = MagicMock()
@@ -2963,7 +2975,7 @@ class TestScreencast(unittest.TestCase):
         api_module._device_dispatcher = None
 
     def test_stop_returns_200(self):
-        with patch('trcc.api.stop_screencast') as mock_stop:
+        with patch('trcc.ui.api.stop_screencast') as mock_stop:
             resp = self.client.post("/display/screencast/stop")
         self.assertEqual(resp.status_code, 200)
         mock_stop.assert_called_once()

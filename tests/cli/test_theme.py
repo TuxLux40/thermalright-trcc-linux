@@ -1,4 +1,4 @@
-"""Tests for trcc.cli._theme — theme discovery, loading, save, export, import."""
+"""Tests for trcc.ui.cli._theme — theme discovery, loading, save, export, import."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,7 +17,7 @@ from trcc.ui.cli._theme import (
 # ===========================================================================
 # Shared patch targets
 # All imports in _theme.py are local (inside function bodies), so we patch
-# the canonical module locations rather than trcc.cli._theme.*
+# the canonical module locations rather than trcc.ui.cli._theme.*
 # ===========================================================================
 
 _PATCH_SETTINGS = "trcc.conf.settings"
@@ -33,7 +33,7 @@ _PATCH_IMAGE_SVC = "trcc.services.ImageService"
 
 _PATCH_RESOLVE_THEME_DIR = "trcc.core.paths.resolve_theme_dir"
 _PATCH_HAS_THEMES = "trcc.core.paths.has_themes"
-_PATCH_GET_DEVICE_CFG = "trcc.cli._theme._get_device_cfg"
+_PATCH_GET_DEVICE_CFG = "trcc.ui.cli._theme._get_device_cfg"
 
 
 class TestListThemes:
@@ -429,8 +429,8 @@ class TestLoadTheme:
             "success": True, "image": img, "is_animated": False}
 
         mock_svc = MagicMock()
-        with patch("trcc.cli._ensure_system"), \
-             patch("trcc.cli._system_svc", mock_svc):
+        with patch("trcc.ui.cli._ensure_system"), \
+             patch("trcc.ui.cli._system_svc", mock_svc):
             load_theme(MagicMock(), "Theme1")
 
         call_kwargs = mock_app.lcd.keep_alive_loop.call_args[1]

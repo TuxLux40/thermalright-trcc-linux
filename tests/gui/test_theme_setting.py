@@ -62,19 +62,19 @@ def _patch_theme_assets(qapp):
         return QPixmap()
 
     with (
-        patch("trcc.gui.overlay_element.Assets.load_pixmap",
+        patch("trcc.ui.gui.overlay_element.Assets.load_pixmap",
               side_effect=_null_pixmap),
-        patch("trcc.gui.overlay_grid.Assets.load_pixmap",
+        patch("trcc.ui.gui.overlay_grid.Assets.load_pixmap",
               side_effect=_null_pixmap),
-        patch("trcc.gui.color_and_add_panels.Assets.load_pixmap",
+        patch("trcc.ui.gui.color_and_add_panels.Assets.load_pixmap",
               side_effect=_null_pixmap),
-        patch("trcc.gui.display_mode_panels.Assets.load_pixmap",
+        patch("trcc.ui.gui.display_mode_panels.Assets.load_pixmap",
               side_effect=_null_pixmap),
-        patch("trcc.gui.display_mode_panels.set_background_pixmap"),
-        patch("trcc.gui.color_and_add_panels.set_background_pixmap"),
-        patch("trcc.gui.uc_theme_local.Assets.load_pixmap",
+        patch("trcc.ui.gui.display_mode_panels.set_background_pixmap"),
+        patch("trcc.ui.gui.color_and_add_panels.set_background_pixmap"),
+        patch("trcc.ui.gui.uc_theme_local.Assets.load_pixmap",
               side_effect=_null_pixmap),
-        patch("trcc.gui.base.set_background_pixmap"),
+        patch("trcc.ui.gui.base.set_background_pixmap"),
     ):
         yield
 
@@ -1215,7 +1215,7 @@ class TestUCThemeLocal:
         panel._on_timer_changed()
         assert panel._slideshow_interval == 3
 
-    @patch("trcc.gui.uc_theme_local.shutil.rmtree")
+    @patch("trcc.ui.gui.uc_theme_local.shutil.rmtree")
     def test_delete_theme(self, mock_rmtree, qapp, tmp_path, make_local_item):
         theme_dir = tmp_path / "themes"
         theme_dir.mkdir()

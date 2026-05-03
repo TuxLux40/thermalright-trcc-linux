@@ -19,7 +19,7 @@ class TestControllerBuilderLcd(unittest.TestCase):
     def test_build_device_returns_lcd_device(self, _):
         """build_device() returns an LCD Device instance."""
         from trcc.core.device import Device
-        device = _make_builder().with_renderer(ImageService._r()).build_device()
+        device = _make_builder().with_renderer(ImageService.renderer()).build_device()
         self.assertIsInstance(device, Device)
         self.assertTrue(device.is_lcd)
 
@@ -32,25 +32,25 @@ class TestControllerBuilderLcd(unittest.TestCase):
     @patch('trcc.adapters.infra.data_repository.DataManager.ensure_all')
     def test_build_device_wires_device_service(self, _):
         """Device has a wired DeviceService."""
-        device = _make_builder().with_renderer(ImageService._r()).build_device()
+        device = _make_builder().with_renderer(ImageService.renderer()).build_device()
         self.assertIsNotNone(device._device_svc)
 
     @patch('trcc.adapters.infra.data_repository.DataManager.ensure_all')
     def test_build_device_wires_display_service(self, _):
         """Device has a wired DisplayService."""
-        device = _make_builder().with_renderer(ImageService._r()).build_device()
+        device = _make_builder().with_renderer(ImageService.renderer()).build_device()
         self.assertIsNotNone(device._display_svc)
 
     @patch('trcc.adapters.infra.data_repository.DataManager.ensure_all')
     def test_build_device_wires_theme_service(self, _):
         """Device has a wired ThemeService."""
-        device = _make_builder().with_renderer(ImageService._r()).build_device()
+        device = _make_builder().with_renderer(ImageService.renderer()).build_device()
         self.assertIsNotNone(device._theme_svc)
 
     @patch('trcc.adapters.infra.data_repository.DataManager.ensure_all')
     def test_build_device_wires_renderer(self, _):
         """Device has the injected renderer."""
-        renderer = ImageService._r()
+        renderer = ImageService.renderer()
         device = _make_builder().with_renderer(renderer).build_device()
         self.assertIs(device._renderer, renderer)
 
@@ -61,7 +61,7 @@ class TestControllerBuilderLcd(unittest.TestCase):
         from pathlib import Path
         with tempfile.TemporaryDirectory() as d:
             device = (_make_builder()
-                      .with_renderer(ImageService._r())
+                      .with_renderer(ImageService.renderer())
                       .with_data_dir(Path(d))
                       .build_device())
             # initialize was called (ensure_all is the data download step)
@@ -70,7 +70,7 @@ class TestControllerBuilderLcd(unittest.TestCase):
     @patch('trcc.adapters.infra.data_repository.DataManager.ensure_all')
     def test_build_device_without_data_dir_skips_initialize(self, mock_ensure):
         """Without with_data_dir(), initialize is not called."""
-        device = _make_builder().with_renderer(ImageService._r()).build_device()
+        device = _make_builder().with_renderer(ImageService.renderer()).build_device()
         # No crash, device built without initialization
         self.assertIsNotNone(device)
 
@@ -181,7 +181,7 @@ class TestControllerBuilderFluent(unittest.TestCase):
         """Full fluent chain builds successfully."""
         from trcc.core.device import Device
         device = (_make_builder()
-                  .with_renderer(ImageService._r())
+                  .with_renderer(ImageService.renderer())
                   .build_device())
         self.assertIsInstance(device, Device)
         self.assertTrue(device.is_lcd)
@@ -262,7 +262,7 @@ class TestBuilderPsutilFallback(unittest.TestCase):
         import sys
 
         from trcc.services.image import ImageService
-        renderer = ImageService._r()
+        renderer = ImageService.renderer()
         with patch.dict(sys.modules, {'psutil': None}):
             device = _make_builder().with_renderer(renderer).build_device()
         self.assertIsNotNone(device._display_svc)

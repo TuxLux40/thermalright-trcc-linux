@@ -279,11 +279,11 @@ def mock_assets():
         "get_localized": MagicMock(return_value="fake"),
     }
     modules = [
-        "trcc.gui.uc_color_wheel.Assets",
-        "trcc.gui.uc_screen_led.Assets",
-        "trcc.gui.uc_led_control.Assets",
-        "trcc.gui.uc_system_info.Assets",
-        "trcc.gui.lcd_handler.Assets",
+        "trcc.ui.gui.uc_color_wheel.Assets",
+        "trcc.ui.gui.uc_screen_led.Assets",
+        "trcc.ui.gui.uc_led_control.Assets",
+        "trcc.ui.gui.uc_system_info.Assets",
+        "trcc.ui.gui.lcd_handler.Assets",
     ]
     patches = [patch(m, **defaults) for m in modules]
     mocks = [p.start() for p in patches]

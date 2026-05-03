@@ -127,8 +127,8 @@ class TestSystemInfoPanel:
         """Create a SystemInfoPanel with mocked Assets."""
         config = make_panel_config()
         with (
-            patch("trcc.gui.uc_system_info.Assets") as mock_assets,
-            patch("trcc.gui.uc_system_info.set_background_pixmap"),
+            patch("trcc.ui.gui.uc_system_info.Assets") as mock_assets,
+            patch("trcc.ui.gui.uc_system_info.set_background_pixmap"),
         ):
             mock_assets.load_pixmap.return_value = QPixmap()
             p = SystemInfoPanel(config)
@@ -139,8 +139,8 @@ class TestSystemInfoPanel:
         """Create a custom (deletable) SystemInfoPanel."""
         config = make_custom_panel_config()
         with (
-            patch("trcc.gui.uc_system_info.Assets") as mock_assets,
-            patch("trcc.gui.uc_system_info.set_background_pixmap"),
+            patch("trcc.ui.gui.uc_system_info.Assets") as mock_assets,
+            patch("trcc.ui.gui.uc_system_info.set_background_pixmap"),
         ):
             mock_assets.load_pixmap.return_value = QPixmap()
             p = SystemInfoPanel(config)
@@ -226,8 +226,8 @@ class TestSystemInfoPanel:
             sensors=[SensorBinding("X", "", "")],
         )
         with (
-            patch("trcc.gui.uc_system_info.Assets") as mock_assets,
-            patch("trcc.gui.uc_system_info.set_background_pixmap"),
+            patch("trcc.ui.gui.uc_system_info.Assets") as mock_assets,
+            patch("trcc.ui.gui.uc_system_info.set_background_pixmap"),
         ):
             mock_assets.load_pixmap.return_value = QPixmap()
             p = SystemInfoPanel(config)
@@ -241,8 +241,8 @@ class TestSystemInfoPanel:
             sensors=[SensorBinding("CPUFAN", "hwmon:nct6798:fan1", "RPM")],
         )
         with (
-            patch("trcc.gui.uc_system_info.Assets") as mock_assets,
-            patch("trcc.gui.uc_system_info.set_background_pixmap"),
+            patch("trcc.ui.gui.uc_system_info.Assets") as mock_assets,
+            patch("trcc.ui.gui.uc_system_info.set_background_pixmap"),
         ):
             mock_assets.load_pixmap.return_value = QPixmap()
             p = SystemInfoPanel(config)
@@ -256,8 +256,8 @@ class TestSystemInfoPanel:
             sensors=[SensorBinding("VCORE", "hwmon:nct6798:in0", "V")],
         )
         with (
-            patch("trcc.gui.uc_system_info.Assets") as mock_assets,
-            patch("trcc.gui.uc_system_info.set_background_pixmap"),
+            patch("trcc.ui.gui.uc_system_info.Assets") as mock_assets,
+            patch("trcc.ui.gui.uc_system_info.set_background_pixmap"),
         ):
             mock_assets.load_pixmap.return_value = QPixmap()
             p = SystemInfoPanel(config)
@@ -271,8 +271,8 @@ class TestSystemInfoPanel:
             sensors=[SensorBinding("Available", "psutil:mem_avail", "MB")],
         )
         with (
-            patch("trcc.gui.uc_system_info.Assets") as mock_assets,
-            patch("trcc.gui.uc_system_info.set_background_pixmap"),
+            patch("trcc.ui.gui.uc_system_info.Assets") as mock_assets,
+            patch("trcc.ui.gui.uc_system_info.set_background_pixmap"),
         ):
             mock_assets.load_pixmap.return_value = QPixmap()
             p = SystemInfoPanel(config)
@@ -286,8 +286,8 @@ class TestSystemInfoPanel:
             sensors=[SensorBinding("UP", "computed:net_up", "KB/s")],
         )
         with (
-            patch("trcc.gui.uc_system_info.Assets") as mock_assets,
-            patch("trcc.gui.uc_system_info.set_background_pixmap"),
+            patch("trcc.ui.gui.uc_system_info.Assets") as mock_assets,
+            patch("trcc.ui.gui.uc_system_info.set_background_pixmap"),
         ):
             mock_assets.load_pixmap.return_value = QPixmap()
             p = SystemInfoPanel(config)
@@ -301,8 +301,8 @@ class TestSystemInfoPanel:
             sensors=[SensorBinding("Read", "computed:disk_read", "MB/s")],
         )
         with (
-            patch("trcc.gui.uc_system_info.Assets") as mock_assets,
-            patch("trcc.gui.uc_system_info.set_background_pixmap"),
+            patch("trcc.ui.gui.uc_system_info.Assets") as mock_assets,
+            patch("trcc.ui.gui.uc_system_info.set_background_pixmap"),
         ):
             mock_assets.load_pixmap.return_value = QPixmap()
             p = SystemInfoPanel(config)
@@ -317,8 +317,8 @@ class TestSystemInfoPanel:
             sensors=[SensorBinding("X", "some:sensor", "units")],
         )
         with (
-            patch("trcc.gui.uc_system_info.Assets") as mock_assets,
-            patch("trcc.gui.uc_system_info.set_background_pixmap"),
+            patch("trcc.ui.gui.uc_system_info.Assets") as mock_assets,
+            patch("trcc.ui.gui.uc_system_info.set_background_pixmap"),
         ):
             mock_assets.load_pixmap.return_value = QPixmap()
             p = SystemInfoPanel(config)
@@ -398,8 +398,8 @@ class TestUCSystemInfo:
         """Create UCSystemInfo with mocked dependencies."""
         config_path = tmp_path / "system_config.json"
         with (
-            patch("trcc.gui.uc_system_info.Assets") as mock_assets,
-            patch("trcc.gui.uc_system_info.set_background_pixmap"),
+            patch("trcc.ui.gui.uc_system_info.Assets") as mock_assets,
+            patch("trcc.ui.gui.uc_system_info.set_background_pixmap"),
             patch.object(SysInfoConfig, "CONFIG_PATH", config_path),
         ):
             mock_assets.load_pixmap.return_value = QPixmap()
@@ -502,8 +502,8 @@ class TestUCSystemInfo:
         count_before = len(sysinfo._config.panels)
         with (
             patch.object(SysInfoConfig, "save"),
-            patch("trcc.gui.uc_system_info.Assets") as mock_a,
-            patch("trcc.gui.uc_system_info.set_background_pixmap"),
+            patch("trcc.ui.gui.uc_system_info.Assets") as mock_a,
+            patch("trcc.ui.gui.uc_system_info.set_background_pixmap"),
         ):
             mock_a.load_pixmap.return_value = QPixmap()
             # Create a panel widget for deletion
@@ -1255,14 +1255,14 @@ class TestScreencastHandler:
 
     def test_toggle_on_starts_timer(self, handler):
         with patch.object(handler, "_try_start_pipewire"):
-            with patch("trcc.gui.screen_capture.is_wayland", return_value=False):
+            with patch("trcc.ui.gui.screen_capture.is_wayland", return_value=False):
                 handler.toggle(True)
         assert handler.active is True
         assert handler._timer.isActive()
         handler.stop()
 
     def test_toggle_off_stops_timer(self, handler):
-        with patch("trcc.gui.screen_capture.is_wayland", return_value=False):
+        with patch("trcc.ui.gui.screen_capture.is_wayland", return_value=False):
             handler.toggle(True)
         handler.toggle(False)
         assert handler.active is False
@@ -1322,7 +1322,7 @@ class TestDevicePollLEDAutoSelect:
     showed all zeros until the user manually clicked the device button.
     """
 
-    @patch('trcc.gui.trcc_app.Settings')
+    @patch('trcc.ui.gui.trcc_app.Settings')
     def test_auto_select_led_calls_show(self, mock_settings, bare_trcc_app):
         """When _activate_device selects an LED path, handler.show() is called
         if the handler is not yet active."""
@@ -1371,7 +1371,7 @@ class TestActivateDeviceLCDGuard:
         mock_handler.view_name = 'lcd'
         return mock_handler
 
-    @patch('trcc.gui.trcc_app.Settings')
+    @patch('trcc.ui.gui.trcc_app.Settings')
     def test_apply_device_config_called_on_first_activation(self, mock_settings,
                                                              bare_trcc_app):
         """apply_device_config is called when device_key is empty (first activation)."""
@@ -1387,7 +1387,7 @@ class TestActivateDeviceLCDGuard:
 
         handler.apply_device_config.assert_called_once()
 
-    @patch('trcc.gui.trcc_app.Settings')
+    @patch('trcc.ui.gui.trcc_app.Settings')
     def test_apply_device_config_skipped_when_already_initialized(self, mock_settings,
                                                                    bare_trcc_app):
         """apply_device_config is NOT called when device_key is already set (re-navigation)."""
@@ -1403,7 +1403,7 @@ class TestActivateDeviceLCDGuard:
 
         handler.apply_device_config.assert_not_called()
 
-    @patch('trcc.gui.trcc_app.Settings')
+    @patch('trcc.ui.gui.trcc_app.Settings')
     def test_reactivate_called_when_already_initialized(self, mock_settings,
                                                          bare_trcc_app):
         """reactivate() is called instead of apply_device_config on re-navigation."""
@@ -1419,7 +1419,7 @@ class TestActivateDeviceLCDGuard:
 
         handler.reactivate.assert_called_once_with(320, 320)
 
-    @patch('trcc.gui.trcc_app.Settings')
+    @patch('trcc.ui.gui.trcc_app.Settings')
     def test_saves_last_device_on_activate(self, mock_settings, bare_trcc_app):
         """_activate_device persists device index via Settings.save_last_device."""
         handler = self._make_lcd_handler(device_key='k')
@@ -1454,7 +1454,7 @@ class TestRebuildAllHandlersRestore:
         mock_handler.view_name = 'lcd'
         return mock_handler
 
-    @patch('trcc.gui.trcc_app.Settings')
+    @patch('trcc.ui.gui.trcc_app.Settings')
     def test_restores_last_device(self, mock_settings, bare_trcc_app):
         mock_settings.get_last_device.return_value = 1
 
@@ -1479,7 +1479,7 @@ class TestRebuildAllHandlersRestore:
         )
         assert target == 'path1'
 
-    @patch('trcc.gui.trcc_app.Settings')
+    @patch('trcc.ui.gui.trcc_app.Settings')
     def test_falls_back_to_first_lcd(self, mock_settings, bare_trcc_app):
         mock_settings.get_last_device.return_value = 99  # Not found
 
@@ -1497,7 +1497,7 @@ class TestRebuildAllHandlersRestore:
         )
         assert target is None  # Falls back to first LCD logic
 
-    @patch('trcc.gui.trcc_app.Settings')
+    @patch('trcc.ui.gui.trcc_app.Settings')
     def test_restores_inactive_lcd_themes(self, mock_settings, bare_trcc_app):
         """Inactive LCD devices get their saved theme sent to hardware on startup."""
         mock_settings.get_last_device.return_value = 0

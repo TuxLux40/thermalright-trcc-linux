@@ -54,7 +54,7 @@ class TestMainEntryPoint(unittest.TestCase):
     def test_detect_dispatches(self):
         """'detect' subcommand calls _device.detect()."""
         with patch('sys.argv', ['trcc', 'detect']), \
-             patch('trcc.cli._device.detect', return_value=0) as mock_detect:
+             patch('trcc.ui.cli._device.detect', return_value=0) as mock_detect:
             result = main()
             mock_detect.assert_called_once_with(show_all=False)
             self.assertEqual(result, 0)
@@ -62,14 +62,14 @@ class TestMainEntryPoint(unittest.TestCase):
     def test_detect_all_flag(self):
         """'detect --all' passes show_all=True."""
         with patch('sys.argv', ['trcc', 'detect', '--all']), \
-             patch('trcc.cli._device.detect', return_value=0) as mock_detect:
+             patch('trcc.ui.cli._device.detect', return_value=0) as mock_detect:
             main()
             mock_detect.assert_called_once_with(show_all=True)
 
     def test_select_dispatches(self):
         """'select 2' dispatches with number=2."""
         with patch('sys.argv', ['trcc', 'select', '2']), \
-             patch('trcc.cli._device.select', return_value=0) as mock_sel:
+             patch('trcc.ui.cli._device.select', return_value=0) as mock_sel:
             main()
             mock_sel.assert_called_once_with(2)
 
@@ -77,7 +77,7 @@ class TestMainEntryPoint(unittest.TestCase):
         """'color ff0000' passes hex and device."""
         from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'color', 'ff0000']), \
-             patch('trcc.cli._display.send_color', return_value=0) as mock_color:
+             patch('trcc.ui.cli._display.send_color', return_value=0) as mock_color:
             main()
             # CLI passes TrccApp.get() as first arg (builder) since refactor
             mock_color.assert_called_once_with(ANY, 'ff0000', device=None, preview=False)
@@ -85,14 +85,14 @@ class TestMainEntryPoint(unittest.TestCase):
     def test_info_dispatches(self):
         """'info' subcommand dispatches to _system.show_info."""
         with patch('sys.argv', ['trcc', 'info']), \
-             patch('trcc.cli._system.show_info', return_value=0) as mock_info:
+             patch('trcc.ui.cli._system.show_info', return_value=0) as mock_info:
             main()
             mock_info.assert_called_once()
 
     def test_gui_dispatches(self):
         """'gui' subcommand dispatches to gui()."""
         with patch('sys.argv', ['trcc', 'gui']), \
-             patch('trcc.cli.gui', return_value=0) as mock_gui:
+             patch('trcc.ui.cli.gui', return_value=0) as mock_gui:
             main()
             mock_gui.assert_called_once()
 
@@ -106,7 +106,7 @@ class TestMainEntryPoint(unittest.TestCase):
         init_calls = []
 
         with patch('sys.argv', ['trcc', 'gui']), \
-             patch('trcc.cli.gui', return_value=0), \
+             patch('trcc.ui.cli.gui', return_value=0), \
              patch('trcc.core.app.TrccApp.init') as mock_init:
             mock_app = MagicMock()
             mock_app.init_platform.side_effect = lambda **kw: init_calls.append(kw)
@@ -125,7 +125,7 @@ class TestMainEntryPoint(unittest.TestCase):
         init_calls = []
 
         with patch('sys.argv', ['trcc', 'detect']), \
-             patch('trcc.cli._device.detect', return_value=0), \
+             patch('trcc.ui.cli._device.detect', return_value=0), \
              patch('trcc.core.app.TrccApp.init') as mock_init:
             mock_app = MagicMock()
             mock_app.init_platform.side_effect = lambda **kw: init_calls.append(kw)
@@ -138,7 +138,7 @@ class TestMainEntryPoint(unittest.TestCase):
     def test_download_list(self):
         """'download --list' dispatches with show_list=True."""
         with patch('sys.argv', ['trcc', 'download', '--list']), \
-             patch('trcc.cli._system.download_themes', return_value=0) as mock_dl:
+             patch('trcc.ui.cli._system.download_themes', return_value=0) as mock_dl:
             main()
             mock_dl.assert_called_once_with(
                 pack=None, show_list=True, force=False, show_info=False
@@ -146,7 +146,7 @@ class TestMainEntryPoint(unittest.TestCase):
 
     def test_download_pack(self):
         with patch('sys.argv', ['trcc', 'download', 'themes-320', '--force']), \
-             patch('trcc.cli._system.download_themes', return_value=0) as mock_dl:
+             patch('trcc.ui.cli._system.download_themes', return_value=0) as mock_dl:
             main()
             mock_dl.assert_called_once_with(
                 pack='themes-320', show_list=False, force=True, show_info=False
@@ -156,49 +156,49 @@ class TestMainEntryPoint(unittest.TestCase):
 class TestMainDispatch(unittest.TestCase):
     """Cover main() dispatch branches for test, send, color, info, reset, setup-udev."""
 
-    @patch('trcc.cli._display.test', return_value=0)
+    @patch('trcc.ui.cli._display.test', return_value=0)
     def test_dispatch_test(self, mock_fn):
         with patch('sys.argv', ['trcc', 'test']):
             result = main()
         mock_fn.assert_called_once()
         self.assertEqual(result, 0)
 
-    @patch('trcc.cli._display.send_image', return_value=0)
+    @patch('trcc.ui.cli._display.send_image', return_value=0)
     def test_dispatch_send(self, mock_fn):
         with patch('sys.argv', ['trcc', 'send', 'image.png']):
             result = main()
         mock_fn.assert_called_once()
         self.assertEqual(result, 0)
 
-    @patch('trcc.cli._display.send_color', return_value=0)
+    @patch('trcc.ui.cli._display.send_color', return_value=0)
     def test_dispatch_color(self, mock_fn):
         with patch('sys.argv', ['trcc', 'color', 'ff0000']):
             result = main()
         mock_fn.assert_called_once()
         self.assertEqual(result, 0)
 
-    @patch('trcc.cli._system.show_info', return_value=0)
+    @patch('trcc.ui.cli._system.show_info', return_value=0)
     def test_dispatch_info(self, mock_fn):
         with patch('sys.argv', ['trcc', 'info']):
             result = main()
         mock_fn.assert_called_once()
         self.assertEqual(result, 0)
 
-    @patch('trcc.cli._display.reset', return_value=0)
+    @patch('trcc.ui.cli._display.reset', return_value=0)
     def test_dispatch_reset(self, mock_fn):
         with patch('sys.argv', ['trcc', 'reset']):
             result = main()
         mock_fn.assert_called_once()
         self.assertEqual(result, 0)
 
-    @patch('trcc.cli._system.setup_udev', return_value=0)
+    @patch('trcc.ui.cli._system.setup_udev', return_value=0)
     def test_dispatch_setup_udev(self, mock_fn):
         with patch('sys.argv', ['trcc', 'setup-udev', '--dry-run']):
             result = main()
         mock_fn.assert_called_once()
         self.assertEqual(result, 0)
 
-    @patch('trcc.cli._system.download_themes', return_value=0)
+    @patch('trcc.ui.cli._system.download_themes', return_value=0)
     def test_dispatch_download(self, mock_fn):
         with patch('sys.argv', ['trcc', 'download', '--list']):
             result = main()
@@ -213,7 +213,7 @@ class TestNewCommandDispatch(unittest.TestCase):
         """'brightness 2' calls _display.set_brightness(2)."""
         from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'brightness', '2']), \
-             patch('trcc.cli._display.set_brightness',
+             patch('trcc.ui.cli._display.set_brightness',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with(ANY, 2, device=None)
@@ -222,7 +222,7 @@ class TestNewCommandDispatch(unittest.TestCase):
         """'rotation 90' calls _display.set_rotation(90)."""
         from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'rotation', '90']), \
-             patch('trcc.cli._display.set_rotation',
+             patch('trcc.ui.cli._display.set_rotation',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with(ANY, 90, device=None)
@@ -230,7 +230,7 @@ class TestNewCommandDispatch(unittest.TestCase):
     def test_theme_list_dispatches(self):
         """'theme-list' calls _theme.list_themes()."""
         with patch('sys.argv', ['trcc', 'theme-list']), \
-             patch('trcc.cli._theme.list_themes',
+             patch('trcc.ui.cli._theme.list_themes',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with()
@@ -239,7 +239,7 @@ class TestNewCommandDispatch(unittest.TestCase):
         """'theme-load myTheme' calls _theme.load_theme()."""
         from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'theme-load', 'myTheme']), \
-             patch('trcc.cli._theme.load_theme',
+             patch('trcc.ui.cli._theme.load_theme',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with(ANY, 'myTheme', device=None, preview=False)
@@ -248,7 +248,7 @@ class TestNewCommandDispatch(unittest.TestCase):
         """'led-color ff0000' calls _led.set_color()."""
         from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'led-color', 'ff0000']), \
-             patch('trcc.cli._led.set_color',
+             patch('trcc.ui.cli._led.set_color',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with(ANY, 'ff0000', preview=False)
@@ -257,7 +257,7 @@ class TestNewCommandDispatch(unittest.TestCase):
         """'led-mode rainbow' calls _led.set_mode()."""
         from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'led-mode', 'rainbow']), \
-             patch('trcc.cli._led.set_mode',
+             patch('trcc.ui.cli._led.set_mode',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with(ANY, 'rainbow', preview=False)
@@ -266,7 +266,7 @@ class TestNewCommandDispatch(unittest.TestCase):
         """'led-brightness 50' calls _led.set_led_brightness()."""
         from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'led-brightness', '50']), \
-             patch('trcc.cli._led.set_led_brightness',
+             patch('trcc.ui.cli._led.set_led_brightness',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with(ANY, 50, preview=False)
@@ -274,7 +274,7 @@ class TestNewCommandDispatch(unittest.TestCase):
     def test_led_off_dispatches(self):
         """'led-off' calls _led.led_off()."""
         with patch('sys.argv', ['trcc', 'led-off']), \
-             patch('trcc.cli._led.led_off',
+             patch('trcc.ui.cli._led.led_off',
                           return_value=0) as mock:
             main()
             mock.assert_called_once()
@@ -283,7 +283,7 @@ class TestNewCommandDispatch(unittest.TestCase):
         """'screencast' calls _display.screencast()."""
         from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'screencast']), \
-             patch('trcc.cli._display.screencast',
+             patch('trcc.ui.cli._display.screencast',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with(
@@ -293,7 +293,7 @@ class TestNewCommandDispatch(unittest.TestCase):
         """'mask /tmp/m.png' calls _display.load_mask()."""
         from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'mask', '/tmp/m.png']), \
-             patch('trcc.cli._display.load_mask',
+             patch('trcc.ui.cli._display.load_mask',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with(ANY, '/tmp/m.png', device=None, preview=False)
@@ -302,7 +302,7 @@ class TestNewCommandDispatch(unittest.TestCase):
         """'overlay /tmp/dc' calls _display.render_overlay()."""
         from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'overlay', '/tmp/dc']), \
-             patch('trcc.cli._display.render_overlay',
+             patch('trcc.ui.cli._display.render_overlay',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with(
@@ -311,7 +311,7 @@ class TestNewCommandDispatch(unittest.TestCase):
     def test_theme_save_dispatches(self):
         """'theme-save MyTheme' routes through _cmd_theme(save='MyTheme')."""
         with patch('sys.argv', ['trcc', 'theme-save', 'MyTheme']), \
-             patch('trcc.cli._theme.save_theme',
+             patch('trcc.ui.cli._theme.save_theme',
                           return_value=0) as mock:
             main()
             mock.assert_called_once()
@@ -320,7 +320,7 @@ class TestNewCommandDispatch(unittest.TestCase):
     def test_theme_export_dispatches(self):
         """'theme-export Foo /tmp/out.tr' calls _theme.export_theme()."""
         with patch('sys.argv', ['trcc', 'theme-export', 'Foo', '/tmp/out.tr']), \
-             patch('trcc.cli._theme.export_theme',
+             patch('trcc.ui.cli._theme.export_theme',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with('Foo', '/tmp/out.tr')
@@ -328,7 +328,7 @@ class TestNewCommandDispatch(unittest.TestCase):
     def test_theme_import_dispatches(self):
         """'theme-import /tmp/t.tr' calls _theme.import_theme()."""
         with patch('sys.argv', ['trcc', 'theme-import', '/tmp/t.tr']), \
-             patch('trcc.cli._theme.import_theme',
+             patch('trcc.ui.cli._theme.import_theme',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with('/tmp/t.tr', device=None)
@@ -337,7 +337,7 @@ class TestNewCommandDispatch(unittest.TestCase):
         """'led-sensor cpu' calls _led.set_sensor_source()."""
         from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'led-sensor', 'cpu']), \
-             patch('trcc.cli._led.set_sensor_source',
+             patch('trcc.ui.cli._led.set_sensor_source',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with(ANY, 'cpu')
@@ -352,13 +352,13 @@ class TestGui(unittest.TestCase):
 
     def test_gui_generic_exception(self):
         """Non-import exception -> returns 1."""
-        with patch('trcc.gui.launch', side_effect=RuntimeError('display error')):
+        with patch('trcc.ui.gui.launch', side_effect=RuntimeError('display error')):
             result = gui()
         self.assertEqual(result, 1)
 
     def test_gui_success(self):
         """Successful launch returns launch's value."""
-        with patch('trcc.gui.launch', return_value=0):
+        with patch('trcc.ui.gui.launch', return_value=0):
             result = gui()
         self.assertEqual(result, 0)
 
@@ -368,7 +368,7 @@ class TestGuiExtra(unittest.TestCase):
 
     def test_gui_import_error(self):
         """PySide6 not importable -> returns 1."""
-        with patch.dict('sys.modules', {'trcc.gui': None}):
+        with patch.dict('sys.modules', {'trcc.ui.gui': None}):
             result = gui()
         self.assertEqual(result, 1)
 
@@ -394,7 +394,7 @@ class TestTestDisplay(unittest.TestCase):
 
     def test_display_error(self):
         """_connect_or_fail() returning 1 propagates as exit code 1."""
-        with patch('trcc.cli._display._connect_or_fail', return_value=1):
+        with patch('trcc.ui.cli._display._connect_or_fail', return_value=1):
             result = cli_test_display()
         self.assertEqual(result, 1)
 
@@ -458,7 +458,7 @@ class TestMaskClear(unittest.TestCase):
         """'mask --clear' sends solid black."""
         from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'mask', '--clear']), \
-             patch('trcc.cli._display.send_color',
+             patch('trcc.ui.cli._display.send_color',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with(ANY, '#000000', device=None, preview=False)
@@ -559,7 +559,7 @@ class TestHidDebug(unittest.TestCase):
 
     def test_dispatch_hid_debug(self):
         """main() dispatches 'hid-debug' to _diag.hid_debug()."""
-        with patch('trcc.cli._diag.device_debug', return_value=0) as mock_fn, \
+        with patch('trcc.ui.cli._diag.device_debug', return_value=0) as mock_fn, \
              patch('sys.argv', ['trcc', 'hid-debug']):
             result = main()
         self.assertEqual(result, 0)
@@ -619,7 +619,7 @@ class TestLedDebug(unittest.TestCase):
 
     def test_dispatch_led_debug(self):
         """main() dispatches 'led-debug' to _diag.led_debug()."""
-        with patch('trcc.cli._diag.led_debug_interactive', return_value=0) as mock_fn, \
+        with patch('trcc.ui.cli._diag.led_debug_interactive', return_value=0) as mock_fn, \
              patch('sys.argv', ['trcc', 'led-debug']):
             result = main()
         self.assertEqual(result, 0)
@@ -705,21 +705,21 @@ class TestSettingsCorruptJSON(unittest.TestCase):
 class TestI18nDispatch(unittest.TestCase):
     """Test main() dispatch for lang/lang-set/lang-list commands."""
 
-    @patch('trcc.cli._i18n.get_languages', return_value=0)
+    @patch('trcc.ui.cli._i18n.get_languages', return_value=0)
     def test_dispatch_lang_list(self, mock_fn):
         with patch('sys.argv', ['trcc', 'lang-list']):
             result = main()
         mock_fn.assert_called_once()
         self.assertEqual(result, 0)
 
-    @patch('trcc.cli._i18n.get_language', return_value=0)
+    @patch('trcc.ui.cli._i18n.get_language', return_value=0)
     def test_dispatch_lang(self, mock_fn):
         with patch('sys.argv', ['trcc', 'lang']):
             result = main()
         mock_fn.assert_called_once()
         self.assertEqual(result, 0)
 
-    @patch('trcc.cli._i18n.set_language', return_value=0)
+    @patch('trcc.ui.cli._i18n.set_language', return_value=0)
     def test_dispatch_lang_set(self, mock_fn):
         with patch('sys.argv', ['trcc', 'lang-set', 'de']):
             result = main()

@@ -112,7 +112,7 @@ class TestThemeImportInfoLeakage(_ApiSecurityBase):
         super().tearDown()
 
     def test_service_error_no_internal_details(self):
-        with patch("trcc.api.themes.ThemeService.import_tr",
+        with patch("trcc.ui.api.themes.ThemeService.import_tr",
                    return_value=(False, "corrupt archive at /home/user/.trcc/data/foo")), \
              patch("trcc.core.paths.resolve_theme_dir") as mock_td:
             mock_td.return_value = "/tmp"
@@ -126,7 +126,7 @@ class TestThemeImportInfoLeakage(_ApiSecurityBase):
         self.assertEqual(resp.json()["detail"], "Theme import failed")
 
     def test_exception_no_stack_trace(self):
-        with patch("trcc.api.themes.ThemeService.import_tr",
+        with patch("trcc.ui.api.themes.ThemeService.import_tr",
                    side_effect=FileNotFoundError("/home/user/.trcc/data/secret/config.json")), \
              patch("trcc.core.paths.resolve_theme_dir") as mock_td:
             mock_td.return_value = "/tmp"
@@ -142,7 +142,7 @@ class TestThemeImportInfoLeakage(_ApiSecurityBase):
 
     def test_uploaded_filename_not_echoed(self):
         """Uploaded filenames must not be reflected back to clients."""
-        with patch("trcc.api.themes.ThemeService.import_tr",
+        with patch("trcc.ui.api.themes.ThemeService.import_tr",
                    return_value=(True, "ok")), \
              patch("trcc.core.paths.resolve_theme_dir") as mock_td:
             mock_td.return_value = "/tmp"

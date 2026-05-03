@@ -37,7 +37,7 @@ from trcc.services.overlay import OverlayService
 @pytest.fixture()
 def overlay_svc():
     """Fresh OverlayService at 320x320."""
-    return OverlayService(320, 320, renderer=ImageService._r())
+    return OverlayService(320, 320, renderer=ImageService.renderer())
 
 
 @pytest.fixture()
@@ -397,7 +397,7 @@ class TestGarbageCollectability:
         gc.set_debug(0)
         garbage_before = len(gc.garbage)
 
-        svc = OverlayService(320, 320, renderer=ImageService._r())
+        svc = OverlayService(320, 320, renderer=ImageService.renderer())
         bg = make_test_surface(320, 320, (100, 100, 100))
         svc.set_background(bg)
         svc.render(metrics=HardwareMetrics())
@@ -532,7 +532,7 @@ class TestDisplayServiceCycles:
         """DisplayService with mock device service and real overlay/media."""
         mock_devices = MagicMock()
         mock_devices.selected = None
-        overlay = OverlayService(320, 320, renderer=ImageService._r())
+        overlay = OverlayService(320, 320, renderer=ImageService.renderer())
         media = MediaService()
         from trcc.services.display import DisplayService
         svc = DisplayService(
