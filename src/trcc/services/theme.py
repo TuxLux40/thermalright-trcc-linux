@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,11 @@ from .image import ImageService
 from .overlay import OverlayService
 
 log = logging.getLogger(__name__)
+
+# Probe-boundary exception tuples — ffprobe subprocess + JSON config parsing.
+_SUBPROCESS_EXC: tuple[type[BaseException], ...] = (
+    OSError, subprocess.SubprocessError, ValueError, KeyError, IndexError,
+)
 
 
 def theme_info_from_directory(
@@ -353,14 +359,13 @@ class ThemeService:
                             if probe.returncode == 0 and nb_frames.isdigit() and int(nb_frames) > 1:
                                 data.animation_path = bg_path
                                 data.is_animated = True
-                        except Exception:
+                        except _SUBPROCESS_EXC as e:
                             # ffprobe missing/failed — animation detection
                             # falls back to "static" silently. Logged at
                             # debug so users with -vv see the cause.
                             log.debug(
-                                "theme: ffprobe animation-detect failed for "
-                                "%s — treating as static",
-                                bg_path, exc_info=True,
+                                "theme: ffprobe animation-detect failed for %s (%s) — treating as static",
+                                bg_path, e,
                             )
                     else:
                         data.background = ThemeService._open_image(
@@ -519,7 +524,8 @@ class ThemeService:
                 json.dump(config_json, f, indent=2)
 
             return True, f"Saved: {safe_name}"
-        except Exception as e:
+        except (OSError, ValueError, TypeError) as e:
+            log.warning("save theme failed: %s", e)
             return False, f"Save failed: {e}"
 
     # ── Export / Import ──────────────────────────────────────────────
@@ -532,6 +538,8 @@ class ThemeService:
             self._export_theme_fn(str(theme_path), str(export_path))
             return True, f"Exported: {export_path.name}"
         except Exception as e:
+            # Injected dc_writer can throw arbitrary errors from C# parity logic.
+            log.warning("export_tr failed: %s", e)
             return False, f"Export failed: {e}"
 
     def import_tr(
@@ -564,6 +572,8 @@ class ThemeService:
 
             return True, theme
         except Exception as e:
+            # Injected dc_writer can throw arbitrary errors from C# parity logic.
+            log.warning("import_tr failed: %s", e)
             return False, f"Import failed: {e}"
 
     # ── Private helpers ──────────────────────────────────────────────
@@ -607,7 +617,7 @@ class ThemeService:
                 if result is not None:
                     _, display_options = result
                     return display_options
-            except Exception as e:
+            except (OSError, ValueError, KeyError, TypeError) as e:
                 log.warning("Failed to load config.json: %s", e)
 
         if not dc_path or not dc_path.exists():
@@ -618,6 +628,7 @@ class ThemeService:
             dc = self._dc_config_cls(dc_path)
             return dc.display_options
         except Exception as e:
+            # Injected DC parser class; binary parsing surface varies (struct.error, ValueError, KeyError, OSError).
             log.error("Failed to parse DC file: %s", e)
             return {}
 
@@ -655,5 +666,5 @@ class ThemeService:
             data.mask = mask_img
             data.mask_position = position
             data.mask_source_dir = td.path
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             log.error("Failed to load mask: %s", e)

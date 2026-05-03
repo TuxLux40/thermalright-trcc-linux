@@ -477,7 +477,7 @@ class DisplayService:
         try:
             self.current_image = ImageService.open_and_resize(path, *self.canvas_size)
             self._clean_background = self.current_image
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             self.log.error("Failed to load image: %s", e)
 
     def _create_black_background(self) -> None:
@@ -552,7 +552,7 @@ class DisplayService:
                 overlay = r.resize(overlay, img_w, img_h)
             image = r.composite(image, overlay, (0, 0))
             return r.convert_to_rgb(image)
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             self.log.error("Split overlay composite failed: %s", e)
             return image
 
@@ -566,7 +566,7 @@ class DisplayService:
                 img = r.open_image(path)
                 return r.convert_to_rgba(img)
             log.warning("Split overlay not found: %s", path)
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             log.error("Failed to load split overlay %s: %s", asset_name, e)
         return None
 

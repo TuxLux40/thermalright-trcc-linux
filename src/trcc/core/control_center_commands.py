@@ -18,6 +18,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.error import URLError
 from urllib.request import Request, urlopen, urlretrieve
 
 from .. import conf
@@ -126,7 +127,8 @@ class ControlCenterCommands:
                           headers={'Accept': 'application/vnd.github+json'})
             with urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read())
-        except Exception as e:
+        except (URLError, OSError, TimeoutError, ValueError) as e:
+            # ValueError covers JSONDecodeError; URLError covers HTTPError; OSError covers socket errors.
             log.warning('check_for_update: %s', e)
             return UpdateResult(
                 success=False,
@@ -201,7 +203,8 @@ class ControlCenterCommands:
             try:
                 log.info('Downloading %s', url)
                 urlretrieve(url, pkg_path)
-            except Exception as e:
+            except (URLError, OSError, TimeoutError) as e:
+                log.warning('run_upgrade download failed: %s', e)
                 return OpResult(
                     success=False, error=f'Download failed: {e}',
                 )
@@ -259,7 +262,9 @@ class ControlCenterCommands:
         s = conf.settings
         try:
             autostart = self._platform.autostart_enabled()
-        except Exception:
+        except Exception as e:
+            # Per-OS impls vary widely (registry / desktop file / launchctl); default safe + log.
+            log.debug('autostart_enabled probe failed: %s', e)
             autostart = False
         install_info = Settings.get_install_info() or {}
         return AppSnapshot(
