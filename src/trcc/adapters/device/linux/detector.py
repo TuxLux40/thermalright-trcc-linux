@@ -130,7 +130,15 @@ def find_lcd_devices(detect_fn=None) -> list[dict]:
                         if (btn := get_button_image(info.pm, info.sub_type, is_led=True)):
                             button_image = btn
                 except Exception:
-                    pass
+                    # Best-effort enrichment — fall back to defaults when the
+                    # LED probe fails (e.g. permission error, device busy).
+                    # Detection itself isn't blocked; just leaves model+style
+                    # blank so the GUI shows generic LED instead of model name.
+                    log.debug(
+                        "linux/detector: LED probe failed for %04x:%04x — "
+                        "device will appear without model metadata",
+                        dev.vid, dev.pid, exc_info=True,
+                    )
 
             product = saved_product or dev.product_name
             devices.append({
@@ -184,5 +192,13 @@ def _load_saved_identity(
         cfg = Settings.get_device_config(key)
         return cfg.get('resolved_button_image'), cfg.get('resolved_product')
     except Exception:
+        # Best-effort cache lookup — if Settings is unavailable (test
+        # fixture, broken config.json), fall back to fresh detection.
+        # Logged at debug because falling back is normal on first-run.
+        log.debug(
+            "linux/detector: cached button-image lookup failed for "
+            "idx=%d vid=%04x pid=%04x — falling back to fresh detection",
+            dev_index, vid, pid, exc_info=True,
+        )
         return None, None
 

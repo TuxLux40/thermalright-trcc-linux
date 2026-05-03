@@ -28,11 +28,14 @@ return the raw device dict. Lean.
 from __future__ import annotations
 
 import functools
+import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 if TYPE_CHECKING:
     from .results import OpResult
+
+log = logging.getLogger(__name__)
 
 P = ParamSpec('P')
 R = TypeVar('R', bound='OpResult')
@@ -73,12 +76,31 @@ def command(
     def decorator(method: Callable) -> Callable:
         @functools.wraps(method)
         def wrapper(self: Any, *args: Any, **kwargs: Any) -> OpResult:
-            r = method(self, *args, **kwargs)
+            try:
+                r = method(self, *args, **kwargs)
+            except Exception:
+                # Defensive: a facade body raising is a contract bug, not
+                # an expected failure. Log + re-raise so the caller gets a
+                # real traceback instead of a silent broken result.
+                log.exception(
+                    "@command(%s) body raised — facade contract violation",
+                    method.__qualname__,
+                )
+                raise
             if not isinstance(r, dict):
                 # Body returned a result dataclass already (e.g., early-exit
                 # FrameResult on bounds-check failure) — pass through.
+                log.debug(
+                    "@command(%s) early-exit: returning %s directly",
+                    method.__qualname__, type(r).__name__,
+                )
                 return r
             success = r.get('success', False)
+            log.debug(
+                "@command(%s) → success=%s%s",
+                method.__qualname__, success,
+                f" topic={topic!r}" if (success and topic) else "",
+            )
             out: dict[str, Any] = {
                 'success': success,
                 'message': r.get('message', ''),
@@ -104,9 +126,17 @@ def command(
                 self._events.publish(topic, *payload)
             try:
                 return result_cls(**out)
-            except TypeError:
+            except TypeError as e:
                 # result_cls doesn't accept one of the extras — strip them
-                # and try the minimal constructor.
+                # and try the minimal constructor. Log so the field-rename
+                # mismatch is visible during development; production keeps
+                # working via fallback.
+                log.warning(
+                    "@command(%s): %s rejected extras (%s) — falling back "
+                    "to minimal constructor: %s",
+                    method.__qualname__, result_cls.__name__,
+                    sorted(set(out) - {'success', 'message', 'error'}), e,
+                )
                 return result_cls(
                     success=success,
                     message=r.get('message', ''),
