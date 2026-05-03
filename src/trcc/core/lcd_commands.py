@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..conf import Settings
+from ._command import command
+from .events import Topic
 from .models.overlay import OverlayElement
 from .models.theme import MaskInfo, ThemeInfo
 from .results import (
@@ -80,61 +82,29 @@ class LCDCommands:
 
     # ── Display settings ─────────────────────────────────────────────
 
-    def set_brightness(self, lcd: int, percent: int) -> FrameResult:
-        dev = self._get(lcd)
-        if dev is None:
+    @command(result_cls=FrameResult, topic=Topic.LCD_BRIGHTNESS, include_frame=True)
+    def set_brightness(self, lcd: int, percent: int):
+        if (dev := self._get(lcd)) is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
-        r = dev.set_brightness(percent)
-        if r.get('success'):
-            self._events.publish('lcd.brightness', lcd, percent)
-        return FrameResult(
-            success=r.get('success', False),
-            message=r.get('message', ''),
-            error=r.get('error'),
-            frame=self._frame_from(r),
-        )
+        return dev.set_brightness(percent)
 
-    def set_rotation(self, lcd: int, degrees: int) -> FrameResult:
-        dev = self._get(lcd)
-        if dev is None:
+    @command(result_cls=FrameResult, topic=Topic.LCD_ROTATION, include_frame=True)
+    def set_rotation(self, lcd: int, degrees: int):
+        if (dev := self._get(lcd)) is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
-        r = dev.set_rotation(degrees)
-        if r.get('success'):
-            self._events.publish('lcd.rotation', lcd, degrees)
-        return FrameResult(
-            success=r.get('success', False),
-            message=r.get('message', ''),
-            error=r.get('error'),
-            frame=self._frame_from(r),
-        )
+        return dev.set_rotation(degrees)
 
-    def set_split_mode(self, lcd: int, mode: int) -> FrameResult:
-        dev = self._get(lcd)
-        if dev is None:
+    @command(result_cls=FrameResult, topic=Topic.LCD_SPLIT_MODE, include_frame=True)
+    def set_split_mode(self, lcd: int, mode: int):
+        if (dev := self._get(lcd)) is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
-        r = dev.set_split_mode(mode)
-        if r.get('success'):
-            self._events.publish('lcd.split_mode', lcd, mode)
-        return FrameResult(
-            success=r.get('success', False),
-            message=r.get('message', ''),
-            error=r.get('error'),
-            frame=self._frame_from(r),
-        )
+        return dev.set_split_mode(mode)
 
-    def set_fit_mode(self, lcd: int, mode: str) -> FrameResult:
-        dev = self._get(lcd)
-        if dev is None:
+    @command(result_cls=FrameResult, topic=Topic.LCD_FIT_MODE, include_frame=True)
+    def set_fit_mode(self, lcd: int, mode: str):
+        if (dev := self._get(lcd)) is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
-        r = dev.set_fit_mode(mode)
-        if r.get('success'):
-            self._events.publish('lcd.fit_mode', lcd, mode)
-        return FrameResult(
-            success=r.get('success', False),
-            message=r.get('message', ''),
-            error=r.get('error'),
-            frame=self._frame_from(r),
-        )
+        return dev.set_fit_mode(mode)
 
     # ── Themes ───────────────────────────────────────────────────────
 
@@ -329,55 +299,38 @@ class LCDCommands:
             error=r.get('error'),
         )
 
-    def set_mask_visible(self, lcd: int, visible: bool) -> FrameResult:
-        dev = self._get(lcd)
-        if dev is None:
+    @command(result_cls=FrameResult)
+    def set_mask_visible(self, lcd: int, visible: bool):
+        if (dev := self._get(lcd)) is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
-        r = dev.set_mask_visible(visible)
-        return FrameResult(
-            success=r.get('success', False),
-            message=r.get('message', ''),
-            error=r.get('error'),
-        )
+        return dev.set_mask_visible(visible)
 
     # ── Overlay ──────────────────────────────────────────────────────
 
-    def enable_overlay(self, lcd: int, enabled: bool) -> FrameResult:
-        dev = self._get(lcd)
-        if dev is None:
+    @command(result_cls=FrameResult, topic=Topic.LCD_OVERLAY_ENABLED)
+    def enable_overlay(self, lcd: int, enabled: bool):
+        if (dev := self._get(lcd)) is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
         r = dev.enable_overlay(enabled)
-        if r.get('success'):
-            if key := self._device_key(dev):
-                prev = Settings.get_device_config(key).get('overlay', {})
-                Settings.save_device_setting(key, 'overlay', {
-                    'enabled': enabled,
-                    'config': prev.get('config', {}),
-                })
-            self._events.publish('lcd.overlay_enabled', lcd, enabled)
-        return FrameResult(
-            success=r.get('success', False),
-            message=r.get('message', ''),
-            error=r.get('error'),
-        )
+        if r.get('success') and (key := self._device_key(dev)):
+            prev = Settings.get_device_config(key).get('overlay', {})
+            Settings.save_device_setting(key, 'overlay', {
+                'enabled': enabled,
+                'config': prev.get('config', {}),
+            })
+        return r
 
-    def set_overlay_config(self, lcd: int, config: dict) -> FrameResult:
-        dev = self._get(lcd)
-        if dev is None:
+    @command(result_cls=FrameResult, topic=Topic.LCD_OVERLAY)
+    def set_overlay_config(self, lcd: int, config: dict):
+        if (dev := self._get(lcd)) is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
         r = dev.set_config(config)
-        if r.get('success'):
-            if key := self._device_key(dev):
-                Settings.save_device_setting(key, 'overlay', {
-                    'enabled': dev.enabled,
-                    'config': config,
-                })
-            self._events.publish('lcd.overlay', lcd, config)
-        return FrameResult(
-            success=r.get('success', False),
-            message=r.get('message', ''),
-            error=r.get('error'),
-        )
+        if r.get('success') and (key := self._device_key(dev)):
+            Settings.save_device_setting(key, 'overlay', {
+                'enabled': dev.enabled,
+                'config': config,
+            })
+        return r
 
     def add_overlay_element(self, lcd: int, element: OverlayElement) -> FrameResult:
         dev = self._get(lcd)

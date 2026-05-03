@@ -34,6 +34,7 @@ from itertools import chain
 from typing import TYPE_CHECKING, Any
 
 from .control_center_commands import ControlCenterCommands
+from .device.registry import DeviceRegistry
 from .events import EventBus, Topic
 from .lcd_commands import LCDCommands
 from .led_commands import LEDCommands
@@ -89,8 +90,8 @@ class Trcc:
         self._list_available_fn = list_available_fn
         self._current_metrics: Any = None
 
-        self._lcd_devices: list[LCDDevice] = []
-        self._led_devices: list[LEDDevice] = []
+        self._lcd_devices: DeviceRegistry[LCDDevice] = DeviceRegistry()
+        self._led_devices: DeviceRegistry[LEDDevice] = DeviceRegistry()
 
         self._metrics_thread: threading.Thread | None = None
         self._metrics_stop: threading.Event = threading.Event()
@@ -128,14 +129,22 @@ class Trcc:
         return self._led_devices[0] if self._led_devices else None
 
     @property
-    def lcd_devices(self) -> tuple[LCDDevice, ...]:
-        """All connected LCD devices, in detection order. Tuple — caller can't mutate."""
-        return tuple(self._lcd_devices)
+    def lcd_devices(self) -> DeviceRegistry[LCDDevice]:
+        """All connected LCD devices, in detection order.
+
+        Returns the live `DeviceRegistry` — callers get rich indexing
+        on top of normal iteration / len / membership::
+
+            trcc.lcd_devices[0]                  # by index
+            trcc.lcd_devices['/dev/sg0']         # by device_path
+            trcc.lcd_devices[(0x0402, 0x3922)]   # by (vid, pid)
+        """
+        return self._lcd_devices
 
     @property
-    def led_devices(self) -> tuple[LEDDevice, ...]:
-        """All connected LED devices, in detection order."""
-        return tuple(self._led_devices)
+    def led_devices(self) -> DeviceRegistry[LEDDevice]:
+        """All connected LED devices, in detection order. See :attr:`lcd_devices`."""
+        return self._led_devices
 
     @property
     def has_lcd(self) -> bool:
@@ -334,22 +343,15 @@ class Trcc:
 
     def device_lost(self, path: str) -> None:
         """Remove a device by USB path; publish disconnected + new list."""
-
-        gone: LCDDevice | LEDDevice | None = None
-        for dev in list(self._lcd_devices):
-            if getattr(dev, 'device_path', None) == path:
-                self._lcd_devices.remove(dev)
-                gone = dev
-                break
-        if gone is None:
-            for dev in list(self._led_devices):
-                info = dev.device_info
-                if info is not None and getattr(info, 'path', None) == path:
-                    self._led_devices.remove(dev)
-                    gone = dev
-                    break
-        if gone is None:
-            return
+        gone: LCDDevice | LEDDevice
+        if path in self._lcd_devices:
+            gone = self._lcd_devices[path]
+            self._lcd_devices.remove(gone)
+        elif path in self._led_devices:
+            gone = self._led_devices[path]
+            self._led_devices.remove(gone)
+        else:
+            return  # path not found in either registry — no-op
         self.events.publish(Topic.DEVICE_DISCONNECTED, gone)
         self.events.publish(
             Topic.DEVICE_LIST,
