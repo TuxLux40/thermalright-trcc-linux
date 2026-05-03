@@ -160,6 +160,7 @@ def trcc(
             renderer = QtRenderer()
 
         # 5. Build infra services. Composition happens once, here.
+        from trcc.conf import settings as _settings
         from trcc.core.builder import ControllerBuilder
         from trcc.services.image import ImageService
         from trcc.services.system import set_instance
@@ -172,11 +173,16 @@ def trcc(
 
         # 6. Construct the singleton Trcc with every dependency injected.
         # No ``set_X`` mutation later — Pure DI means construction is final.
+        # ``settings`` is the global instance ``init_settings(platform)``
+        # populated above; passing it here makes Trcc's settings access go
+        # through DI (Phase 10A.3 partial). The full version (every reader
+        # takes settings explicitly, global goes away) is its own session.
         t = Trcc(
             platform,
             renderer=renderer,
             system_svc=system_svc,
             ensure_data_fn=ensure_data_fn,
+            settings=_settings,
             download_pack_fn=download_pack_fn,
             list_available_fn=list_available_fn,
         )

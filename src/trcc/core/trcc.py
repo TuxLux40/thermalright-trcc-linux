@@ -68,7 +68,7 @@ class Trcc:
         '_current_metrics', '_download_pack_fn', '_ensure_data_fn',
         '_lcd_devices', '_led_devices', '_list_available_fn',
         '_metrics_stop', '_metrics_thread', '_metrics_wake',
-        '_platform', '_renderer', '_system_svc',
+        '_platform', '_renderer', '_settings', '_system_svc',
         'control_center', 'events', 'lcd', 'led',
     )
 
@@ -81,6 +81,7 @@ class Trcc:
         ensure_data_fn: EnsureDataFn | None = None,
         download_pack_fn: Callable[..., int] | None = None,
         list_available_fn: Callable[..., None] | None = None,
+        settings: Any = None,
     ) -> None:
         self._platform = platform
         self._renderer = renderer
@@ -88,6 +89,11 @@ class Trcc:
         self._ensure_data_fn = ensure_data_fn
         self._download_pack_fn = download_pack_fn
         self._list_available_fn = list_available_fn
+        # Settings injection (Phase 10A.3 partial). When None, falls back to
+        # ``trcc.conf.settings`` global lazily — backwards compatible. The
+        # full Pure-DI version (every reader takes settings as ctor arg,
+        # global goes away) is its own focused session.
+        self._settings = settings
         self._current_metrics: Any = None
 
         self._lcd_devices: DeviceRegistry[LCDDevice] = DeviceRegistry()
@@ -111,6 +117,20 @@ class Trcc:
     def os(self) -> Platform:
         """The Platform this Trcc is bound to. Read-only — composition is final."""
         return self._platform
+
+    @property
+    def settings(self) -> Any:
+        """The injected `Settings` instance, falling back to the module global.
+
+        Phase 10A.3 (partial) — Trcc holds settings explicitly via DI when
+        the composition root passes one. Older readers that haven't been
+        migrated yet still get the global via the fallback. Tests that want
+        isolation pass their own `settings` to `Trcc(settings=…)`.
+        """
+        if self._settings is not None:
+            return self._settings
+        from ..conf import settings as _global
+        return _global
 
     # ── Convenience accessors — first-of-kind devices ───────────────────
 
@@ -227,7 +247,7 @@ class Trcc:
 
         self._lcd_devices.clear()
         self._led_devices.clear()
-        from ..conf import settings as _settings
+        _settings = self.settings
         lock = threading.Lock()
 
         def _connect_one(found: DetectedDevice) -> None:
@@ -324,7 +344,7 @@ class Trcc:
 
         traits = PROTOCOL_TRAITS.get(
             getattr(detected, 'protocol', 'scsi'), PROTOCOL_TRAITS['scsi'])
-        from ..conf import settings as _settings
+        _settings = self.settings
         if traits.is_lcd and isinstance(device, LCDDevice):
             self._lcd_devices.append(device)
             if _settings is not None:
@@ -449,8 +469,11 @@ class Trcc:
         self._metrics_stop.clear()
         sys_svc = self._system_svc
 
+        # Capture settings at loop start — bound through DI when available,
+        # falls back to the global lazily otherwise (Phase 10A.3 partial).
+        _settings = self.settings
+
         def _loop() -> None:
-            from ..conf import settings as _settings
             from .models import HardwareMetrics
             tick_count = 0
             while not self._metrics_stop.is_set():
@@ -528,10 +551,9 @@ class Trcc:
         loop — lives on Trcc rather than ControlCenterCommands because
         no facade owns the device list.
         """
-        from ..conf import settings as _settings
         from .models import HardwareMetrics
 
-        _settings.set_temp_unit(unit)
+        self.settings.set_temp_unit(unit)
         fresh = None
         if (svc := self._system_svc) is not None:
             fresh = HardwareMetrics.with_temp_unit(svc.all_metrics, unit)
@@ -549,9 +571,8 @@ class Trcc:
 
     def set_metrics_refresh(self, seconds: int) -> dict[str, Any]:
         """Persist the metrics refresh interval and wake the loop."""
-        from ..conf import settings as _settings
         clamped = max(1, min(100, seconds))
-        _settings.set_refresh_interval(clamped)
+        self.settings.set_refresh_interval(clamped)
         self.wake_metrics_loop()
         self.events.publish(Topic.CONTROL_CENTER_REFRESH, clamped)
         return {'success': True, 'message': f'Refresh interval set to {clamped}s'}
