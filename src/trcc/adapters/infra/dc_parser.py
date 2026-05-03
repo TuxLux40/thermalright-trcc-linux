@@ -309,8 +309,8 @@ class DcParser:
             try:
                 display_elements = DcParser._parse_display_elements(data, r.pos)
                 result['display_elements'] = display_elements
-            except Exception:
-                pass
+            except (struct.error, IndexError, ValueError) as e:
+                log.debug("dc_parser: display_elements parse failed: %s", e)
 
         return result
 
@@ -693,7 +693,7 @@ class DcParser:
             if not os.path.exists(preview_file):
                 result['warnings'].append('No Theme.png preview')
 
-        except Exception as e:
+        except (OSError, struct.error, ValueError, KeyError, IndexError) as e:
             result['valid'] = False
             result['issues'].append(f'Parse error: {e}')
 

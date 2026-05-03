@@ -395,7 +395,8 @@ class CloudThemeDownloader:
                     return str(dest)
 
                 except Exception:
-                    # Clean up temp file on error
+                    # Cleanup-then-propagate — broad catch is intentional;
+                    # the outer try classifies HTTPError/URLError/InterruptedError.
                     if temp_path.exists():
                         temp_path.unlink()
                     raise

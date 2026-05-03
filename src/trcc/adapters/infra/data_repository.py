@@ -65,7 +65,7 @@ class SysUtils:
         try:
             with open(path) as f:
                 return f.read().strip()
-        except Exception:
+        except OSError:
             return None
 
     @staticmethod
@@ -203,9 +203,8 @@ class DataManager:
                 "extract_7z: 7z not found — cannot extract %s\n%s",
                 archive, DataManager._7z_install_help(),
             )
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             log.warning("extract_7z: failed: %s: %s", type(e).__name__, e)
-            log.debug("extract_7z exception details", exc_info=True)
         return False
 
     # ------------------------------------------------------------------
@@ -249,9 +248,8 @@ class DataManager:
         except urllib.error.HTTPError as e:
             log.warning("Download failed (%d): %s", e.code, url)
             e.close()
-        except Exception as e:
+        except (urllib.error.URLError, OSError, TimeoutError, ssl.SSLError) as e:
             log.warning("Download failed: %s: %s", type(e).__name__, e)
-            log.debug("Download exception details", exc_info=True)
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -325,10 +323,9 @@ class DataManager:
 
         try:
             os.makedirs(user_dir, exist_ok=True)
-        except Exception as e:
+        except OSError as e:
             log.warning("%s: cannot create %s: %s: %s",
                         label, user_dir, type(e).__name__, e)
-            log.debug("mkdir exception details", exc_info=True)
             return False
         if (ok := DataManager.extract_7z(archive, user_dir)):
             # Some archives wrap contents in a single subdirectory that matches
@@ -440,6 +437,9 @@ class DataManager:
                 if not fn(*args):
                     log.warning("ensure_all: %s returned False", label)
             except Exception:
+                # Top-level fan-out wrapper for the data-ensure pipeline:
+                # download/extract surface is wide (urllib, ssl, subprocess, OSError);
+                # broad catch keeps subsequent ensures running on partial failure.
                 log.exception("ensure_all: %s failed", label)
 
         log.info("ensure_all: starting %dx%d", width, height)

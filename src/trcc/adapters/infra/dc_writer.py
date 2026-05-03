@@ -593,7 +593,8 @@ def read_carousel(filepath: str) -> CarouselConfig | None:
 
             return config
 
-    except Exception:
+    except (OSError, struct.error, ValueError) as e:
+        log.debug("dc_writer: load failed: %s", e)
         return None
 
 
