@@ -433,8 +433,8 @@ def stop_screencast() -> None:
     if _screencast_cast is not None:
         try:
             _screencast_cast.stop()  # type: ignore[union-attr]
-        except Exception:
-            pass
+        except (RuntimeError, AttributeError, OSError) as e:
+            log.debug("api: screencast cast.stop() raised: %s", e)
 
     if _screencast_thread and _screencast_thread.is_alive():
         _screencast_thread.join(timeout=2)

@@ -478,7 +478,8 @@ class UCVideoCut(QWidget):
                 self._lbl_info.setText("Cannot determine video duration")
                 self._lbl_info.setVisible(True)
                 return
-        except Exception:
+        except (OSError, subprocess.SubprocessError, ValueError) as e:
+            log.debug("uc_video_cut: ffprobe duration probe failed: %s", e)
             self._lbl_info.setText("FFmpeg not available")
             self._lbl_info.setVisible(True)
             return
@@ -533,7 +534,8 @@ class UCVideoCut(QWidget):
             img = QImage.fromData(result.stdout)
             if img.isNull():
                 return
-        except Exception:
+        except (OSError, subprocess.SubprocessError) as e:
+            log.debug("uc_video_cut: frame extract via ffmpeg failed: %s", e)
             return
 
         # Apply rotation and scale to fit preview

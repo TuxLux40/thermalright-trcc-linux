@@ -144,8 +144,9 @@ def play_video(builder=None, video_path=None, *, device=None, loop=True, duratio
                 from trcc.core.builder import ControllerBuilder
                 from trcc.ui.cli import _ensure_system
                 _ensure_system(ControllerBuilder(trcc().os))
-            except Exception:
-                pass
+            except Exception as e:
+                # Best-effort metrics warmup; play continues with stale defaults.
+                log.debug("_ensure_system warmup failed for play: %s", e)
             metrics_fn = get_all_metrics
 
         app = trcc()

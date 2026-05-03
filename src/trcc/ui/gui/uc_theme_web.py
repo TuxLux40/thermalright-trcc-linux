@@ -47,8 +47,8 @@ def _ensure_thumb_gif(mp4_path: str, size: int = Sizes.THUMB_IMAGE) -> str | Non
         ], capture_output=True, timeout=30, creationflags=_NO_WINDOW)
         if gif_path.exists():
             return str(gif_path)
-    except Exception:
-        pass
+    except (OSError, subprocess.SubprocessError) as e:
+        log.debug("uc_theme_web: ffmpeg mp4→gif failed for %s: %s", mp4_path, e)
     return None
 
 
@@ -284,8 +284,8 @@ class UCThemeWeb(DownloadableThemeBrowser):
                     'ffmpeg', '-i', str(mp4_path),
                     '-vframes', '1', '-y', str(png_path)
                 ], capture_output=True, timeout=10, creationflags=_NO_WINDOW)
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError) as e:
+            log.debug("uc_theme_web: ffmpeg thumbnail extract failed for %s: %s", theme_id, e)
 
     def _on_download_complete(self, theme_id: str, success: bool):
         """Handle download completion — refresh and auto-select."""

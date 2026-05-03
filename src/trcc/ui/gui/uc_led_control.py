@@ -1269,7 +1269,9 @@ class UCLedControl(QWidget):
                     field = key.replace('mem_t', 't').replace('mem_', '')
                     val = s.get(field, '')
                     self._mem_labels[key].setText(str(val) if val else "NC")
-        except Exception:
+        except Exception as e:
+            # Memory probe surface is wide (subprocess + WMI + parser) — fall safe.
+            log.debug("uc_led_control: memory identity populate failed: %s", e)
             self._mem_slots = []
 
     def _on_ddr_changed(self, index: int) -> None:
@@ -1304,7 +1306,9 @@ class UCLedControl(QWidget):
                     name = name[:name.index('(') - 1]
                 self._disk_selector.addItem(name)
             self._disk_selector.blockSignals(False)
-        except Exception:
+        except Exception as e:
+            # Disk probe surface is wide (subprocess + WMI + parser) — fall safe.
+            log.debug("uc_led_control: disk identity populate failed: %s", e)
             self._disk_slots = []
 
     def _on_disk_selected(self, idx: int) -> None:

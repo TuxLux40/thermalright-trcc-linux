@@ -913,6 +913,7 @@ class LCDHandler(BaseHandler):
         try:
             self._lcd.device_service.stop_send_worker()
             self._lcd.send_color(0, 0, 0)
-        except Exception:
-            pass
+        except (OSError, RuntimeError) as e:
+            # USB I/O during teardown — best-effort black-frame, then move on.
+            self.log.debug("LCD teardown black-frame send failed: %s", e)
         self._lcd.cleanup()

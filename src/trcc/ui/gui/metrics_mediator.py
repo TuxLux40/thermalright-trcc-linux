@@ -128,7 +128,9 @@ class MetricsMediator(QObject):
             return
         try:
             metrics = self._metrics_fn()
-        except Exception:
+        except Exception as e:
+            # Metrics provider surface is wide (sensor plugins + dispatch) — fall safe.
+            log.debug("metrics_mediator: metrics_fn raised: %s", e)
             return
         from ...conf import settings
         HardwareMetrics.with_temp_unit(metrics, settings.temp_unit)

@@ -57,6 +57,7 @@ _GITHUB_LATEST = (
 
 def _check_latest_release() -> tuple[str, dict[str, str]] | None:
     """Fetch latest GitHub release. Returns (version, {ext: download_url}) or None."""
+    from urllib.error import URLError
     from urllib.request import Request
     try:
         req = Request(_GITHUB_LATEST, headers={'Accept': 'application/vnd.github+json'})
@@ -77,7 +78,8 @@ def _check_latest_release() -> tuple[str, dict[str, str]] | None:
                 elif name.endswith('.deb'):
                     assets['apt'] = url
             return ver, assets
-    except Exception:
+    except (URLError, OSError, TimeoutError, ValueError) as e:
+        log.debug("uc_about: GitHub release check failed: %s", e)
         return None
 
 
@@ -107,13 +109,13 @@ def _detect_install_method() -> str:
     if 'pipx' in sys.prefix:
         return 'pipx'
     try:
-        from importlib.metadata import distribution
+        from importlib.metadata import PackageNotFoundError, distribution
         dist = distribution('trcc-linux')
         installer = (dist.read_text('INSTALLER') or '').strip()
         if installer == 'pip':
             return 'pip'
-    except Exception:
-        pass
+    except (PackageNotFoundError, OSError) as e:
+        log.debug("uc_about: trcc-linux distribution metadata unavailable: %s", e)
     # Detect which package manager installed it
     for mgr in ('pacman', 'dnf', 'apt'):
         if shutil.which(mgr):
