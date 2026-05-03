@@ -15,7 +15,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from trcc.adapters.system._base import SensorEnumeratorBase
+from trcc.adapters.system._base import SUBPROCESS_EXC, SensorEnumeratorBase
 from trcc.adapters.system._shared import (
     _confirm,
     _copy_assets_to_user_dir,
@@ -72,8 +72,8 @@ def _sysctl(key: str) -> str:
         )
         if result.returncode == 0:
             return result.stdout.strip()
-    except Exception:
-        pass
+    except SUBPROCESS_EXC as e:
+        log.debug("sysctl probe failed for %s: %s", key, e)
     return ''
 
 
@@ -174,8 +174,8 @@ def get_disk_info() -> list[dict[str, str]]:
             d.setdefault('size', '')
             d.setdefault('health', 'Unknown')
 
-    except Exception:
-        log.debug("geom disk list failed")
+    except SUBPROCESS_EXC as e:
+        log.debug("geom disk list failed: %s", e)
 
     return disks
 
@@ -231,8 +231,8 @@ class SensorEnumerator(SensorEnumeratorBase):
                             'temperature', '°C', 'sysctl',
                         ))
 
-        except Exception:
-            log.debug("sysctl sensor discovery failed")
+        except SUBPROCESS_EXC as e:
+            log.debug("sysctl sensor discovery failed: %s", e)
 
     # ── BSD-specific polling ──────────────────────────────────────────
 
@@ -266,8 +266,8 @@ class SensorEnumerator(SensorEnumeratorBase):
                         tz_id = match.group(1)
                         readings[f'sysctl:tz{tz_id}_temp'] = float(match.group(2))
 
-        except Exception:
-            pass
+        except SUBPROCESS_EXC as e:
+            log.debug("sysctl temperature poll failed: %s", e)
 
     # ── BSD-specific mapping ──────────────────────────────────────────
 

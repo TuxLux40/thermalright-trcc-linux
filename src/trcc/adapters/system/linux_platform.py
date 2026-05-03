@@ -20,7 +20,14 @@ from typing import Any
 import psutil
 
 from trcc.adapters.infra.data_repository import SysUtils
-from trcc.adapters.system._base import SensorEnumeratorBase, _ensure_nvml, pynvml
+from trcc.adapters.system._base import (
+    NVML_EXC,
+    PSUTIL_EXC,
+    SUBPROCESS_EXC,
+    SensorEnumeratorBase,
+    _ensure_nvml,
+    pynvml,
+)
 from trcc.adapters.system._shared import (
     _confirm,
     _posix_acquire_instance_lock,
@@ -202,8 +209,8 @@ def _get_smart_health(dev_name: str) -> str | None:
                     return 'PASSED'
                 if 'FAILED' in line:
                     return 'FAILED'
-    except Exception:
-        pass
+    except SUBPROCESS_EXC as e:
+        log.debug("smartctl health probe failed for %s: %s", dev_name, e)
     return None
 
 
@@ -457,6 +464,7 @@ def setup_selinux() -> int:
         return 0
 
     except Exception as e:
+        log.exception("setup_selinux failed")
         print(f"Error installing SELinux policy: {e}")
         return 1
 
@@ -581,8 +589,8 @@ def get_memory_info() -> list[dict[str, str]]:
                         current[key] = val
             if current.get('size') and current['size'] != 'No Module Installed':
                 slots.append(current)
-    except Exception:
-        pass
+    except SUBPROCESS_EXC as e:
+        log.debug("dmidecode probe failed: %s", e)
 
     log.debug("get_memory_info: found %d populated slots", len(slots))
     if not slots:
@@ -591,8 +599,8 @@ def get_memory_info() -> list[dict[str, str]]:
             total_gb = f"{mem.total / (1024**3):.1f} GB"
             slots.append({'size': total_gb, 'type': 'Unknown',
                           'speed': 'Unknown', 'manufacturer': 'Unknown'})
-        except Exception:
-            pass
+        except PSUTIL_EXC as e:
+            log.debug("psutil.virtual_memory fallback failed: %s", e)
     return slots
 
 
@@ -621,8 +629,8 @@ def get_disk_info() -> list[dict[str, str]]:
                 if (health := _get_smart_health(dev['name'])):
                     disk['health'] = health
                 disks.append(disk)
-    except Exception:
-        pass
+    except SUBPROCESS_EXC as e:
+        log.debug("lsblk probe failed: %s", e)
     log.debug("get_disk_info: found %d disks", len(disks))
     return disks
 
@@ -671,7 +679,8 @@ class SensorEnumerator(SensorEnumeratorBase):
             return
         try:
             count = pynvml.nvmlDeviceGetCount()
-        except Exception:
+        except NVML_EXC as e:
+            log.debug("nvmlDeviceGetCount failed: %s", e)
             return
 
         for i in range(count):
@@ -681,7 +690,7 @@ class SensorEnumerator(SensorEnumeratorBase):
                 if isinstance(gpu_name, bytes):
                     gpu_name = gpu_name.decode()
                 gpu_name = str(gpu_name)
-            except Exception as e:
+            except NVML_EXC as e:
                 log.warning("NVIDIA GPU %d handle/name failed — skipping: %s", i, e)
                 continue
 
@@ -850,8 +859,8 @@ class SensorEnumerator(SensorEnumeratorBase):
     def _poll_psutil(self, readings: dict[str, float]) -> None:
         try:
             readings['psutil:cpu_percent'] = psutil.cpu_percent(interval=None)
-        except Exception:
-            pass
+        except PSUTIL_EXC as e:
+            log.debug("psutil.cpu_percent failed: %s", e)
         try:
             now = time.monotonic()
             if now - self._cpu_freq_time >= self._CPU_FREQ_TTL:
@@ -862,14 +871,14 @@ class SensorEnumerator(SensorEnumeratorBase):
                 self._cpu_freq_time = now
             if self._cpu_freq_cache > 0:
                 readings['psutil:cpu_freq'] = self._cpu_freq_cache
-        except Exception:
-            pass
+        except PSUTIL_EXC as e:
+            log.debug("psutil.cpu_freq failed: %s", e)
         try:
             mem = psutil.virtual_memory()
             readings['psutil:mem_percent'] = mem.percent
             readings['psutil:mem_available'] = mem.available / (1024 * 1024)
-        except Exception:
-            pass
+        except PSUTIL_EXC as e:
+            log.debug("psutil.virtual_memory failed: %s", e)
 
     def _poll_nvidia(self, readings: dict[str, float]) -> None:
         if not self._ensure_nvidia_ready() or pynvml is None:
@@ -879,38 +888,38 @@ class SensorEnumerator(SensorEnumeratorBase):
             try:
                 readings[f"{prefix}:temp"] = float(
                     pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU))
-            except Exception:
-                pass
+            except NVML_EXC as e:
+                log.debug("%s:temp poll failed: %s", prefix, e)
             try:
                 util = pynvml.nvmlDeviceGetUtilizationRates(handle)
                 readings[f"{prefix}:gpu_util"] = float(util.gpu)
                 readings[f"{prefix}:mem_util"] = float(util.memory)
-            except Exception:
-                pass
+            except NVML_EXC as e:
+                log.debug("%s:util poll failed: %s", prefix, e)
             try:
                 readings[f"{prefix}:clock"] = float(
                     pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS))
-            except Exception:
-                pass
+            except NVML_EXC as e:
+                log.debug("%s:clock poll failed: %s", prefix, e)
             try:
                 readings[f"{prefix}:mem_clock"] = float(
                     pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_MEM))
-            except Exception:
-                pass
+            except NVML_EXC as e:
+                log.debug("%s:mem_clock poll failed: %s", prefix, e)
             try:
                 readings[f"{prefix}:power"] = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0
-            except Exception:
-                pass
+            except NVML_EXC as e:
+                log.debug("%s:power poll failed: %s", prefix, e)
             try:
                 mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
                 readings[f"{prefix}:vram_used"] = int(mem.used) / (1024 * 1024)
                 readings[f"{prefix}:vram_total"] = int(mem.total) / (1024 * 1024)
-            except Exception:
-                pass
+            except NVML_EXC as e:
+                log.debug("%s:vram poll failed: %s", prefix, e)
             try:
                 readings[f"{prefix}:fan"] = float(pynvml.nvmlDeviceGetFanSpeed(handle))
-            except Exception:
-                pass
+            except NVML_EXC as e:
+                log.debug("%s:fan poll failed: %s", prefix, e)
 
     def _poll_rapl(self, readings: dict[str, float]) -> None:
         now = time.monotonic()
@@ -1016,12 +1025,14 @@ class SensorEnumerator(SensorEnumeratorBase):
                     if isinstance(name, bytes):
                         name = name.decode()
                     name = str(name)
-                except Exception:
+                except NVML_EXC as e:
+                    log.debug("nvmlDeviceGetName(idx=%d) failed: %s", idx, e)
                     name = f'GPU {idx}'
                 try:
                     mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
                     vram = int(mem.total)
-                except Exception:
+                except NVML_EXC as e:
+                    log.debug("nvmlDeviceGetMemoryInfo(idx=%d) failed: %s", idx, e)
                     vram = 0
                 vram_mb = vram // (1024 * 1024)
                 gpus.append((f'nvidia:{idx}', f'{name} ({vram_mb} MB)', vram))
@@ -1081,7 +1092,8 @@ class SensorEnumerator(SensorEnumeratorBase):
                 try:
                     mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
                     vram = int(mem.total)
-                except Exception:
+                except NVML_EXC as e:
+                    log.debug("_best_gpu(idx=%d) memory probe failed: %s", idx, e)
                     vram = 0
                 info = {'vendor': 'nvidia', 'nvidia_idx': idx,
                         'drm_card': '', 'hwmon_driver': '', 'vram': vram}

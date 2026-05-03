@@ -50,8 +50,9 @@ _LHM_TYPE_MAP: dict[str, tuple[str, str]] = {
 try:
     from HardwareMonitor.Hardware import Computer  # pyright: ignore[reportMissingImports]
     LHM_AVAILABLE = True
-except Exception:
+except (ImportError, RuntimeError, OSError) as _lhm_err:
     LHM_AVAILABLE = False
+    log.debug("LibreHardwareMonitor unavailable (pythonnet/CLR not loaded): %s", _lhm_err)
 
 
 # =========================================================================
@@ -109,8 +110,11 @@ def _get_disk_health(device_id: str | None) -> str:
         for status in w.MSStorageDriver_FailurePredictStatus():
             if status.Active:
                 return 'FAILED' if status.PredictFailure else 'PASSED'
-    except Exception:
-        pass
+    except ImportError:
+        log.debug("wmi package unavailable for disk health probe")
+    except Exception as e:
+        # WMI/COM exceptions don't share a common Python base — keep broad, log.
+        log.debug("WMI MSStorageDriver_FailurePredictStatus query failed for %s: %s", device_id, e)
     return 'Unknown'
 
 
@@ -198,8 +202,9 @@ class SensorEnumerator(SensorEnumeratorBase):
         if self._lhm_computer is not None:
             try:
                 self._lhm_computer.Close()
-            except Exception:
-                pass
+            except Exception as e:
+                # .NET/CLR teardown can throw arbitrary System.* exceptions; log and move on.
+                log.debug("LHM Computer.Close() failed during teardown: %s", e)
             self._lhm_computer = None
 
     def _discover_psutil_win(self) -> None:
@@ -483,8 +488,8 @@ class WindowsPlatform(Platform):
         try:
             import ctypes
             ctypes.windll.shcore.SetProcessDpiAwareness(2)  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except (OSError, AttributeError) as e:
+            log.debug("SetProcessDpiAwareness failed (older Windows or missing shcore): %s", e)
 
     def minimize_on_close(self) -> bool:
         return True
