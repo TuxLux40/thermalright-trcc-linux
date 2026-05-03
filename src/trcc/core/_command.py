@@ -44,6 +44,8 @@ def command(
     topic: str | None = None,
     include_frame: bool = False,
     publish_args: tuple[int, ...] | None = None,
+    publish_kwargs: tuple[str, ...] = (),
+    extras_rename: dict[str, str] | None = None,
 ) -> Callable[[Callable[P, Any]], Callable[P, R]]:
     """Wrap a facade method.
 
@@ -56,9 +58,18 @@ def command(
         publish_args: Positional arg indices (post-self) to pass as the
             payload to ``events.publish(topic, *payload)``. Default
             ``None`` → all positional args.
+        publish_kwargs: Keyword arg names appended to the publish payload
+            after ``publish_args``. Used by LED methods that publish a
+            ``zone`` kwarg as the trailing payload element.
+        extras_rename: Dict mapping device-result-dict keys to
+            result-dataclass field names. Used by LED methods where the
+            device returns ``colors`` but ``LEDResult.display_colors`` is
+            the dataclass field.
 
     Decorated method body should return the device's raw result dict.
     """
+    rename = extras_rename or {}
+
     def decorator(method: Callable) -> Callable:
         @functools.wraps(method)
         def wrapper(self: Any, *args: Any, **kwargs: Any) -> OpResult:
@@ -78,13 +89,18 @@ def command(
                 img = r.get('image')
                 out['frame'] = Frame(native=img) if img is not None else None
             # Subclass-specific extras travel through if the dict has them
-            # and the result_cls accepts them. Cheap to attempt.
+            # and the result_cls accepts them. Cheap to attempt. Renames
+            # apply for fields whose dict key differs from dataclass field.
             for k in ('is_animated', 'interval_ms', 'overlay_config',
-                      'overlay_enabled', 'display_colors'):
+                      'overlay_enabled', 'colors', 'display_colors'):
                 if k in r:
-                    out[k] = r[k]
+                    out[rename.get(k, k)] = r[k]
             if success and topic:
-                payload = args if publish_args is None else tuple(args[i] for i in publish_args)
+                payload = list(
+                    args if publish_args is None
+                    else tuple(args[i] for i in publish_args)
+                )
+                payload.extend(kwargs.get(kw) for kw in publish_kwargs)
                 self._events.publish(topic, *payload)
             try:
                 return result_cls(**out)
