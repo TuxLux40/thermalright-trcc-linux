@@ -84,6 +84,59 @@ def _sanitize(result: dict) -> dict:
     return {k: v for k, v in result.items() if k not in _NON_SERIALIZABLE}
 
 
+_BYTES_MARKER = '__bytes__'
+
+
+def sanitize_for_wire(value: Any) -> Any:
+    """Convert a Python value into something JSON can serialize.
+
+    Two real cases that the manifold's command surface hands us:
+
+      ``pathlib.Path``    →  ``str(path)`` — every facade method that
+                              takes a Path immediately ``str()``\\ s it
+                              internally, so the receiving end accepts
+                              str just as well.
+      ``bytes``           →  ``{"__bytes__": "<base64>"}`` — single-key
+                              marker dict that round-trips through
+                              JSON. The server reconstructs via
+                              :func:`unsanitize_from_wire`.
+
+    Plain JSON-friendly values pass through untouched. Lists and dicts
+    are recursed shallowly — covers the call shapes the facades
+    actually use without paying for arbitrary depth.
+    """
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, bytes):
+        import base64
+        return {_BYTES_MARKER: base64.b64encode(value).decode('ascii')}
+    if isinstance(value, list):
+        return [sanitize_for_wire(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(sanitize_for_wire(v) for v in value)
+    if isinstance(value, dict):
+        return {k: sanitize_for_wire(v) for k, v in value.items()}
+    return value
+
+
+def unsanitize_from_wire(value: Any) -> Any:
+    """Reverse of :func:`sanitize_for_wire` for values arriving from JSON.
+
+    Reconstructs ``bytes`` from the ``__bytes__`` marker dict. ``Path``
+    isn't reversed — the receiving facade methods accept ``str`` and
+    convert internally if they need ``Path``, so leaving the str on the
+    wire is honest about the contract.
+    """
+    if isinstance(value, dict) and len(value) == 1 and _BYTES_MARKER in value:
+        import base64
+        return base64.b64decode(value[_BYTES_MARKER])
+    if isinstance(value, list):
+        return [unsanitize_from_wire(v) for v in value]
+    if isinstance(value, dict):
+        return {k: unsanitize_from_wire(v) for k, v in value.items()}
+    return value
+
+
 def _result_to_dict(result: OpResult) -> dict[str, Any]:
     """Serialize an OpResult (or subclass) into a JSON-safe dict.
 
@@ -439,8 +492,11 @@ class IPCServer:
 
         role = str(request.get("role", ""))
         method = str(request.get("method", ""))
-        args = tuple(request.get("args", ()))
-        kwargs = dict(request.get("kwargs", {}))
+        # Unsanitize so wire markers (bytes-as-base64) become real values
+        # before they hit the facade method.
+        args = tuple(unsanitize_from_wire(a) for a in request.get("args", ()))
+        kwargs = {k: unsanitize_from_wire(v)
+                  for k, v in request.get("kwargs", {}).items()}
 
         # Trcc-level methods (discover, etc.) live under the `_meta` role.
         # They aren't on a facade — they're on the container itself.

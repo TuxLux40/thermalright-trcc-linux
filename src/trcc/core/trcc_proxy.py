@@ -73,9 +73,18 @@ class _FacadeProxy:
         timeout = self._timeout
 
         def call(*args: Any, **kwargs: Any) -> OpResult:
-            from ..ipc import _result_from_dict, send_manifold_request
+            # Sanitize Path/bytes at the wire boundary so JSON can
+            # serialize them. The server unsanitizes on its end before
+            # dispatching to the real facade method.
+            from ..ipc import (
+                _result_from_dict,
+                sanitize_for_wire,
+                send_manifold_request,
+            )
             data = send_manifold_request(
-                role, method, args, kwargs,
+                role, method,
+                tuple(sanitize_for_wire(a) for a in args),
+                {k: sanitize_for_wire(v) for k, v in kwargs.items()},
                 socket_path=path, timeout=timeout,
             )
             return _result_from_dict(data)
