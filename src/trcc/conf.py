@@ -74,7 +74,10 @@ def _migrate_old_config() -> None:
     try:
         os.rmdir(old_dir)
     except OSError:
-        pass
+        # Old dir non-empty or missing — leave it alone, the tracked-file
+        # migration above is what matters.
+        log.debug("conf: rmdir(%s) failed during migration cleanup",
+                  old_dir, exc_info=True)
     log.info("Migrated config from %s to %s", old_dir, CONFIG_DIR)
 
 
@@ -104,7 +107,10 @@ def _migrate_user_content_themes() -> None:
             try:
                 os.rmdir(old)
             except OSError:
-                pass
+                # Old theme dir non-empty (some files weren't moved because
+                # they collided with the destination) — leave it.
+                log.debug("conf: rmdir(%s) failed during user-theme merge",
+                          old, exc_info=True)
         else:
             os.makedirs(USER_CONTENT_DATA_DIR, exist_ok=True)
             shutil.move(old, new)

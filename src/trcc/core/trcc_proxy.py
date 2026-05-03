@@ -171,14 +171,16 @@ class EventBusProxy:
             try:
                 s.close()
             except OSError:
-                pass
+                log.debug("EventBusProxy.subscribe: socket close failed "
+                          "after malformed-ack", exc_info=True)
             raise RuntimeError(
                 f"EventBusProxy.subscribe: malformed ack: {e}") from e
         if not ack.get("success"):
             try:
                 s.close()
             except OSError:
-                pass
+                log.debug("EventBusProxy.subscribe: socket close failed "
+                          "after server-reject", exc_info=True)
             err = ack.get("error", "unknown error")
             raise RuntimeError(f"EventBusProxy.subscribe: server rejected: {err}")
 
@@ -207,12 +209,16 @@ class EventBusProxy:
                                 "EventBusProxy: callback for %r raised",
                                 event)
             except OSError:
-                pass
+                # Reader socket dropped (server killed, client disconnect) —
+                # exit reader thread silently. Logged for -vv visibility.
+                log.debug("EventBusProxy reader: socket OSError — exiting",
+                          exc_info=True)
             finally:
                 try:
                     s.close()
                 except OSError:
-                    pass
+                    log.debug("EventBusProxy reader: socket close failed "
+                              "during cleanup", exc_info=True)
 
         thread = threading.Thread(
             target=_reader, daemon=True,
@@ -260,11 +266,13 @@ class EventBusProxy:
         try:
             s.shutdown(socket.SHUT_RDWR)
         except OSError:
-            pass
+            log.debug("_close_sub: SHUT_RDWR failed (already closed)",
+                      exc_info=True)
         try:
             s.close()
         except OSError:
-            pass
+            log.debug("_close_sub: close() failed (already closed)",
+                      exc_info=True)
 
 
 # =============================================================================

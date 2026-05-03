@@ -202,11 +202,13 @@ class IPCServer:
             try:
                 client.shutdown(socket.SHUT_RDWR)
             except OSError:
-                pass
+                log.debug("shutdown: socket.SHUT_RDWR failed (already closed)",
+                          exc_info=True)
             try:
                 client.close()
             except OSError:
-                pass
+                log.debug("shutdown: client.close() failed (already closed)",
+                          exc_info=True)
         self._event_subs.clear()
 
         if self._notifier:
@@ -232,6 +234,9 @@ class IPCServer:
         try:
             client, _ = self._sock.accept()
         except OSError:
+            # Listen socket dropped (server shutting down or fd recycled) —
+            # silently bail out of this notifier callback.
+            log.debug("_on_connection: accept() failed", exc_info=True)
             return
 
         request: dict = {}
@@ -267,7 +272,8 @@ class IPCServer:
                 try:
                     client.close()
                 except OSError:
-                    pass
+                    log.debug("_on_connection: client.close() failed",
+                              exc_info=True)
 
     def _handle_subscribe(self, client: socket.socket, topic: str) -> None:
         """Register a subscription that forwards EventBus events to ``client``.
@@ -280,10 +286,13 @@ class IPCServer:
         try:
             client.sendall(json.dumps({"success": True}).encode() + b"\n")
         except OSError:
+            log.debug("_handle_subscribe: ack send failed (client gone?)",
+                      exc_info=True)
             try:
                 client.close()
             except OSError:
-                pass
+                log.debug("_handle_subscribe: client.close() failed",
+                          exc_info=True)
             return
         # Drop the recv timeout — the connection now lives until the
         # client disconnects.
@@ -311,7 +320,8 @@ class IPCServer:
                 try:
                     client.close()
                 except OSError:
-                    pass
+                    log.debug("subscribe forwarder: client.close() failed",
+                              exc_info=True)
 
         sub_id = self._trcc.events.subscribe(topic, _forward)
         sub_id_holder.append(sub_id)
