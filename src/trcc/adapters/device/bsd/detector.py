@@ -28,6 +28,6 @@ def get_usb_list() -> list[str]:
         )
         if result.returncode == 0:
             return result.stdout.splitlines()
-    except Exception:
-        log.debug("usbconfig list failed")
+    except (OSError, subprocess.SubprocessError) as e:
+        log.debug("usbconfig list failed: %s", e)
     return []

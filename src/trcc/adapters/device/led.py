@@ -286,6 +286,7 @@ class LedHidSender(LedDevice):
                 )
 
             except Exception as e:
+                # Retry-and-capture any failure (USB I/O, parser, etc.) — last_err is re-raised.
                 log.warning(
                     "LED handshake attempt %d/%d failed: %s",
                     attempt, HANDSHAKE_MAX_RETRIES, e,
@@ -415,7 +416,7 @@ class _LedProbeCache:
                 'style_id': info.style.style_id if info.style else 1,
             }
             cache_path.write_text(json.dumps(cache))
-        except Exception as e:
+        except (OSError, ValueError, TypeError) as e:
             log.debug("Failed to save probe cache: %s", e)
 
     @classmethod
@@ -444,7 +445,7 @@ class _LedProbeCache:
                 model_name=entry['model_name'],
                 style_sub=pm_entry.style_sub if pm_entry else 0,
             )
-        except Exception as e:
+        except (OSError, ValueError, KeyError, TypeError) as e:
             log.debug("Failed to load probe cache: %s", e)
             return None
 
@@ -488,11 +489,12 @@ def probe_led_model(vid: int = LED_VID, pid: int = LED_PID,
             _LedProbeCache.save(vid, pid, info, usb_path)
         return info
     except Exception as e:
+        # Probe outer — handshake retry layer above re-raises last_err of any type.
         log.debug("LED probe failed for %04x:%04x: %s", vid, pid, e)
         return None
     finally:
         if transport is not None:
             try:
                 transport.close()
-            except Exception:
-                pass
+            except OSError as e:
+                log.debug("LED probe transport close raised: %s", e)

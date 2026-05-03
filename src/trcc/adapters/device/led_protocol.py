@@ -60,8 +60,9 @@ class LedProtocol(UsbProtocol):
 
             try:
                 return self._sender.send_data(packet)
-            except Exception:
-                log.warning("LED send failed, reconnecting and retrying")
+            except (OSError, ValueError) as e:
+                # USB I/O failure (USBError extends OSError) — reconnect + retry once.
+                log.warning("LED send failed (%s) — reconnecting and retrying", e)
                 self.close()
                 self._handshake_result = None
                 self.handshake()

@@ -80,8 +80,8 @@ class _BulkLikeProtocol(DeviceProtocol):
         if self._device is not None:
             try:
                 self._device.close()
-            except Exception:
-                pass
+            except OSError as e:
+                log.debug("bulk device close raised: %s", e)
             self._device = None
 
     @property
