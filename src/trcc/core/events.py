@@ -56,9 +56,61 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from threading import Lock
-from typing import Any
+from typing import Any, Final
 
 log = logging.getLogger(__name__)
+
+
+class Topic:
+    """Canonical event topic strings — every publisher and subscriber uses these.
+
+    Using a class with class attributes (rather than an Enum) keeps the
+    wire format trivially serializable: each topic IS the string the
+    daemon sees on the socket. Cosmic Python's "favor explicit
+    registration through a simple dict" applied at the topic layer.
+    """
+
+    # Device lifecycle
+    DEVICE_LIST: Final = 'device.list'                  # payload: tuple of devices
+    DEVICE_CONNECTED: Final = 'device.connected'        # payload: device
+    DEVICE_DISCONNECTED: Final = 'device.disconnected'  # payload: device
+
+    # Streaming. Tick / streaming hot path uses ``device_path`` (str) as the
+    # identifier — wire-friendly and unambiguous across LCD + LED.
+    FRAME: Final = 'frame'                              # payload: (device_path, Frame|tick_result)
+    PROGRESS: Final = 'progress'                        # payload: (device_path, pct, cur, tot)
+    METRICS: Final = 'metrics'                          # payload: HardwareMetrics
+
+    # Bootstrap progress
+    BOOTSTRAP_PROGRESS: Final = 'bootstrap.progress'    # payload: str message
+    DATA_READY: Final = 'data.ready'                    # payload: None
+
+    # LCD state changes (LCDCommands publishes after each successful mutation)
+    LCD_BRIGHTNESS: Final = 'lcd.brightness'
+    LCD_ROTATION: Final = 'lcd.rotation'
+    LCD_SPLIT_MODE: Final = 'lcd.split_mode'
+    LCD_FIT_MODE: Final = 'lcd.fit_mode'
+    LCD_THEME: Final = 'lcd.theme'
+    LCD_MASK: Final = 'lcd.mask'
+    LCD_OVERLAY_ENABLED: Final = 'lcd.overlay_enabled'
+    LCD_OVERLAY: Final = 'lcd.overlay'
+
+    # LED state changes (LEDCommands publishes)
+    LED_COLOR: Final = 'led.color'
+    LED_MODE: Final = 'led.mode'
+    LED_BRIGHTNESS: Final = 'led.brightness'
+    LED_TOGGLED: Final = 'led.toggled'
+    LED_ZONE_SYNC: Final = 'led.zone_sync'
+    LED_CLOCK: Final = 'led.clock'
+    LED_SENSOR: Final = 'led.sensor'
+
+    # App-level (ControlCenterCommands publishes)
+    CONTROL_CENTER_AUTOSTART: Final = 'control_center.autostart'
+    CONTROL_CENTER_TEMP_UNIT: Final = 'control_center.temp_unit'
+    CONTROL_CENTER_LANGUAGE: Final = 'control_center.language'
+    CONTROL_CENTER_HDD: Final = 'control_center.hdd'
+    CONTROL_CENTER_REFRESH: Final = 'control_center.refresh'
+    CONTROL_CENTER_GPU: Final = 'control_center.gpu'
 
 
 class EventBus:

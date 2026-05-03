@@ -4,7 +4,7 @@ The whole point: a UI that holds a `Trcc | TrccProxy` reference doesn't
 need to know which one it has. Same surface, same call shape, same
 return types. Composition root picks one at boot::
 
-    trcc = TrccProxy() if TRCC_DAEMON else Trcc.for_current_os()
+    trcc = TrccProxy() if TRCC_DAEMON else _boot.trcc()
 
     # ... every UI call site, unchanged:
     trcc.lcd.set_brightness(0, 75)

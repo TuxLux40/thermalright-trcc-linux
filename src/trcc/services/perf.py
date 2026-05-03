@@ -284,30 +284,6 @@ def run_benchmarks() -> PerfReport:
     return report
 
 
-def _ipc_pause() -> bool:
-    """Pause the GUI daemon's display refresh via IPC. Returns True if paused."""
-    try:
-        from ..core.instance import InstanceKind, find_active
-        if find_active() == InstanceKind.GUI:
-            from ..ipc import IPCTransport
-            IPCTransport().send("display.pause")
-            return True
-    except Exception:
-        pass
-    return False
-
-
-def _ipc_resume() -> None:
-    """Resume the GUI daemon's display refresh via IPC."""
-    try:
-        from ..core.instance import InstanceKind, find_active
-        if find_active() == InstanceKind.GUI:
-            from ..ipc import IPCTransport
-            IPCTransport().send("display.resume")
-    except Exception:
-        pass
-
-
 def run_device_benchmarks(
     *,
     detect_fn: Callable,
@@ -323,40 +299,28 @@ def run_device_benchmarks(
     - Sustained FPS over 3 seconds
 
     Uses time.perf_counter() (wall clock) because USB I/O is the bottleneck.
-    If the GUI daemon is running, pauses its display refresh for exclusive
-    device access, then resumes when done.
-
     Adapter dependencies are injected by the caller (CLI/API composition root).
     """
     log.debug("starting device benchmarks")
     report = PerfReport()
-
-    # Pause GUI daemon if running (exclusive device access)
-    gui_paused = _ipc_pause()
-
-    try:
-        return _run_device_benchmarks_inner(
-            report, gui_paused,
-            detect_fn=detect_fn,
-            get_protocol=get_protocol,
-            get_protocol_info=get_protocol_info,
-            probe_led_fn=probe_led_fn,
-        )
-    finally:
-        if gui_paused:
-            _ipc_resume()
+    return _run_device_benchmarks_inner(
+        report,
+        detect_fn=detect_fn,
+        get_protocol=get_protocol,
+        get_protocol_info=get_protocol_info,
+        probe_led_fn=probe_led_fn,
+    )
 
 
 def _run_device_benchmarks_inner(
     report: PerfReport,
-    gui_paused: bool,
     *,
     detect_fn: Callable,
     get_protocol: Callable,
     get_protocol_info: Callable,
     probe_led_fn: Callable,
 ) -> PerfReport:
-    """Inner device benchmark logic — separated for try/finally in caller."""
+    """Inner device benchmark logic."""
     from ..services import DeviceService
     from ..services.image import ImageService
 

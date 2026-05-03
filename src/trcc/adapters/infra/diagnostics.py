@@ -1506,11 +1506,6 @@ class DebugReport:
     def _handshakes(self) -> None:
         sec = self._add("Handshakes")
         try:
-            # If another instance (GUI/API) is running, get device info via IPC
-            # instead of opening devices directly (which would fail with EBUSY).
-            if self._handshakes_from_instance(sec):
-                return
-
             scsi_devs = [d for d in self._detected_devices if d.protocol == "scsi"]
             hid_devs  = [d for d in self._detected_devices if d.protocol == "hid"]
             bulk_devs = [d for d in self._detected_devices if d.protocol == "bulk"]
@@ -1559,51 +1554,6 @@ class DebugReport:
 
         except Exception as e:
             sec.lines.append(f"  Error: {e}")
-
-    def _handshakes_from_instance(self, sec: _Section) -> bool:
-        """Query running instance for device info via IPC. Returns True if handled."""
-        try:
-            from trcc.core.instance import find_active
-            if not (active := find_active()):
-                return False
-
-            from trcc.ipc import IPCTransport
-            transport = IPCTransport()
-            kind = "GUI" if active.name == "GUI" else "API"
-
-            # Query LCD status
-            lcd = transport.send("display.status")
-            if lcd.get("connected"):
-                vid, pid = lcd.get('vid', 0), lcd.get('pid', 0)
-                res = lcd.get('resolution', [0, 0])
-                pm = lcd.get('pm_byte', 0)
-                sub = lcd.get('sub_byte', 0)
-                fbl = lcd.get('fbl_code', '?')
-                model = lcd.get('model', '')
-                protocol = lcd.get('protocol', 'unknown')
-                sec.lines.append(f"\n  {vid:04x}:{pid:04x} — {protocol.upper()}")
-                sec.lines.append(
-                    f"    PM={pm}, SUB={sub}, FBL={fbl}, "
-                    f"resolution=({res[0]}, {res[1]}), model={model}")
-                sec.lines.append(f"    (via {kind} instance)")
-
-            # Query LED status
-            led = transport.send("led.status")
-            if led.get("connected"):
-                vid, pid = led.get('vid', 0), led.get('pid', 0)
-                pm = led.get('pm_byte', 0)
-                sub = led.get('sub_byte', 0)
-                model = led.get('model', '')
-                style_id = led.get('led_style_id')
-                sec.lines.append(f"\n  {vid:04x}:{pid:04x} — LED")
-                style_info = f", style={style_id}" if style_id else ""
-                sec.lines.append(
-                    f"    PM={pm}, SUB={sub}, model={model}{style_info}")
-                sec.lines.append(f"    (via {kind} instance)")
-
-            return not (not lcd.get("connected") and not led.get("connected"))
-        except Exception:
-            return False  # IPC failed — fall back to direct handshake
 
     def _handshake_scsi(self, dev: Any, sec: _Section) -> None:
         from trcc.adapters.device.factory import DeviceProtocolFactory

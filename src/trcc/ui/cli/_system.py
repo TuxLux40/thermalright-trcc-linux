@@ -227,9 +227,9 @@ def download_themes(pack=None, show_list=False, force=False, show_info=False):
             from trcc.conf import Settings
             Settings.clear_installed_resolutions()
 
-        from trcc.core.app import TrccApp
+        from trcc._boot import trcc
         dispatch_pack = "" if show_list else (pack or "")
-        return TrccApp.get().download_themes(dispatch_pack, force)
+        return trcc().download_themes(dispatch_pack, force)
 
     except Exception as e:
         print(f"Error: {e}")

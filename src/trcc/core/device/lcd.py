@@ -50,8 +50,6 @@ class LCDDevice:
         theme_info_from_dir_fn: Any = None,
         lcd_config: Any = None,
         build_services_fn: Any = None,
-        find_active_fn: Any = None,
-        proxy_factory_fn: Any = None,
     ) -> None:
         self._device_svc = device_svc
         self._display_svc = display_svc
@@ -62,30 +60,13 @@ class LCDDevice:
         self._theme_info_from_dir_fn = theme_info_from_dir_fn
         self._lcd_config = lcd_config
         self._build_services_fn = build_services_fn
-        self._find_active_fn = find_active_fn
-        self._proxy_factory_fn = proxy_factory_fn
-        self._proxy: Any = None
         self._info: Any = None  # DeviceInfo, set during connect()
         self.log: logging.Logger = log
         self.orientation = Orientation(0, 0)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Shared lifecycle (proxy routing + DeviceInfo)
+    # Shared lifecycle (DeviceInfo)
     # ══════════════════════════════════════════════════════════════════════
-
-    def wire_ipc(self, find_active_fn: Any, proxy_factory_fn: Any) -> None:
-        """Inject IPC routing functions for proxy delegation."""
-        self._find_active_fn = find_active_fn
-        self._proxy_factory_fn = proxy_factory_fn
-
-    def _try_proxy_route(self, detected: Any) -> dict | None:
-        """Check for active instance and route through proxy if found."""
-        if detected is None and self._find_active_fn and self._proxy_factory_fn:
-            active = self._find_active_fn()
-            if active is not None:
-                self._proxy = self._proxy_factory_fn(active)
-                return {"success": True, "proxy": active}
-        return None
 
     def connect(self, detected: Any = None) -> dict:
         """Connect to device — handshake via protocol, fill DeviceInfo."""
@@ -93,8 +74,6 @@ class LCDDevice:
 
     @property
     def connected(self) -> bool:
-        if self._proxy is not None:
-            return getattr(self._proxy, 'connected', True)
         if self._info is not None:
             return True
         return bool(self._device_svc is not None and self._device_svc.selected is not None)
@@ -153,14 +132,6 @@ class LCDDevice:
     # ══════════════════════════════════════════════════════════════════════
 
     def _connect_lcd(self, detected: Any) -> dict:
-        proxy_result = self._try_proxy_route(detected)
-        if proxy_result is not None:
-            self.log.info("connect: routing through active proxy instance")
-            self._set_proxy(self._proxy)
-            proxy_result["resolution"] = getattr(self._proxy, 'resolution', (0, 0))
-            proxy_result["device_path"] = getattr(self._proxy, 'device_path', '')
-            return proxy_result
-
         if self._device_svc is None:
             raise RuntimeError(
                 "Device requires a DeviceService. "
@@ -232,11 +203,6 @@ class LCDDevice:
         device = cls(renderer=renderer, build_services_fn=build_services_fn)
         device._build_services(device_svc)
         return device
-
-    def _set_proxy(self, proxy: Any) -> None:
-        """Route calls through proxy (IPC forwarding)."""
-        self._proxy = proxy
-
 
     # ══════════════════════════════════════════════════════════════════════
     # LCD tick

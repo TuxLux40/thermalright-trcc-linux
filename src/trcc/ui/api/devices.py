@@ -104,36 +104,26 @@ def select_device(device_id: int) -> dict:
     api.stop_video_playback()
     api.stop_overlay_loop()
 
-    # If a GUI/CLI instance is already attached to this device, route via IPC
-    from trcc.core.instance import find_active
-    from trcc.ipc import create_device_proxy
-    if (active := find_active()) is not None:
-        proxy = create_device_proxy(active)
-        api._device_dispatcher = proxy
-        if info is not None and (proxy_res := proxy.resolution) != (0, 0):
-            info.resolution = proxy_res
-        log.info("Using %s instance for device %s",
-                 active.value, info.name if info else "?")
-    else:
-        # Standalone — API drives the device directly via the Trcc-built object.
-        api._device_dispatcher = device
+    # API drives the device directly via the Trcc-built object. In daemon
+    # mode the API process IS a TrccProxy client (via _boot.trcc()), so
+    # the same path covers both deployments — no separate routing needed.
+    api._device_dispatcher = device
 
-        from trcc.core.device.lcd import LCDDevice
-        if isinstance(device, LCDDevice) and info is not None:
-            w, h = info.resolution or (0, 0)
+    from trcc.core.device.lcd import LCDDevice
+    if isinstance(device, LCDDevice) and info is not None:
+        w, h = info.resolution or (0, 0)
 
-            # Background-prefetch theme assets for this resolution
-            if w and h:
-                from trcc.core.app import TrccApp
-                trcc_app = TrccApp.get()
-                trcc_app._ensure_data_background(device, w, h)
+        # Background-prefetch theme assets for this resolution
+        if w and h:
+            from trcc._boot import trcc
+            trcc()._ensure_data_background(device, w, h)
 
-            api.set_current_image(ImageService.solid_color(0, 0, 0, w, h))
+        api.set_current_image(ImageService.solid_color(0, 0, 0, w, h))
 
-            device.restore_device_settings()
-            if (result := device.restore_last_theme()) and result.get("image"):
-                api.set_current_image(result["image"])
-                log.info("Restored last theme for preview")
+        device.restore_device_settings()
+        if (result := device.restore_last_theme()) and result.get("image"):
+            api.set_current_image(result["image"])
+            log.info("Restored last theme for preview")
 
     if info is not None:
         w, h = info.resolution or (0, 0)

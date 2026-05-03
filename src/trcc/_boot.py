@@ -1,10 +1,14 @@
 """TRCC composition root — canonical Trcc factory.
 
-One module, used uniformly by CLI / API / GUI. Every UI calls
-:func:`trcc` to obtain its per-process Trcc handle and gets the same
-answer based on environment + state. Honors ``TRCC_DAEMON`` to switch
-between in-process and daemon-proxy modes — every UI does the right
-thing automatically.
+One module, one function, used uniformly by CLI / API / GUI / daemon.
+Every UI calls :func:`trcc` to obtain its per-process Trcc handle and
+gets the same answer based on environment + state. Honors
+``TRCC_DAEMON`` to switch between in-process and daemon-proxy modes.
+
+Pure DI (Mark Seemann): all wiring happens here. Trcc takes its
+dependencies through the constructor; nothing mutates a built Trcc
+later. Cosmic Python's bootstrap function shape — defaults make
+production easy, kwargs let tests inject fakes.
 
 Composition pattern (the only one in this codebase)::
 
@@ -17,11 +21,10 @@ Composition pattern (the only one in this codebase)::
 Modes:
 
   ``TRCC_DAEMON`` unset (default)
-      Returns the in-process `Trcc` — single instance per process,
-      cached. Reuses ``TrccApp._instance._trcc`` when a composition
-      root has already initialised one (production CLI / GUI). Builds
-      a fresh ``Trcc`` with offscreen ``QtRenderer`` otherwise (tests,
-      ``python -m trcc.daemon``).
+      Builds the in-process `Trcc` once — single instance per process,
+      cached. Construction wires platform, renderer, system service,
+      data extraction callable, and theme download callables; then
+      runs ``Trcc.discover()`` so the first command sees devices.
 
   ``TRCC_DAEMON=1`` (and AF_UNIX available)
       Returns a `TrccProxy` connected to a running daemon, auto-spawning
@@ -33,13 +36,17 @@ Modes:
       ``AF_UNIX`` is unavailable; daemon mode silently falls back to
       in-process. The flag is safe to set on any OS.
 
-Test / dev injection still works: pass an explicit `Platform` (e.g.
-``MockPlatform``) to force in-process mode and bypass the daemon-flag
-short-circuit::
+Dependency overrides (tests + GUI)::
 
     from trcc._boot import trcc
     from tests.mock_platform import MockPlatform
-    trcc(MockPlatform(specs))   # subsequent trcc() calls return this
+    from trcc.adapters.render.qt import QtRenderer
+
+    # Tests: pass a MockPlatform to skip real USB.
+    trcc(MockPlatform(specs))
+
+    # GUI: pass its own windowed renderer + defer discover until splash.
+    trcc(platform, renderer=QtRenderer(), discover_now=False)
 """
 from __future__ import annotations
 
@@ -52,7 +59,7 @@ from typing import TYPE_CHECKING, cast
 from trcc.core.trcc import Trcc
 
 if TYPE_CHECKING:
-    from trcc.core.ports import Platform
+    from trcc.core.ports import Platform, Renderer
 
 log = logging.getLogger(__name__)
 
@@ -85,24 +92,35 @@ def daemon_mode_enabled() -> bool:
     return hasattr(socket, 'AF_UNIX')
 
 
-def trcc(platform: Platform | None = None) -> Trcc:
+def trcc(
+    platform: Platform | None = None,
+    *,
+    renderer: Renderer | None = None,
+    discover_now: bool = True,
+    verbosity: int = 0,
+) -> Trcc:
     """Return the per-process `Trcc` (or `TrccProxy` in daemon mode).
 
     Cached, thread-safe. Identical contract for every UI — they all
     see the same handle, no UI-specific composition logic anywhere.
 
-    Pass ``platform`` once (typically from a test harness or
-    ``dev/mock_*`` script) to force an in-process build against a
-    specific Platform — daemon mode short-circuit is bypassed in that
-    case so mock devices stay in this process.
+    Parameters:
+        platform: DI override. ``None`` triggers OS detection via
+            ``make_platform()``.  Tests pass ``MockPlatform`` to skip USB.
+        renderer: DI override. ``None`` builds an offscreen ``QtRenderer``.
+            The GUI passes its own windowed renderer.
+        discover_now: When True (default), runs ``Trcc.discover()`` so
+            devices are connected before the first command. The GUI passes
+            False so discover happens behind the splash screen.
+        verbosity: Forwarded to the logging configurator (``-v`` / ``-vv``).
     """
     global _cached
     with _lock:
         if _cached is not None:
             return _cached
 
-        # 1. Daemon mode short-circuit — proxy, no Qt setup needed
-        # (the daemon process already has its own).
+        # 1. Daemon-mode short circuit — proxy, no Qt or USB needed
+        # in this process. Every facade call travels over the socket.
         if platform is None and daemon_mode_enabled():
             from trcc.core.trcc_proxy import TrccProxy
             from trcc.daemon import ensure_daemon
@@ -116,51 +134,83 @@ def trcc(platform: Platform | None = None) -> Trcc:
             _cached = cast(Trcc, TrccProxy())
             return _cached
 
-        # 2. In-process production path: a composition root (cli/main,
-        # gui/launch) already ran TrccApp.init() and has a composed
-        # inner Trcc. Reuse it so callers share the same connected
-        # devices — single source of truth.
-        from trcc.core.app import TrccApp
-        if TrccApp._instance is not None and platform is None:
-            inner = TrccApp._instance._trcc
-            if not inner:
-                TrccApp._instance.scan()
-            _cached = inner
-            return _cached
+        # 2. Resolve / accept the Platform.
+        if platform is None:
+            from trcc.adapters.system import make_platform
+            platform = make_platform()
 
-        # 3. Standalone — build a fresh Trcc with an offscreen
-        # QApplication so QtRenderer can do its image work. Used by
-        # tests, dev/mock_*, and `python -m trcc.daemon`.
-        _ensure_qapp()
-        from trcc.adapters.render.qt import QtRenderer
+        # 3. Bootstrap the process: logging, OS-specific stdout config,
+        # settings file, first-run setup hook. All idempotent — safe
+        # to call again from the same process.
+        from trcc.adapters.infra.logging_setup import StandardLoggingConfigurator
+        from trcc.conf import init_settings
+        StandardLoggingConfigurator().configure(verbosity=verbosity)
+        platform.configure_stdout()
+        init_settings(platform)
+        if platform.needs_setup():
+            platform.auto_setup()
+
+        # 4. Resolve / build the renderer. When the caller didn't
+        # provide one we create an offscreen QtRenderer — sufficient
+        # for tests, ``python -m trcc.daemon``, and CLI commands that
+        # don't want a graphical session.
+        if renderer is None:
+            _ensure_qapp()
+            from trcc.adapters.render.qt import QtRenderer
+            renderer = QtRenderer()
+
+        # 5. Build infra services. Composition happens once, here.
         from trcc.core.builder import ControllerBuilder
+        from trcc.services.image import ImageService
         from trcc.services.system import set_instance
+        builder = ControllerBuilder(platform).with_renderer(renderer)
+        ImageService.set_renderer(renderer)
+        system_svc = builder.build_system()
+        set_instance(system_svc)
+        ensure_data_fn = builder.build_ensure_data_fn()
+        download_pack_fn, list_available_fn = builder.build_download_fns()
 
-        app = Trcc(platform) if platform is not None else Trcc.for_current_os()
-        app.bootstrap()
-        app.with_renderer(QtRenderer())
-        app.discover()
+        # 6. Construct the singleton Trcc with every dependency injected.
+        # No ``set_X`` mutation later — Pure DI means construction is final.
+        t = Trcc(
+            platform,
+            renderer=renderer,
+            system_svc=system_svc,
+            ensure_data_fn=ensure_data_fn,
+            download_pack_fn=download_pack_fn,
+            list_available_fn=list_available_fn,
+        )
 
-        # Seed each connected device with one fresh metrics snapshot so
-        # sensor-linked LED modes (temp_linked, load_linked) and overlay
-        # sensors render real values when this is the only UI running
-        # on a headless box (issue #130).
-        sys_svc = ControllerBuilder(app._platform).build_system()
-        set_instance(sys_svc)
-        metrics = sys_svc.all_metrics
-        for device in app:
-            device.update_metrics(metrics)
+        # 7. Optional: run discovery now. CLI / API / daemon want devices
+        # ready before the first command; GUI defers so the splash can
+        # show progress while data extraction and USB connect happen.
+        if discover_now:
+            try:
+                t.discover()
+            except Exception:
+                log.exception("trcc(): discover raised — continuing with no devices")
+            # Seed each connected device with one fresh metrics snapshot
+            # so sensor-linked LED modes (temp_linked, load_linked) and
+            # overlay sensors render real values when this is the only
+            # UI running on a headless box (issue #130).
+            try:
+                metrics = system_svc.all_metrics
+                for device in t:
+                    device.update_metrics(metrics)
+            except Exception:
+                log.exception("trcc(): metrics seeding raised — continuing")
 
-        _cached = app
+        _cached = t
         return _cached
 
 
 def cleanup() -> None:
     """Release the cached Trcc. Idempotent + thread-safe.
 
-    For an in-process `Trcc`: releases device handles, clears event
-    subscribers. For a `TrccProxy`: closes long-lived event subscription
-    sockets. Either way, the next :func:`trcc` call rebuilds.
+    For an in-process `Trcc`: stops the metrics loop, releases device
+    handles, clears event subscribers. For a `TrccProxy`: closes
+    long-lived event subscription sockets. Either way, the next
+    :func:`trcc` call rebuilds.
     """
     global _cached
     with _lock:

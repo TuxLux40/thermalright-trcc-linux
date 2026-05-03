@@ -1258,11 +1258,8 @@ def _cmd_perf(
         from trcc.adapters.device.detector import DeviceDetector
         from trcc.adapters.device.factory import DeviceProtocolFactory
         from trcc.adapters.device.led import probe_led_model
-        from trcc.core.instance import InstanceKind, find_active
         from trcc.services.perf import run_device_benchmarks
 
-        if (gui_running := find_active() == InstanceKind.GUI):
-            print("GUI daemon detected — pausing display refresh...")
         print("Running device I/O benchmarks (this takes ~10s)...")
         report = run_device_benchmarks(
             detect_fn=DeviceDetector.detect,
@@ -1270,8 +1267,6 @@ def _cmd_perf(
             get_protocol_info=DeviceProtocolFactory.get_protocol_info,
             probe_led_fn=probe_led_model,
         )
-        if gui_running:
-            print("GUI display refresh resumed.")
         if not report.has_data:
             print("No devices found. Connect a device and try again.")
             return 1
@@ -1588,40 +1583,35 @@ def _ensure_self_signed_cert() -> tuple[str, str] | None:
 def main():
     """Main CLI entry point — composition root.
 
-    Initialization:
-      1. init_platform()  — logging, OS, settings, renderer
-      2. discover() — triggered per command that needs a device
+    Delegates the entire DI graph to ``trcc._boot.trcc()``. The first
+    ``trcc()`` call from any subcommand (or from this entry point's
+    progress-subscription bootstrap) builds the cached singleton.
     """
-    from trcc.core.app import AppEvent, AppObserver, TrccApp
+    from trcc._boot import trcc as _boot_trcc
+    from trcc.core.events import Topic
 
-    trcc_app = TrccApp.init()
-
-    # gui subcommand creates its own windowed QApplication in gui/__init__.py.
-    # Don't create the offscreen one here — PySide6 holds an internal reference
-    # to the QApplication singleton that survives Python-side deletion, so
-    # creating an offscreen one first makes the windowed creation fail.
+    # gui / daemon subcommands run their own composition root — they
+    # need a windowed QApp (gui) or an offscreen QApp + signal handlers
+    # (daemon). Bootstrapping a Trcc here would race their setup, so
+    # we let those subcommands construct on demand.
     _positional = [a for a in sys.argv[1:] if not a.startswith('-')]
-    _renderer_factory = None if _positional[:1] == ['gui'] else _make_cli_renderer
+    _runs_own_root = _positional[:1] in (['gui'], ['daemon'])
 
-    # CLI (non-GUI) shows download/extraction progress via AppEvent.BOOTSTRAP_PROGRESS.
-    class _CliProgressObserver(AppObserver):
-        def on_app_event(self, event: AppEvent, data: object) -> None:
-            if event == AppEvent.BOOTSTRAP_PROGRESS:
-                print(data, flush=True)
-
-    _is_gui = _positional[:1] == ['gui']
-    _progress_obs: AppObserver | None = None
-    if not _is_gui:
-        _progress_obs = _CliProgressObserver()
-        trcc_app.register(_progress_obs)
-
-    trcc_app.init_platform(
-        verbosity=_verbose,
-        renderer_factory=_renderer_factory,
-    )
+    if not _runs_own_root:
+        # CLI builds its Trcc up-front so progress events from the
+        # first device-touching subcommand land on a real subscriber.
+        # Defer device discovery to keep `trcc --help` instantaneous;
+        # subcommands that need devices call _boot_trcc() (cached) which
+        # is a no-op once we've built the singleton — they trigger
+        # discover via TrccApp.discover today (Phase 9 intermediate state).
+        t = _boot_trcc(verbosity=_verbose, discover_now=False)
+        t.events.subscribe(
+            Topic.BOOTSTRAP_PROGRESS,
+            lambda msg: print(msg, flush=True),
+        )
 
     try:
-        result = app(standalone_mode=False, obj=trcc_app)
+        result = app(standalone_mode=False)
         return result if isinstance(result, int) else 0
     except SystemExit as e:
         return e.code if isinstance(e.code, int) else 0

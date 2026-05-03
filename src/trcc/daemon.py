@@ -170,44 +170,14 @@ def _build_qapp() -> Any:
 
 
 def _build_trcc() -> Any:
-    """Get the Trcc to serve from.
+    """Build the Trcc the daemon will serve from.
 
-    Two arrival paths converge here:
-
-      ``trcc daemon`` (Typer subcommand)
-          ``cli/__init__.py::main`` has already initialised ``TrccApp``
-          and bootstrapped the platform.  Reuse TrccApp's composed
-          ``Trcc`` so we don't end up with two parallel container
-          instances in the same process.
-
-      ``python -m trcc.daemon`` (ad-hoc)
-          Nothing was initialised.  Build a fresh ``Trcc`` here and
-          discover devices ourselves.
-
-    Phase 9 dissolves ``TrccApp`` into ``Trcc`` and the first branch
-    becomes the only one.
+    Single composition path — the canonical ``_boot.trcc()`` factory.
+    Returns a fully-wired Trcc with devices discovered, metrics service
+    set, and theme/data callables injected.
     """
-    from .adapters.render.qt import QtRenderer
-    from .core.app import TrccApp
-    from .core.trcc import Trcc
-
-    if TrccApp._instance is not None:
-        inner = TrccApp._instance._trcc
-        if not list(TrccApp._instance._devices):
-            try:
-                TrccApp._instance.scan()
-            except Exception:
-                log.exception("trccd: TrccApp.scan raised — continuing")
-        return inner
-
-    trcc = Trcc.for_current_os()
-    trcc.bootstrap()
-    trcc.with_renderer(QtRenderer())   # QApplication is already alive (_build_qapp)
-    try:
-        trcc.discover()
-    except Exception:
-        log.exception("trccd: device discovery raised — continuing with no devices")
-    return trcc
+    from ._boot import trcc as _boot_trcc
+    return _boot_trcc(discover_now=True)
 
 
 # Module-level holder so the Qt heartbeat timer survives past the function

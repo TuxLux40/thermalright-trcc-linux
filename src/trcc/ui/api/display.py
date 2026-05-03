@@ -469,24 +469,6 @@ def screencast_status() -> ScreencastStatusResponse:
 # ── Preview helpers ───────────────────────────────────────────────────
 
 
-def _fetch_ipc_frame():
-    """Fetch current LCD frame from GUI daemon via IPC (blocking call).
-
-    Returns JPEG bytes (already encoded by IPC server).
-    """
-    import base64
-
-    from trcc.ipc import IPCTransport
-
-    try:
-        result = IPCTransport().send("display.get_frame")
-        if result.get("success") and result.get("frame"):
-            return base64.b64decode(result["frame"])
-    except Exception as e:
-        log.warning("IPC frame fetch failed (GUI daemon down?): %s", e)
-    return None
-
-
 def _encode_frame(frame: object, fmt: str = 'JPEG', quality: int = 85) -> bytes | None:
     """Encode a frame (QImage or raw bytes) to image bytes."""
     from PySide6.QtGui import QImage
@@ -505,14 +487,8 @@ def _encode_frame(frame: object, fmt: str = 'JPEG', quality: int = 85) -> bytes 
 
 
 def _get_lcd_frame():
-    """Get current LCD frame — from IPC daemon if active, otherwise local state.
-
-    Returns the raw frame object (QImage or pre-encoded bytes).
-    """
-    from trcc.ui.api import _current_image, _device_dispatcher
-
-    if getattr(_device_dispatcher, 'is_ipc', False):
-        return _fetch_ipc_frame()
+    """Return the current in-process LCD frame (set by on_frame_sent capture)."""
+    from trcc.ui.api import _current_image
     return _current_image
 
 
@@ -541,13 +517,13 @@ async def preview_stream(websocket: WebSocket):
     """Live JPEG stream of the current LCD frame — like a screen capture.
 
     Reads the LCD frame at a steady framerate and sends it as binary JPEG.
-    When the GUI daemon is running, frames are fetched via IPC.
-    When standalone, frames come from the on_frame_sent capture.
+    Frames come from the on_frame_sent capture (or, in daemon mode, from
+    a future TrccProxy event subscription — not wired yet).
 
     Auth: ``?token=`` query param (checked against configured API token).
     Client control: send JSON ``{"fps": N}``, ``{"quality": N}``, ``{"pause": bool}``.
     """
-    from trcc.ui.api import _api_token, _device_dispatcher
+    from trcc.ui.api import _api_token
 
     # ── Auth ──────────────────────────────────────────────────────────
     if _api_token:
@@ -558,7 +534,6 @@ async def preview_stream(websocket: WebSocket):
 
     await websocket.accept()
 
-    use_ipc = getattr(_device_dispatcher, 'is_ipc', False)
     fps = 10
     quality = 85
     paused = False
@@ -588,15 +563,8 @@ async def preview_stream(websocket: WebSocket):
                 continue
 
             # ── Read current frame directly from source ───────────────
-            if use_ipc:
-                frame = await asyncio.get_running_loop().run_in_executor(
-                    None, _fetch_ipc_frame,
-                )
-            else:
-                from trcc.ui.api import _current_image
-
-                frame = _current_image
-
+            from trcc.ui.api import _current_image
+            frame = _current_image
             if frame is None:
                 continue
 

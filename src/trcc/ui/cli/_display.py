@@ -114,7 +114,7 @@ def play_video(builder=None, video_path=None, *, device=None, loop=True, duratio
         from trcc.core.models import build_overlay_config
 
         log.debug("play_video path=%s lcd=%d loop=%s", video_path, lcd, loop)
-        if not os.path.exists(video_path):
+        if not video_path or not os.path.exists(video_path):
             print(f"Error: File not found: {video_path}")
             return 1
 
@@ -452,35 +452,30 @@ def resume(builder=None):
     """Send last-used theme to each detected device (headless, no GUI)."""
     import time
 
-    from trcc.core.app import TrccApp
-    from trcc.core.instance import find_active
-    from trcc.ipc import create_device_proxy
+    from trcc._boot import trcc
 
-    app = TrccApp.get()
-    app.set_ipc_handlers(find_active, create_device_proxy)
-
+    t = trcc()
     for attempt in range(10):
-        result = app.discover()
-        if result["success"] and app.devices:
+        result = t.discover()
+        if result.success and t.lcd_devices:
             break
         print(f"Waiting for device... ({attempt + 1}/10)")
         time.sleep(2)
 
-    if not app.devices:
+    if not t.lcd_devices:
         print("No compatible TRCC device detected.")
         return 1
 
-    lcd = app.lcd
-    result = lcd.restore_last_theme()
-    if not result.get("success"):
-        print(f"Error: {result.get('error', 'Unknown error')}")
+    theme = t.lcd.restore_last_theme(0)
+    if not theme.success:
+        print(f"Error: {theme.error or 'Unknown error'}")
         print("No themes were sent. Use the GUI to set a theme first.")
         return 1
 
-    is_animated = result.get("is_animated", False)
-    if is_animated:
-        print(f"  [{lcd.device_path}] Restored (animated — start GUI for playback)")
+    device = t.lcd_devices[0]
+    if theme.is_animated:
+        print(f"  [{device.device_path}] Restored (animated — start GUI for playback)")
     else:
-        print(f"  [{lcd.device_path}] Sent")
+        print(f"  [{device.device_path}] Sent")
     print("Resumed 1 device.")
     return 0

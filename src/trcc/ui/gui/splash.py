@@ -128,46 +128,40 @@ class TrccSplash(QWidget):
 
 
 class BootstrapWorker(QThread):
-    """Runs TrccApp.bootstrap() in a background QThread.
+    """Runs ``Trcc.discover()`` in a background QThread.
 
-    Registers a _ProgressRelay observer on the app before bootstrap so that
-    AppEvent.BOOTSTRAP_PROGRESS notifications are forwarded as the progress(str)
-    signal — safely crossing from the worker thread to the Qt main thread.
-    QThread.finished is emitted automatically when run() returns.
+    Subscribes to ``Topic.BOOTSTRAP_PROGRESS`` on the Trcc's EventBus so
+    download/extraction progress strings are forwarded as the
+    ``progress(str)`` Qt signal — safely crossing from the worker thread
+    to the main thread. ``QThread.finished`` fires automatically when
+    ``run()`` returns.
     """
 
     progress: Signal = Signal(str)
     failed: Signal = Signal(str)
 
-    def __init__(self, app: Any, renderer_factory: Any) -> None:
+    def __init__(self, trcc_handle: Any) -> None:
         super().__init__()
-        self._app = app
-        self._renderer_factory = renderer_factory
+        self._trcc = trcc_handle
 
     def run(self) -> None:
-        from trcc.core.app import AppEvent, AppObserver
+        from trcc.core.events import Topic
 
-        class _ProgressRelay(AppObserver):
-            def __init__(self, worker: BootstrapWorker) -> None:
-                self._worker = worker
-
-            def on_app_event(self, event: AppEvent, data: object) -> None:
-                if event == AppEvent.BOOTSTRAP_PROGRESS:
-                    self._worker.progress.emit(str(data))
-
-        relay = _ProgressRelay(self)
-        self._app.register(relay)
+        sub_id = self._trcc.events.subscribe(
+            Topic.BOOTSTRAP_PROGRESS,
+            lambda msg: self.progress.emit(str(msg)),
+        )
         try:
-            self._app.bootstrap(renderer_factory=self._renderer_factory)
+            self._trcc.discover()
         except Exception as exc:
             log.exception("Bootstrap error")
             self.failed.emit(str(exc))
         finally:
-            self._app.unregister(relay)
+            self._trcc.events.unsubscribe(sub_id)
 
 
-def run_bootstrap_with_splash(app: Any, renderer_factory: Any) -> bool:
-    """Show splash, run bootstrap in background, close splash when done.
+def run_bootstrap_with_splash(trcc_handle: Any) -> bool:
+    """Show splash, run discover() in background, close splash when done.
 
     Returns True on success, False if bootstrap raised an exception.
     Caller must have a live QApplication before calling this.
@@ -176,7 +170,7 @@ def run_bootstrap_with_splash(app: Any, renderer_factory: Any) -> bool:
     splash.show()
     QApplication.processEvents()
 
-    worker = BootstrapWorker(app, renderer_factory)
+    worker = BootstrapWorker(trcc_handle)
 
     error: list[str] = []
     worker.failed.connect(lambda msg: error.append(msg))  # type: ignore[arg-type]

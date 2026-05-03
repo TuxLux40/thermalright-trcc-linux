@@ -535,12 +535,13 @@ class LCDCommands:
             return OpResult(success=False, error=f'LCD {lcd} not found')
 
         bus = self._events
+        device_path = getattr(dev, 'device_path', '?') or '?'
 
         def _emit_frame(img):
-            bus.publish('frame', lcd, Frame(native=img))
+            bus.publish('frame', device_path, Frame(native=img))
 
         def _emit_progress(pct, cur, tot):
-            bus.publish('progress', lcd, pct, cur, tot)
+            bus.publish('progress', device_path, pct, cur, tot)
 
         r = dev.play_video_loop(
             path,
@@ -571,9 +572,10 @@ class LCDCommands:
             return OpResult(success=False, error=f'LCD {lcd} not found')
 
         bus = self._events
+        device_path = getattr(dev, 'device_path', '?') or '?'
 
         def _emit_frame(img):
-            bus.publish('frame', lcd, Frame(native=img))
+            bus.publish('frame', device_path, Frame(native=img))
 
         r = dev.keep_alive_loop(
             interval=interval,

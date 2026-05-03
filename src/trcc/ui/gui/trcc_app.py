@@ -33,10 +33,8 @@ import trcc.conf as _conf
 from trcc.conf import Settings
 
 from ...adapters.infra.dc_writer import read_carousel
-from ...core.app import AppEvent
 from ...core.models import DeviceInfo
 from ...core.ports import Platform
-from ...services.system import SystemService
 from .assets import Assets
 from .base import create_image_button, set_background_pixmap
 from .base_handler import BaseHandler
@@ -268,7 +266,6 @@ class TRCCApp(QMainWindow):
 
     def __init__(
         self,
-        system_svc: SystemService,
         platform: Platform,
         decorated: bool = False,
     ) -> None:
@@ -276,17 +273,23 @@ class TRCCApp(QMainWindow):
         from trcc.__version__ import __version__
         log.info("TRCC v%s starting", __version__)
 
-        # Injected platform — one object for all OS concerns
-        self._system_svc = system_svc
         self._platform = platform
         self._minimize_on_close = platform.minimize_on_close()
 
-        # Universal command facade — Control Center settings go through
-        # self._trcc.control_center.* so CLI/API/GUI share one code path.
-        # Device handlers still use the legacy Device chain (phase 6d cont.).
-        from trcc.core.trcc import Trcc
-        from trcc.services import ImageService
-        self._trcc = Trcc.for_gui(ImageService.renderer())
+        # Universal command facade + every shared service. ``_boot.trcc()``
+        # returns the cached process-wide Trcc (built by gui/launch with a
+        # windowed-QApp QtRenderer); all subscriptions, system service,
+        # device lists, and command facades come off it.
+        from trcc._boot import trcc as _boot_trcc
+
+        from ...services.system import SystemService
+        self._trcc = _boot_trcc()
+        sys_svc = self._trcc._system_svc
+        if sys_svc is None:
+            raise RuntimeError(
+                "TRCCApp: SystemService missing on Trcc — "
+                "gui/launch must pass it via _boot.trcc().")
+        self._system_svc: SystemService = sys_svc
 
         # Apply saved GPU selection to sensor enumerator
         from ...conf import settings
@@ -333,6 +336,22 @@ class TRCCApp(QMainWindow):
         self._device_added_signal.connect(self._on_device_added_main_thread)
         self._device_removed_signal.connect(self._on_device_removed_main_thread)
 
+        # EventBus subscriptions — publish callbacks bridge core threads to
+        # the Qt main thread via the signals above. Replaces the legacy
+        # AppObserver.on_app_event(event, data) dispatch (Phase 9).
+        from trcc.core.events import Topic
+        bus = self._trcc.events
+        bus.subscribe(Topic.DEVICE_LIST,
+                      lambda devices: self._device_added_signal.emit(('changed', devices)))
+        bus.subscribe(Topic.DEVICE_CONNECTED,
+                      lambda device: self._device_added_signal.emit(('connected', device)))
+        bus.subscribe(Topic.DEVICE_DISCONNECTED,
+                      lambda device: self._device_removed_signal.emit(device))
+        bus.subscribe(Topic.FRAME,
+                      lambda path, image: self._frame_signal.emit({'path': path, 'image': image}))
+        bus.subscribe(Topic.METRICS,
+                      lambda metrics: self._metrics_signal.emit(metrics))
+
         # Handshake signal
         self._handshake_done = Signal(object, object)  # type: ignore[assignment]
         # Use a QObject notifier for handshake (thread → main thread)
@@ -360,23 +379,6 @@ class TRCCApp(QMainWindow):
 
         # Sleep monitor
         self._setup_sleep_monitor()
-
-    # ── AppObserver ─────────────────────────────────────────────────
-
-    def on_app_event(self, event: AppEvent, data: Any) -> None:
-        """Receive events from TrccApp (called from any thread)."""
-        log.debug("on_app_event: %s", event)
-        match event:
-            case AppEvent.DEVICES_CHANGED:
-                self._device_added_signal.emit(('changed', data))
-            case AppEvent.DEVICE_CONNECTED:
-                self._device_added_signal.emit(('connected', data))
-            case AppEvent.DEVICE_LOST:
-                self._device_removed_signal.emit(data)
-            case AppEvent.FRAME_RENDERED:
-                self._frame_signal.emit(data)
-            case AppEvent.METRICS_UPDATED:
-                self._metrics_signal.emit(data)
 
     # ── Device event handlers (main thread) ─────────────────────────
 
@@ -448,8 +450,6 @@ class TRCCApp(QMainWindow):
             self._handlers[path] = handler
             log.info("LED handler added: %s", path)
             added = True
-            if self._ipc_server:
-                self._ipc_server.device = device
         elif device.is_lcd and path not in self._handlers:
             widgets = {
                 'preview': self.uc_preview,
@@ -479,11 +479,6 @@ class TRCCApp(QMainWindow):
             self._handlers[path] = lcd_handler
             log.info("LCD handler added: %s", path)
             added = True
-            # Wire IPC: set device + frame capture
-            if self._ipc_server:
-                self._ipc_server.device = device
-                if lcd_handler.display.device_service:
-                    lcd_handler.display.device_service.on_frame_sent = self._ipc_server.capture_frame
         if not added and path not in self._handlers:
             log.warning("_add_handler: unhandled device type %s path=%s — skipped",
                         type(device).__name__, path)
@@ -622,9 +617,8 @@ class TRCCApp(QMainWindow):
 
     def _on_resume_rescan(self) -> None:
         """Rescan devices after sleep resume — USB may have re-enumerated."""
-        from ...core.app import TrccApp
         try:
-            TrccApp.get().scan()
+            self._trcc.discover()
         except Exception:
             log.exception("Resume rescan failed")
 
