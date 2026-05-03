@@ -34,6 +34,11 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
+# Daemon start timestamp — captured by run_daemon() so /trcc/status and
+# similar diagnostic endpoints can report uptime. None outside the daemon
+# process; meaningful only inside it.
+_started_at: float | None = None
+
 
 # =============================================================================
 # Daemon entry point
@@ -55,6 +60,8 @@ def run_daemon(*, verbosity: int = 0) -> int:
     # so the daemon's output is visible to support requests.
     StandardLoggingConfigurator().configure(verbosity=verbosity)
 
+    global _started_at
+    _started_at = time.monotonic()
     log.info("trccd starting (pid=%d)", os.getpid())
 
     qapp = _build_qapp()

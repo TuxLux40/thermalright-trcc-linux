@@ -535,9 +535,10 @@ class IPCServer:
     def _dispatch_meta(self, method: str, args: tuple, kwargs: dict) -> dict:
         """Trcc-level methods that don't belong to a single facade.
 
-        Currently just ``discover()`` — kicks off a USB rescan on the
-        daemon. Returns the response in OpResult shape so the client can
-        treat it like every other manifold call.
+        ``discover()`` — USB rescan on the daemon.
+        ``status()``   — daemon pid + uptime + device counts; used by
+                         ``/trcc/status`` and `trcc daemon status`.
+        Returns OpResult-shaped dicts so clients treat them uniformly.
         """
         if self._trcc is None:
             return {"success": False,
@@ -550,8 +551,26 @@ class IPCServer:
                 return {"success": False,
                         "error": f"{type(e).__name__}: {e}"}
             return _result_to_dict(result)
+        if method == "status":
+            return self._meta_status()
         return {"success": False,
                 "error": f"Unknown _meta method: {method}"}
+
+    def _meta_status(self) -> dict:
+        """Snapshot of the daemon's runtime state."""
+        import os as _os
+        import time as _time
+
+        from . import daemon as _daemon
+        uptime = (_time.monotonic() - _daemon._started_at
+                  if _daemon._started_at is not None else 0.0)
+        return {
+            "success": True,
+            "pid": _os.getpid(),
+            "uptime_seconds": round(uptime, 3),
+            "lcd_count": len(self._trcc.lcd_devices) if self._trcc else 0,
+            "led_count": len(self._trcc.led_devices) if self._trcc else 0,
+        }
 
     def _dispatch_device(self, method: str, cmd: str,
                          args: list, kwargs: dict) -> dict:

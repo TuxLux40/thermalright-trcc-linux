@@ -106,6 +106,57 @@ Every piece of data has exactly ONE owner. Violations = bugs.
 - Services own ALL business logic — pure Python, no Qt, no framework deps
 - Views own ONLY rendering — read from Settings/Models, call Services, display results
 
+## Daemon Mode (`TRCC_DAEMON`)
+
+Opt-in singleton background process that owns USB and serves CLI / API / GUI clients over a Unix domain socket. Toggled by `TRCC_DAEMON=1`. Off by default during cutover. Falls back to in-process silently on platforms where `AF_UNIX` is unavailable (Windows < build 17063), so the flag is safe to leave set on every OS.
+
+### Composition root
+
+`src/trcc/_boot.py` — single canonical factory used by **every** UI:
+
+```python
+from trcc._boot import trcc
+result = trcc().lcd.set_brightness(0, 75)   # CLI / API / GUI all do this
+```
+
+What `trcc()` returns depends on environment:
+
+| Environment | Returns | Behaviour |
+|---|---|---|
+| `TRCC_DAEMON` unset | real `Trcc` | reuses `TrccApp._instance._trcc` if a composition root has run, else builds standalone with offscreen `QtRenderer` |
+| `TRCC_DAEMON=1` + `AF_UNIX` available | `TrccProxy` | auto-spawns daemon via `daemon.ensure_daemon()`, calls travel over the socket |
+| `TRCC_DAEMON=1` on Windows < 17063 | real `Trcc` | silent fallback, no error |
+
+`TrccProxy` is a **structural drop-in** for `Trcc` — same `.lcd` / `.led` / `.control_center` / `.events` surface, same call shape. UIs hold `Trcc` (typed) and never distinguish.
+
+### Wire format (manifold)
+
+Every dispatched call serializes as:
+
+```json
+{"role": "lcd", "method": "set_brightness", "args": [0, 75], "kwargs": {}}
+```
+
+Response: `{"success": bool, "message": str, "error": str | None, ...extras}`. Path / bytes args are sanitized at the proxy boundary (`Path → str`, `bytes → {"__bytes__": "<base64>"}`) and reconstructed server-side. Daemon's `IPCServer._dispatch_manifold` looks up the role on the bound `Trcc`, calls `getattr(target, method)(*args, **kwargs)`, returns the `OpResult`.
+
+`{"kill": true}` and `{"subscribe": "<topic>"}` are two extra wire shapes for daemon control + long-lived event subscriptions.
+
+### Lifecycle
+
+| Action | Command | What happens |
+|---|---|---|
+| Start daemon | `trcc daemon` | binds socket, refuses if another daemon is running |
+| Stop daemon (CLI) | `trcc kill` | sends `{"kill": true}`, waits for socket to disappear |
+| Stop daemon (API) | `POST /trcc/kill` | same wire |
+| Stop daemon (signal) | `kill <pid>` / SIGTERM | Qt event loop has a 100 ms heartbeat timer so Python signal handlers fire promptly |
+| Auto-spawn on first use | implicit when `TRCC_DAEMON=1` and no daemon found | clients call `daemon.ensure_daemon()` → `subprocess.Popen([trcc, "daemon"], start_new_session=True, …)` |
+
+### What's still pending
+
+- **GUI in daemon mode**: today the GUI gates `TRCC_DAEMON=1` with a clear refusal because `LCDHandler` references real `LCDDevice` instances. Phase 9 (TrccApp dissolution) wires GUI through `_boot.trcc()` and makes it a proper daemon client.
+- **Tests**: the existing test suite tests legacy `TrccApp` paths. Daemon-mode tests come back when Phase 9 settles.
+- **Donor matrix**: SCSI verified end-to-end. HID / Bulk / LY / LED through daemon are inferred-but-unverified — same `Trcc` dispatch path donors confirmed for the in-process flow, just with JSON serialization in front. Real-hardware donors close the matrix.
+
 ## Conventions
 
 ### Code Style
