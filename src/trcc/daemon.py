@@ -123,38 +123,19 @@ def kill_daemon(*, timeout: float = 5.0) -> bool:
     single-shot Qt timer so the ack flushes back before the event loop
     quits. We poll the socket until it disappears (or hit the timeout).
 
-    Returns True when the daemon is no longer reachable, False on timeout
-    or if the kill request couldn't be delivered. Idempotent — calling
-    when no daemon is running is a fast no-op that returns True.
+    Returns True when the daemon is no longer reachable, False on
+    timeout or transport failure. Idempotent — calling when no daemon
+    is running is a fast no-op that returns True.
     """
-    import json
-    import socket as _socket
-
-    from .ipc import _socket_path, daemon_running
+    from .ipc import daemon_running, one_shot_request
 
     if not daemon_running():
         return True
 
-    if not hasattr(_socket, 'AF_UNIX'):
+    response = one_shot_request({"kill": True}, timeout=2.0)
+    if not response.get("success"):
+        log.warning("kill_daemon: %s", response.get("error"))
         return False
-
-    # Direct socket round-trip with the {"kill": true} shape. Bypasses
-    # send_manifold_request because the kill payload doesn't fit the
-    # manifold role/method format.
-    s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
-    s.settimeout(2.0)
-    try:
-        s.connect(str(_socket_path()))
-        s.sendall(json.dumps({"kill": True}).encode() + b"\n")
-        s.recv(4096)  # drain the ack so the daemon's buffer flushes
-    except OSError as e:
-        log.warning("kill_daemon: %s", e)
-        return False
-    finally:
-        try:
-            s.close()
-        except OSError:
-            pass
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

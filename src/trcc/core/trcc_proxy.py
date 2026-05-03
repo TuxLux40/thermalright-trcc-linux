@@ -18,9 +18,11 @@ to the daemon, parses the response into an `OpResult`. Python's call
 shape becomes the wire shape directly — there's no `Command` DTO and
 no router translation between them.
 
-Subscribe-side (``trcc.events.subscribe(topic, cb)``) is stubbed in R3
-and wired by R5's long-lived IPC connection. In-process subscribers
-(GUI in the daemon's own process, CLI play_video on the same Trcc) keep
+Subscribe-side (``trcc.events.subscribe(topic, cb)``) opens its own
+long-lived socket per subscription; a daemon thread reads JSON event
+lines and dispatches to the registered callback. ``unsubscribe`` shuts
+the socket so the reader exits naturally. In-process subscribers (GUI
+in the daemon's own process, CLI ``play_video`` on the same Trcc) keep
 working because they hold a real `Trcc` and never see the proxy.
 """
 from __future__ import annotations
@@ -143,26 +145,26 @@ class EventBusProxy:
         and calls ``callback(*payload)`` for each event. Errors in the
         callback are logged and don't break the subscription.
         """
-        from ..ipc import _socket_path
+        from ..ipc import open_and_send, read_json_line
 
-        path = self._socket_path or _socket_path()
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.settimeout(self._timeout)
         try:
-            s.connect(str(path))
-            s.sendall(json.dumps({"subscribe": event}).encode() + b"\n")
+            s = open_and_send({"subscribe": event},
+                              socket_path=self._socket_path,
+                              timeout=self._timeout)
         except OSError as e:
+            raise RuntimeError(
+                f"EventBusProxy.subscribe: cannot reach daemon: {e}") from e
+
+        # Read the ack — server confirms the subscription before events flow.
+        try:
+            ack = read_json_line(s)
+        except (OSError, json.JSONDecodeError) as e:
             try:
                 s.close()
             except OSError:
                 pass
             raise RuntimeError(
-                f"EventBusProxy.subscribe: cannot reach daemon at "
-                f"{path}: {e}") from e
-
-        # Read the ack — server confirms the subscription before events flow.
-        ack_line = _read_line(s)
-        ack = json.loads(ack_line) if ack_line else {}
+                f"EventBusProxy.subscribe: malformed ack: {e}") from e
         if not ack.get("success"):
             try:
                 s.close()
@@ -222,6 +224,29 @@ class EventBusProxy:
             sub = self._subs.pop(sub_id, None)
         if sub is None:
             return
+        self._close_sub(sub)
+        log.debug("EventBusProxy: unsubscribed id=%d", sub_id)
+
+    def publish(self, event: str, *payload: Any) -> None:
+        raise RuntimeError(
+            "TrccProxy clients cannot publish — events flow daemon → client. "
+            "Use Trcc.events.publish from inside the daemon process.")
+
+    def cleanup(self) -> None:
+        """Close every open subscription. Idempotent.
+
+        Called from :meth:`TrccProxy.cleanup` so a single ``trcc._boot.cleanup()``
+        tears down both the proxy itself and its subscription threads.
+        """
+        with self._lock:
+            subs = list(self._subs.values())
+            self._subs.clear()
+        for sub in subs:
+            self._close_sub(sub)
+
+    @staticmethod
+    def _close_sub(sub: tuple[socket.socket, threading.Thread]) -> None:
+        """Shut + close a subscription's socket; reader thread exits naturally."""
         s, _thread = sub
         try:
             s.shutdown(socket.SHUT_RDWR)
@@ -231,24 +256,6 @@ class EventBusProxy:
             s.close()
         except OSError:
             pass
-        log.debug("EventBusProxy: unsubscribed id=%d", sub_id)
-
-    def publish(self, event: str, *payload: Any) -> None:
-        raise RuntimeError(
-            "TrccProxy clients cannot publish — events flow daemon → client. "
-            "Use Trcc.events.publish from inside the daemon process.")
-
-
-def _read_line(s: socket.socket) -> str:
-    """Read a single newline-terminated JSON line from a Unix socket."""
-    buf = b""
-    while b"\n" not in buf:
-        chunk = s.recv(4096)
-        if not chunk:
-            break
-        buf += chunk
-    line, _, _ = buf.partition(b"\n")
-    return line.decode().strip()
 
 
 # =============================================================================
@@ -272,7 +279,7 @@ class TrccProxy:
     have it work as soon as the daemon binds.
     """
 
-    __slots__ = ('control_center', 'events', 'lcd', 'led')
+    __slots__ = ('_socket_path', '_timeout', 'control_center', 'events', 'lcd', 'led')
 
     def __init__(self, *, socket_path: Path | None = None,
                  timeout: float = 10.0) -> None:
@@ -280,7 +287,70 @@ class TrccProxy:
         # construction), and leaves the public surface as plain
         # attribute access — no property-descriptor surprises with
         # __slots__ / __getattr__ interaction.
+        self._socket_path = socket_path
+        self._timeout = timeout
         self.lcd = LCDFacadeProxy(socket_path, timeout)
         self.led = LEDFacadeProxy(socket_path, timeout)
         self.control_center = ControlCenterFacadeProxy(socket_path, timeout)
         self.events = EventBusProxy(socket_path, timeout)
+
+    # ── Trcc-level methods (proxied through the `_meta` role) ───────────────
+
+    def discover(self) -> Any:
+        """Trigger a device rescan on the daemon, return the result.
+
+        Mirrors ``Trcc.discover()``'s contract: the daemon does the
+        actual USB enumeration; we return a `DiscoveryResult`-shaped
+        OpResult. Subclass extras (lcd_devices, led_devices) come back
+        empty for now since `DeviceInfo` isn't JSON-serializable on the
+        wire — extend if/when a caller needs the device descriptors.
+        """
+        from ..ipc import send_manifold_request
+        from .results import DiscoveryResult
+        response = send_manifold_request(
+            "_meta", "discover", (), {},
+            socket_path=self._socket_path, timeout=self._timeout,
+        )
+        return DiscoveryResult(
+            success=bool(response.get("success", False)),
+            message=str(response.get("message", "")),
+            error=response.get("error"),
+        )
+
+    def cleanup(self) -> None:
+        """Release proxy-local resources.
+
+        Closes every open event subscription socket. Does NOT touch the
+        daemon's own state — daemon devices stay alive for other clients.
+        Idempotent; safe to call multiple times.
+        """
+        try:
+            self.events.cleanup()
+        except Exception:
+            log.exception("TrccProxy.cleanup: events.cleanup raised")
+
+    # ── Lifecycle stubs — daemon owns these, clients can't ─────────────────
+    #
+    # Raise loudly rather than silently accept — callers in daemon mode
+    # should NOT be trying to bootstrap / register devices / swap renderers
+    # from the client side. The daemon already did all of that.
+
+    def bootstrap(self, *args: Any, **kwargs: Any) -> None:
+        raise RuntimeError(
+            "TrccProxy.bootstrap is not supported — the daemon owns "
+            "lifecycle. The daemon has already bootstrapped its Trcc.")
+
+    def with_renderer(self, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError(
+            "TrccProxy.with_renderer is not supported — the daemon "
+            "manages its own renderer.")
+
+    def register_lcd(self, *args: Any, **kwargs: Any) -> int:
+        raise RuntimeError(
+            "TrccProxy.register_lcd is not supported — devices are "
+            "discovered and registered on the daemon side.")
+
+    def register_led(self, *args: Any, **kwargs: Any) -> int:
+        raise RuntimeError(
+            "TrccProxy.register_led is not supported — devices are "
+            "discovered and registered on the daemon side.")

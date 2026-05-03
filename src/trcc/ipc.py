@@ -442,6 +442,11 @@ class IPCServer:
         args = tuple(request.get("args", ()))
         kwargs = dict(request.get("kwargs", {}))
 
+        # Trcc-level methods (discover, etc.) live under the `_meta` role.
+        # They aren't on a facade — they're on the container itself.
+        if role == "_meta":
+            return self._dispatch_meta(method, args, kwargs)
+
         target = {
             "lcd": self._trcc.lcd,
             "led": self._trcc.led,
@@ -470,6 +475,27 @@ class IPCServer:
                     "error": f"{role}.{method} did not return an OpResult "
                              f"(got {type(result).__name__})"}
         return _result_to_dict(result)
+
+    def _dispatch_meta(self, method: str, args: tuple, kwargs: dict) -> dict:
+        """Trcc-level methods that don't belong to a single facade.
+
+        Currently just ``discover()`` — kicks off a USB rescan on the
+        daemon. Returns the response in OpResult shape so the client can
+        treat it like every other manifold call.
+        """
+        if self._trcc is None:
+            return {"success": False,
+                    "error": "IPC server not bound to a Trcc"}
+        if method == "discover":
+            try:
+                result = self._trcc.discover()
+            except Exception as e:
+                log.exception("_meta.discover failed")
+                return {"success": False,
+                        "error": f"{type(e).__name__}: {e}"}
+            return _result_to_dict(result)
+        return {"success": False,
+                "error": f"Unknown _meta method: {method}"}
 
     def _dispatch_device(self, method: str, cmd: str,
                          args: list, kwargs: dict) -> dict:
@@ -817,43 +843,66 @@ def daemon_running(*, socket_path: Path | None = None) -> bool:
         return False
 
 
-def send_manifold_request(role: str, method: str,
-                          args: tuple, kwargs: dict,
-                          *, socket_path: Path | None = None,
-                          timeout: float = 10.0) -> dict:
-    """Send a manifold-format request to the daemon, return the response dict.
+def open_and_send(payload: dict, *, socket_path: Path | None = None,
+                  timeout: float = 10.0) -> socket.socket:
+    """Open a Unix socket to the daemon, send one JSON line, return it open.
 
-    Wire format (request)::
-
-        {"role": "lcd", "method": "set_brightness",
-         "args": [0, 75], "kwargs": {}}
-
-    Transport-level errors (no daemon, timeout, malformed reply) come
-    back as ``{"success": False, "error": "<details>"}`` — every call
-    produces a result, never raises.
+    The returned socket is the caller's to manage. Use it for one-shot
+    request/response (read a line, close) or for long-lived streams
+    (subscribe channel, keep open). Raises ``OSError`` on connect/send
+    failure — caller decides whether to swallow into a failed Result.
     """
-    request = {"role": role, "method": method,
-               "args": list(args), "kwargs": kwargs}
     if not hasattr(socket, 'AF_UNIX'):
-        return {"success": False,
-                "error": "IPC transport: AF_UNIX not available"}
+        raise OSError("AF_UNIX not available on this platform")
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(timeout)
     try:
         s.connect(str(socket_path or _socket_path()))
-        s.sendall(json.dumps(request).encode() + b"\n")
-        chunks: list[bytes] = []
-        while True:
-            chunk = s.recv(65536)
-            if not chunk:
-                break
-            chunks.append(chunk)
-            if b"\n" in chunk:
-                break
-        payload = b"".join(chunks).decode().strip()
-        if not payload:
-            return {"success": False, "error": "IPC: empty response"}
-        return json.loads(payload)
+        s.sendall(json.dumps(payload).encode() + b"\n")
+    except OSError:
+        try:
+            s.close()
+        except OSError:
+            pass
+        raise
+    return s
+
+
+def read_json_line(sock: socket.socket) -> dict:
+    """Read one JSON line from a socket, return the parsed dict.
+
+    Returns ``{}`` on EOF / empty payload. Raises ``json.JSONDecodeError``
+    on malformed JSON, ``OSError`` on transport failure, ``TimeoutError``
+    if the socket is in timeout mode and times out — same exception
+    classes :func:`one_shot_request` catches for its total-contract.
+    """
+    chunks: list[bytes] = []
+    while True:
+        chunk = sock.recv(65536)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        if b"\n" in chunk:
+            break
+    payload = b"".join(chunks).decode().strip()
+    return json.loads(payload) if payload else {}
+
+
+def one_shot_request(payload: dict, *, socket_path: Path | None = None,
+                     timeout: float = 10.0) -> dict:
+    """Send + receive one JSON line + close. Total contract.
+
+    Every transport-level failure (no daemon, timeout, malformed reply)
+    is caught and returned as ``{"success": False, "error": "<details>"}``
+    — callers can treat the result as data, never an exception.
+    """
+    try:
+        s = open_and_send(payload, socket_path=socket_path, timeout=timeout)
+    except (TimeoutError, OSError) as e:
+        return {"success": False,
+                "error": f"IPC transport: {type(e).__name__}: {e}"}
+    try:
+        response = read_json_line(s)
     except (TimeoutError, OSError, json.JSONDecodeError) as e:
         return {"success": False,
                 "error": f"IPC transport: {type(e).__name__}: {e}"}
@@ -862,3 +911,26 @@ def send_manifold_request(role: str, method: str,
             s.close()
         except OSError:
             pass
+    return response or {"success": False, "error": "IPC: empty response"}
+
+
+def send_manifold_request(role: str, method: str,
+                          args: tuple, kwargs: dict,
+                          *, socket_path: Path | None = None,
+                          timeout: float = 10.0) -> dict:
+    """Send a manifold-format request to the daemon, return the response.
+
+    Wire format::
+
+        {"role": "lcd", "method": "set_brightness",
+         "args": [0, 75], "kwargs": {}}
+
+    Thin wrapper over :func:`one_shot_request` that knows the manifold
+    payload shape. Most callers should use this, not the lower-level
+    helpers — keeps the wire shape pinned to one place.
+    """
+    return one_shot_request(
+        {"role": role, "method": method,
+         "args": list(args), "kwargs": kwargs},
+        socket_path=socket_path, timeout=timeout,
+    )
