@@ -76,7 +76,12 @@ class AudioCapture:
                 self._stream.stop()
                 self._stream.close()
             except Exception:
-                pass
+                # Best-effort stream cleanup — sounddevice may have already
+                # closed the stream. Logged at debug for -vv visibility.
+                log.debug(
+                    "audio: stream stop/close failed during cleanup",
+                    exc_info=True,
+                )
             self._stream = None
         self._running = False
         with self._lock:

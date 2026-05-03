@@ -227,7 +227,12 @@ class ThemeLoader:
             if result.returncode == 0 and result.stdout.strip().isdigit():
                 return int(result.stdout.strip()) > 1
         except Exception:
-            pass
+            # ffprobe missing or failed — assume static and move on.
+            log.debug(
+                "theme_loader: ffprobe frame-count failed for %s — "
+                "treating as static",
+                path, exc_info=True,
+            )
         return False
 
     def _load_mask(self, mask_path: Path, dc_path: Path | None,

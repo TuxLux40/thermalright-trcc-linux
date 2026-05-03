@@ -354,7 +354,14 @@ class ThemeService:
                                 data.animation_path = bg_path
                                 data.is_animated = True
                         except Exception:
-                            pass
+                            # ffprobe missing/failed — animation detection
+                            # falls back to "static" silently. Logged at
+                            # debug so users with -vv see the cause.
+                            log.debug(
+                                "theme: ffprobe animation-detect failed for "
+                                "%s — treating as static",
+                                bg_path, exc_info=True,
+                            )
                     else:
                         data.background = ThemeService._open_image(
                             bg_path, w, h)

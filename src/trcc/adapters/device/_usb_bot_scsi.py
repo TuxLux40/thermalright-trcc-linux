@@ -104,9 +104,19 @@ class UsbBotScsiTransport(ScsiTransport):
                 try:
                     self._dev.attach_kernel_driver(0)
                 except Exception:
-                    pass
+                    # Re-attach is best-effort — kernel driver may not have
+                    # been the one we detached, or the device disappeared.
+                    log.debug(
+                        "usb_bot_scsi: attach_kernel_driver(0) failed during"
+                        " close — device may be gone or driver mismatch",
+                        exc_info=True,
+                    )
             except Exception:
-                pass
+                # Outer cleanup catch — dispose_resources or import failure.
+                log.debug(
+                    "usb_bot_scsi: cleanup failed (already disposed?)",
+                    exc_info=True,
+                )
             self._dev = None
 
     def _build_cbw(self, data_length: int, direction: int, cdb: bytes) -> bytes:

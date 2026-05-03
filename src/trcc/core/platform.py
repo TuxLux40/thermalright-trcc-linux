@@ -64,7 +64,9 @@ def detect_install_method() -> str:
             log.debug("install method: pip (INSTALLER metadata)")
             return 'pip'
     except Exception:
-        pass
+        # No INSTALLER metadata — fall through to package-manager probe.
+        log.debug("install method: INSTALLER metadata unavailable, "
+                  "falling through to PM probe", exc_info=True)
     for mgr in ('pacman', 'dnf', 'apt'):
         if shutil.which(mgr):
             log.debug("install method: %s (package manager detected)", mgr)
