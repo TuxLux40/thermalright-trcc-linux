@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from PySide6.QtGui import QColor, QImage
@@ -153,6 +153,7 @@ def trcc_with_lcd(tmp_path, monkeypatch):
     real ``Trcc.discover()`` connecting the noop SCSI device.
     """
     from mock_platform import MockPlatform
+
     from trcc import _boot
     from trcc.adapters.render.qt import QtRenderer
     from trcc.conf import init_settings
@@ -178,6 +179,7 @@ def trcc_with_lcd(tmp_path, monkeypatch):
 def trcc_with_led(tmp_path, monkeypatch):
     """Real `Trcc` with one LED device connected via real DI flow."""
     from mock_platform import MockPlatform
+
     from trcc import _boot
     from trcc.adapters.render.qt import QtRenderer
     from trcc.conf import init_settings
@@ -203,6 +205,7 @@ def trcc_with_led(tmp_path, monkeypatch):
 def trcc_with_both(tmp_path, monkeypatch):
     """Real `Trcc` with one LCD and one LED connected via real DI flow."""
     from mock_platform import MockPlatform
+
     from trcc import _boot
     from trcc.adapters.render.qt import QtRenderer
     from trcc.conf import init_settings
