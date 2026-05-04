@@ -1000,7 +1000,7 @@ class TestLedHidSenderSendLedData:
 
         # 20-byte header + 3 bytes = 23 bytes (fits in one 64-byte chunk)
         packet = b'\xAB' * 23
-        result = sender.send_led_data(packet)
+        result = sender.send_data(packet)
 
         assert result is True
         assert transport.write.call_count == 1
@@ -1011,7 +1011,7 @@ class TestLedHidSenderSendLedData:
         sender = LedHidSender(transport)
 
         packet = b'\xCC' * 64
-        sender.send_led_data(packet)
+        sender.send_data(packet)
 
         assert transport.write.call_count == 1
         written_data = transport.write.call_args[0][1]
@@ -1024,7 +1024,7 @@ class TestLedHidSenderSendLedData:
         sender = LedHidSender(transport)
 
         packet = b'\xDD' * 65
-        sender.send_led_data(packet)
+        sender.send_data(packet)
 
         assert transport.write.call_count == 2
 
@@ -1034,7 +1034,7 @@ class TestLedHidSenderSendLedData:
         sender = LedHidSender(transport)
 
         packet = b'\xEE' * 128
-        sender.send_led_data(packet)
+        sender.send_data(packet)
 
         assert transport.write.call_count == 2
 
@@ -1045,7 +1045,7 @@ class TestLedHidSenderSendLedData:
 
         # 70 bytes = chunk1 (64 bytes) + chunk2 (6 bytes + 58 padding)
         packet = b'\xFF' * 70
-        sender.send_led_data(packet)
+        sender.send_data(packet)
 
         second_call = transport.write.call_args_list[1]
         written_data = second_call[0][1]
@@ -1059,7 +1059,7 @@ class TestLedHidSenderSendLedData:
         sender = LedHidSender(transport)
 
         packet = bytes(range(70))  # 0x00..0x45
-        sender.send_led_data(packet)
+        sender.send_data(packet)
 
         first_call = transport.write.call_args_list[0]
         written_data = first_call[0][1]
@@ -1071,7 +1071,7 @@ class TestLedHidSenderSendLedData:
         sender = LedHidSender(transport)
 
         packet = b'\xAA' * 200
-        sender.send_led_data(packet)
+        sender.send_data(packet)
 
         for c in transport.write.call_args_list:
             assert c[0][0] == EP_WRITE_02
@@ -1082,7 +1082,7 @@ class TestLedHidSenderSendLedData:
         sender = LedHidSender(transport)
 
         packet = b'\xAA' * 100
-        sender.send_led_data(packet)
+        sender.send_data(packet)
 
         for c in transport.write.call_args_list:
             assert c[0][2] == DEFAULT_TIMEOUT_MS
@@ -1093,7 +1093,7 @@ class TestLedHidSenderSendLedData:
         sender = LedHidSender(transport)
 
         with patch("trcc.adapters.device.led.time.sleep") as mock_sleep:
-            sender.send_led_data(b'\xAA' * 20)
+            sender.send_data(b'\xAA' * 20)
             mock_sleep.assert_not_called()
 
     def test_concurrent_send_guard(self):
@@ -1103,7 +1103,7 @@ class TestLedHidSenderSendLedData:
 
         # Simulate send in progress by acquiring the lock
         sender._lock.acquire()
-        result = sender.send_led_data(b'\xAA' * 20)
+        result = sender.send_data(b'\xAA' * 20)
 
         assert result is False
         transport.write.assert_not_called()
@@ -1114,7 +1114,7 @@ class TestLedHidSenderSendLedData:
         transport = _make_mock_transport()
         sender = LedHidSender(transport)
 
-        sender.send_led_data(b'\xAA' * 20)
+        sender.send_data(b'\xAA' * 20)
         assert not sender._lock.locked()
 
     def test_lock_released_on_error(self):
@@ -1124,7 +1124,7 @@ class TestLedHidSenderSendLedData:
         sender = LedHidSender(transport)
 
         with pytest.raises(OSError, match="USB error"):
-            sender.send_led_data(b'\xAA' * 20)
+            sender.send_data(b'\xAA' * 20)
         assert not sender._lock.locked()
 
     def test_write_exception_propagates(self):
@@ -1134,7 +1134,7 @@ class TestLedHidSenderSendLedData:
         sender = LedHidSender(transport)
 
         with pytest.raises(OSError, match="USB disconnected"):
-            sender.send_led_data(b'\xAA' * 20)
+            sender.send_data(b'\xAA' * 20)
 
     def test_is_sending_property(self):
         """is_sending reflects lock state."""
@@ -1155,7 +1155,7 @@ class TestLedHidSenderSendLedData:
         packet = LedPacketBuilder.build_led_packet(colors)
         assert len(packet) == 110
 
-        sender.send_led_data(packet)
+        sender.send_data(packet)
         assert transport.write.call_count == 2  # ceil(110/64) = 2
 
     def test_realistic_124_led_packet(self):
@@ -1167,7 +1167,7 @@ class TestLedHidSenderSendLedData:
         packet = LedPacketBuilder.build_led_packet(colors)
         assert len(packet) == 392
 
-        sender.send_led_data(packet)
+        sender.send_data(packet)
         expected_chunks = math.ceil(392 / 64)
         assert transport.write.call_count == expected_chunks  # 7
 
@@ -1176,7 +1176,7 @@ class TestLedHidSenderSendLedData:
         transport = _make_mock_transport()
         sender = LedHidSender(transport)
 
-        result = sender.send_led_data(b'')
+        result = sender.send_data(b'')
         assert result is True
         transport.write.assert_not_called()
 

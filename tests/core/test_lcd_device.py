@@ -27,6 +27,9 @@ def _make_lcd(**overrides) -> Device:
         'lcd_config': MagicMock(**{
             'device_key.return_value': '0',
             'get_config.return_value': {},
+            # Phase 9: restore_last_theme calls normalize_legacy_theme(cfg);
+            # MagicMock would return a truthy MagicMock — pass the dict through.
+            'normalize_legacy_theme.side_effect': lambda cfg: cfg,
         }),
     }
     defaults.update(overrides)
@@ -179,47 +182,21 @@ class TestDeviceProperties(unittest.TestCase):
         lcd = _make_lcd(display_svc=disp)
         self.assertEqual(lcd.resolution, lcd.lcd_size)
 
+    @pytest.mark.skip(reason="Phase 9: collect_other_device_resolutions removed; cross-device theme resolution moved to ThemeService.")
     def test_collect_other_resolutions_empty_when_no_devices(self):
-        lcd = Device()
-        assert lcd.collect_other_device_resolutions() == []
+        pass
 
+    @pytest.mark.skip(reason="Phase 9: collect_other_device_resolutions removed.")
     def test_collect_other_resolutions_skips_current(self):
-        disp = MagicMock()
-        disp.lcd_width = 320
-        disp.lcd_height = 320
-        dev_svc = MagicMock()
-        dev0 = MagicMock()
-        dev0.resolution = (320, 320)
-        dev_svc.devices = [dev0]
-        lcd = _make_lcd(device_svc=dev_svc, display_svc=disp)
-        assert lcd.collect_other_device_resolutions() == []
+        pass
 
+    @pytest.mark.skip(reason="Phase 9: collect_other_device_resolutions removed.")
     def test_collect_other_resolutions_includes_both_orientations(self):
-        disp = MagicMock()
-        disp.lcd_width = 320
-        disp.lcd_height = 320
-        dev_svc = MagicMock()
-        dev0 = MagicMock()
-        dev0.resolution = (320, 320)
-        dev1 = MagicMock()
-        dev1.resolution = (480, 1280)
-        dev_svc.devices = [dev0, dev1]
-        lcd = _make_lcd(device_svc=dev_svc, display_svc=disp)
-        result = sorted(lcd.collect_other_device_resolutions())
-        assert result == [(480, 1280), (1280, 480)]
+        pass
 
+    @pytest.mark.skip(reason="Phase 9: collect_other_device_resolutions removed.")
     def test_collect_other_resolutions_square_single_entry(self):
-        disp = MagicMock()
-        disp.lcd_width = 320
-        disp.lcd_height = 320
-        dev_svc = MagicMock()
-        dev0 = MagicMock()
-        dev0.resolution = (320, 320)
-        dev1 = MagicMock()
-        dev1.resolution = (480, 480)
-        dev_svc.devices = [dev0, dev1]
-        lcd = _make_lcd(device_svc=dev_svc, display_svc=disp)
-        assert lcd.collect_other_device_resolutions() == [(480, 480)]
+        pass
 
     def test_device_path_from_device_info(self):
         dev = MagicMock()
@@ -518,14 +495,14 @@ class TestDeviceOverlay(unittest.TestCase):
 
     def test_enable_overlay(self):
         lcd, _ = _make_real_lcd()
-        result = lcd.enable(True)
+        result = lcd.enable_overlay(True)
         self.assertTrue(result['success'])
         self.assertTrue(lcd._display_svc.overlay.enabled)
 
     def test_disable_overlay(self):
         lcd, _ = _make_real_lcd()
-        lcd.enable(True)
-        result = lcd.enable(False)
+        lcd.enable_overlay(True)
+        result = lcd.enable_overlay(False)
         self.assertTrue(result['success'])
         self.assertFalse(lcd._display_svc.overlay.enabled)
 
@@ -582,7 +559,7 @@ class TestLoadLastTheme(unittest.TestCase):
         dev = MagicMock(device_index=0, vid=0x0402, pid=0x3922)
         svc = MagicMock(selected=dev)
         lcd = _make_lcd(device_svc=svc)
-        result = lcd.load_last_theme()
+        result = lcd.restore_last_theme()
         self.assertFalse(result['success'])
         self.assertIn("No saved theme", result['error'])
 
@@ -593,7 +570,7 @@ class TestLoadLastTheme(unittest.TestCase):
             device_svc=svc,
             lcd_config=MagicMock(**{'get_config.return_value': {
                 'theme_name': 'NonExistent', 'theme_type': 'local',
-            }}),
+            }, 'normalize_legacy_theme.side_effect': lambda _c: _c}),
         )
         import tempfile
         from pathlib import Path
@@ -601,7 +578,7 @@ class TestLoadLastTheme(unittest.TestCase):
             # theme_dir derives as data_root / 'theme00' for Orientation(0,0)
             (Path(td) / 'theme00').mkdir()
             lcd.orientation.data_root = Path(td)
-            result = lcd.load_last_theme()
+            result = lcd.restore_last_theme()
         self.assertFalse(result['success'])
         self.assertIn("not found", result['error'])
 
@@ -609,6 +586,8 @@ class TestLoadLastTheme(unittest.TestCase):
         """Old config with theme_path auto-migrates to name-based lookup."""
         import tempfile
         from pathlib import Path
+
+        from trcc.services.lcd_config import LCDConfigService
         dev = MagicMock(device_index=0, vid=0x0402, pid=0x3922)
         svc = MagicMock(selected=dev)
         disp = MagicMock()
@@ -618,11 +597,13 @@ class TestLoadLastTheme(unittest.TestCase):
         try:
             lcd = _make_lcd(
                 device_svc=svc, display_svc=disp,
+                # Use real normalize_legacy_theme so the migration actually runs.
                 lcd_config=MagicMock(**{'get_config.return_value': {
                     'theme_path': str(tmp),  # old format
-                }}),
+                }, 'normalize_legacy_theme.side_effect':
+                    LCDConfigService.normalize_legacy_theme}),
             )
-            result = lcd.load_last_theme()
+            result = lcd.restore_last_theme()
             self.assertTrue(result['success'])
         finally:
             tmp.unlink(missing_ok=True)
@@ -644,10 +625,10 @@ class TestLoadLastTheme(unittest.TestCase):
                 device_svc=svc, display_svc=disp,
                 lcd_config=MagicMock(**{'get_config.return_value': {
                     'theme_name': 'Theme1', 'theme_type': 'local',
-                }}),
+                }, 'normalize_legacy_theme.side_effect': lambda _c: _c}),
             )
             lcd.orientation.data_root = Path(td)
-            result = lcd.load_last_theme()
+            result = lcd.restore_last_theme()
             self.assertTrue(result['success'])
 
     def test_restore_sends_static_frame_to_device(self):
@@ -676,7 +657,7 @@ class TestLoadLastTheme(unittest.TestCase):
                 device_svc=svc, display_svc=disp,
                 lcd_config=MagicMock(**{'get_config.return_value': {
                     'theme_name': 'Theme1', 'theme_type': 'local',
-                }}),
+                }, 'normalize_legacy_theme.side_effect': lambda _c: _c}),
             )
             lcd.orientation.data_root = Path(td)
             result = lcd.restore_last_theme()
@@ -711,7 +692,7 @@ class TestLoadLastTheme(unittest.TestCase):
                 lcd_config=MagicMock(**{'get_config.return_value': {
                     'theme_name': 'Theme1', 'theme_type': 'local',
                     'overlay': {'enabled': True, 'config': {'elements': []}},
-                }}),
+                }, 'normalize_legacy_theme.side_effect': lambda _c: _c}),
             )
             lcd.orientation.data_root = Path(td)
             result = lcd.restore_last_theme()
@@ -743,7 +724,7 @@ class TestLoadLastTheme(unittest.TestCase):
                 device_svc=svc, display_svc=disp,
                 lcd_config=MagicMock(**{'get_config.return_value': {
                     'theme_name': 'Theme1', 'theme_type': 'local',
-                }}),
+                }, 'normalize_legacy_theme.side_effect': lambda _c: _c}),
             )
             lcd.orientation.data_root = Path(td)
             result = lcd.restore_last_theme()
@@ -796,7 +777,7 @@ class TestLoadLastTheme(unittest.TestCase):
                     'theme_name': 'Theme1', 'theme_type': 'local',
                     'mask_id': 'Mask1',
                     'overlay': {'enabled': True, 'config': saved_overlay},
-                }}),
+                }, 'normalize_legacy_theme.side_effect': lambda _c: _c}),
             )
             lcd.orientation.data_root = Path(td)
             lcd.orientation.native = (320, 320)

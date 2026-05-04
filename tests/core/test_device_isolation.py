@@ -57,11 +57,25 @@ for _, _, _, _w, _h in _ALL_HANDSHAKES:
         _seen_res.add((_w, _h))
         _UNIQUE_RESOLUTIONS.append((_w, _h))
 
-# Resolutions with dev data downloaded
-_HAS_DEV_DATA = {
-    (320, 240), (320, 320), (640, 480),
-    (1280, 480), (1600, 720), (1920, 462),
-}
+# Resolutions with dev data downloaded — detected from filesystem so xfail
+# tracks reality, not a hard-coded list (Phase 10F: dev data slimmed down)
+_HAS_DEV_DATA: set[tuple[int, int]] = set()
+if DEV_DATA.exists():
+    for entry in DEV_DATA.iterdir():
+        if entry.is_dir() and entry.name.startswith('theme'):
+            digits = entry.name[len('theme'):]
+            if digits.isdigit():
+                # Heuristic: try splitting at common width prefixes
+                for split in (3, 4):
+                    if len(digits) > split:
+                        try:
+                            _w = int(digits[:split])
+                            _h = int(digits[split:])
+                            if _w > 0 and _h > 0:
+                                _HAS_DEV_DATA.add((_w, _h))
+                                break
+                        except ValueError:
+                            pass
 
 # ── Button combos from _LCD_BUTTON_IMAGE ──────────────────────────────
 
@@ -229,7 +243,10 @@ class TestOrientationIsolation:
 # 4. MOCK DEVICES (dev/devices.json)
 # =========================================================================
 
-@pytest.mark.skipif(not DEV_DATA.exists(), reason='dev data not available')
+@pytest.mark.skipif(
+    not DEV_DATA.exists() or not DEV_DEVICES.exists(),
+    reason='dev data or dev/devices.json not available',
+)
 class TestMockDevices:
 
     @pytest.fixture
