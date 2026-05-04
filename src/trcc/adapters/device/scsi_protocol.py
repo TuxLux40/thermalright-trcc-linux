@@ -65,8 +65,8 @@ class ScsiProtocol(DeviceProtocol):
         if self._transport is not None:
             try:
                 self._transport.close()
-            except Exception:
-                pass
+            except OSError as e:
+                log.debug("SCSI transport close raised: %s", e)
             self._transport = None
             self._notify_state_changed("transport_open", False)
 

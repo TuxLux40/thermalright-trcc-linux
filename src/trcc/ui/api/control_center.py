@@ -11,7 +11,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from trcc.ui.api._boot import get_trcc
+from trcc._boot import trcc
 
 router = APIRouter(prefix='/app', tags=['Control Center'])
 
@@ -47,12 +47,12 @@ class GpuRequest(BaseModel):
 @router.get('/snapshot')
 def snapshot() -> dict:
     """Return the full Control Center state as JSON."""
-    return asdict(get_trcc().control_center.snapshot())
+    return asdict(trcc().control_center.snapshot())
 
 
 @router.put('/temp-unit')
 def set_temp_unit(req: TempUnitRequest) -> dict:
-    result = get_trcc().control_center.set_temp_unit(req.unit)
+    result = trcc().control_center.set_temp_unit(req.unit)
     if not result.success:
         raise HTTPException(status_code=400, detail=result.error)
     return asdict(result)
@@ -60,7 +60,7 @@ def set_temp_unit(req: TempUnitRequest) -> dict:
 
 @router.put('/language')
 def set_language(req: LanguageRequest) -> dict:
-    result = get_trcc().control_center.set_language(req.lang)
+    result = trcc().control_center.set_language(req.lang)
     if not result.success:
         raise HTTPException(status_code=400, detail=result.error)
     return asdict(result)
@@ -68,7 +68,7 @@ def set_language(req: LanguageRequest) -> dict:
 
 @router.put('/autostart')
 def set_autostart(req: BoolFlagRequest) -> dict:
-    result = get_trcc().control_center.set_autostart(req.enabled)
+    result = trcc().control_center.set_autostart(req.enabled)
     if not result.success:
         raise HTTPException(status_code=400, detail=result.error)
     return asdict(result)
@@ -76,7 +76,7 @@ def set_autostart(req: BoolFlagRequest) -> dict:
 
 @router.put('/hdd')
 def set_hdd_enabled(req: BoolFlagRequest) -> dict:
-    result = get_trcc().control_center.set_hdd_enabled(req.enabled)
+    result = trcc().control_center.set_hdd_enabled(req.enabled)
     if not result.success:
         raise HTTPException(status_code=400, detail=result.error)
     return asdict(result)
@@ -84,7 +84,7 @@ def set_hdd_enabled(req: BoolFlagRequest) -> dict:
 
 @router.put('/refresh')
 def set_refresh_interval(req: RefreshRequest) -> dict:
-    result = get_trcc().control_center.set_metrics_refresh(req.seconds)
+    result = trcc().control_center.set_metrics_refresh(req.seconds)
     if not result.success:
         raise HTTPException(status_code=400, detail=result.error)
     return asdict(result)
@@ -92,7 +92,7 @@ def set_refresh_interval(req: RefreshRequest) -> dict:
 
 @router.put('/gpu')
 def set_gpu_device(req: GpuRequest) -> dict:
-    result = get_trcc().control_center.set_gpu_device(req.gpu_key)
+    result = trcc().control_center.set_gpu_device(req.gpu_key)
     if not result.success:
         raise HTTPException(status_code=400, detail=result.error)
     return asdict(result)
@@ -100,23 +100,23 @@ def set_gpu_device(req: GpuRequest) -> dict:
 
 @router.get('/gpus')
 def list_gpus() -> list[dict]:
-    gpus = get_trcc().control_center.list_gpus()
+    gpus = trcc().control_center.list_gpus()
     return [{'key': k, 'name': n} for k, n in gpus]
 
 
 @router.get('/sensors')
 def list_sensors() -> list[dict]:
-    return [asdict(s) for s in get_trcc().control_center.list_sensors()]
+    return [asdict(s) for s in trcc().control_center.list_sensors()]
 
 
 @router.post('/update/check')
 def check_for_update() -> dict:
-    return asdict(get_trcc().control_center.check_for_update())
+    return asdict(trcc().control_center.check_for_update())
 
 
 @router.post('/update/install')
 def run_upgrade() -> dict:
-    result = get_trcc().control_center.run_upgrade()
+    result = trcc().control_center.run_upgrade()
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
     return asdict(result)
@@ -128,7 +128,7 @@ def unified_status() -> dict:
 
     Mirrors the `trcc status --json` CLI command.
     """
-    t = get_trcc()
+    t = trcc()
     # pylint: disable=protected-access
     return {
         'app': asdict(t.control_center.snapshot()),

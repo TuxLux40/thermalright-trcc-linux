@@ -764,39 +764,39 @@ class TestOverlayService(unittest.TestCase):
     """Test overlay rendering service."""
 
     def test_initial_state(self):
-        svc = OverlayService(renderer=ImageService._r())
+        svc = OverlayService(renderer=ImageService.renderer())
         self.assertFalse(svc.enabled)
         self.assertIsNone(svc.background)
 
     def test_enable_disable(self):
-        svc = OverlayService(renderer=ImageService._r())
+        svc = OverlayService(renderer=ImageService.renderer())
         svc.enabled = True
         self.assertTrue(svc.enabled)
         svc.enabled = False
         self.assertFalse(svc.enabled)
 
     def test_set_background(self):
-        svc = OverlayService(renderer=ImageService._r())
+        svc = OverlayService(renderer=ImageService.renderer())
         img = make_test_surface(320, 320)
         svc.set_background(img)
         self.assertIsNotNone(svc.background)
 
     def test_set_resolution(self):
-        svc = OverlayService(320, 320, renderer=ImageService._r())
+        svc = OverlayService(320, 320, renderer=ImageService.renderer())
         svc.set_resolution(480, 480)
         self.assertEqual(svc.width, 480)
         self.assertEqual(svc.height, 480)
 
     def test_render_no_config_returns_background(self):
         """With no config/mask set, render returns background as-is (fast path)."""
-        svc = OverlayService(renderer=ImageService._r())
+        svc = OverlayService(renderer=ImageService.renderer())
         img = make_test_surface(320, 320, (255, 0, 0))
         svc.set_background(img)
         result = svc.render()
         self.assertIsNotNone(result)
 
     def test_set_dc_data(self):
-        svc = OverlayService(renderer=ImageService._r())
+        svc = OverlayService(renderer=ImageService.renderer())
         data = {'display_options': {'ui_mode': 1}}
         svc.set_dc_data(data)
         self.assertEqual(svc._dc_data, data)

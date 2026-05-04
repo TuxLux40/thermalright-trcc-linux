@@ -34,13 +34,19 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# Probe-boundary exception tuples for system-info fallbacks.
+# OSError = FileNotFoundError/PermissionError; SubprocessError = TimeoutExpired/CalledProcessError.
+_SUBPROCESS_EXC: tuple[type[BaseException], ...] = (
+    OSError, subprocess.SubprocessError, ValueError, KeyError, IndexError,
+)
+
 
 def _read_sysfs(path: str) -> str | None:
     """Safely read a sysfs/proc file, return stripped content or None."""
     try:
         with open(path) as f:
             return f.read().strip()
-    except Exception:
+    except OSError:
         return None
 
 
@@ -324,7 +330,7 @@ class SystemService:
                         return float(match.group(1))
         except FileNotFoundError:
             log.debug("lm_sensors not installed — cpu_temp fallback unavailable")
-        except Exception as e:
+        except _SUBPROCESS_EXC as e:
             log.debug("cpu_temp fallback failed: %s", e)
         return None
 
@@ -335,7 +341,7 @@ class SystemService:
             if (loadavg := _read_sysfs('/proc/loadavg')):
                 load = float(loadavg.split()[0])
                 return min(100.0, load * 10)
-        except Exception as e:
+        except (OSError, ValueError, IndexError) as e:
             log.debug("cpu_percent fallback failed: %s", e)
         return None
 
@@ -349,7 +355,7 @@ class SystemService:
                         match = re.search(r':\s*([0-9.]+)', line)
                         if match:
                             return float(match.group(1))
-        except Exception as e:
+        except (OSError, ValueError) as e:
             log.debug("cpu_freq fallback failed: %s", e)
         return None
 
@@ -373,7 +379,7 @@ class SystemService:
                             return float(match.group(1))
         except FileNotFoundError:
             log.debug("lm_sensors not installed — mem_temp fallback unavailable")
-        except Exception as e:
+        except _SUBPROCESS_EXC as e:
             log.debug("mem_temp fallback failed: %s", e)
         return None
 
@@ -411,7 +417,7 @@ class SystemService:
                             return float(match.group(1))
         except FileNotFoundError:
             log.debug("dmidecode not installed — mem_clock fallback unavailable")
-        except Exception as e:
+        except _SUBPROCESS_EXC as e:
             log.debug("mem_clock dmidecode probe failed: %s", e)
 
         try:
@@ -425,7 +431,7 @@ class SystemService:
                     return float(match.group(1))
         except FileNotFoundError:
             log.debug("lshw not installed — mem_clock lshw probe unavailable")
-        except Exception as e:
+        except _SUBPROCESS_EXC as e:
             log.debug("mem_clock lshw probe failed: %s", e)
 
         mc_path = "/sys/devices/system/edac/mc"
@@ -436,7 +442,7 @@ class SystemService:
                         match = re.search(r'(\d+)\s*MHz', content)
                         if match:
                             return float(match.group(1))
-            except Exception as e:
+            except (OSError, ValueError) as e:
                 log.debug("mem_clock EDAC probe failed: %s", e)
 
         return None
@@ -458,7 +464,7 @@ class SystemService:
                                 return float(part)
         except FileNotFoundError:
             log.debug("smartctl not installed — disk_temp fallback unavailable")
-        except Exception as e:
+        except _SUBPROCESS_EXC as e:
             log.debug("disk_temp fallback failed: %s", e)
         return None
 

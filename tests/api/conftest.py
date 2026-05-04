@@ -1,84 +1,86 @@
-"""API layer test fixtures — injectable fake TrccApp states.
+"""API layer test fixtures — real Trcc via _boot.trcc(MockPlatform).
 
-Hexagonal testing principle: tests declare WHAT scenario they need,
-not HOW to wire it. Each fixture is a fake adapter that satisfies the
-TrccApp port contract for a specific device-connection scenario.
+Per ``feedback_tests_emulate_app.md``: tests use the same DI flow as
+production. No MagicMock(spec=Trcc) — real ``Trcc`` built against
+``MockPlatform``, real ``ControllerBuilder``, real ``QtRenderer``.
+
+Each fixture yields ``(trcc, lcd_or_led_device)`` so test bodies can
+assert against actual device state after the API endpoint runs.
 
 Fixtures:
-  lcd_only_app  — LCD device connected, LED absent
-  no_device_app — no device found (scan returns nothing)
+  lcd_only_app   — LCD connected, LED absent
+  no_device_app  — empty MockPlatform, no devices found
 """
 from __future__ import annotations
-
-from unittest.mock import MagicMock
 
 import pytest
 
 
 @pytest.fixture
-def lcd_only_app(monkeypatch):
-    """Fake TrccApp: LCD connects, LED absent.
+def lcd_only_app(tmp_path, monkeypatch):
+    """Real Trcc with one connected LCD via the production DI flow.
 
-    DI chain: discover() → scan() → has_lcd=True, lcd_device wired
-                                   → has_led=False (no LED found)
-
-    Mock LCD device methods return plain dicts.
-    DataManager.ensure_all is replaced with a spy (records (w, h) calls,
-    no network I/O). Access via: app.ensure_all_calls.
+    DataManager.ensure_all is replaced with a spy so the test never
+    triggers a real network download. Spy calls are exposed as
+    ``trcc._ensure_all_calls`` for assertion.
     """
+    from mock_platform import MockPlatform
+    from trcc import _boot
     from trcc.adapters.infra.data_repository import DataManager
-    from trcc.core.app import TrccApp
+    from trcc.adapters.render.qt import QtRenderer
+    from trcc.conf import init_settings
+    from trcc.core.trcc import Trcc
 
     ensure_all_calls: list = []
     monkeypatch.setattr(
         DataManager, "ensure_all",
-        classmethod(lambda cls, w, h: ensure_all_calls.append((w, h))),
+        classmethod(lambda cls, w, h, progress_fn=None:
+                    ensure_all_calls.append((w, h))),
     )
 
-    TrccApp.reset()
-    app = TrccApp(MagicMock())
+    spec = [{"type": "lcd", "vid": "0402", "pid": "3922",
+             "resolution": "320x320", "pm": 100}]
+    root = tmp_path / '.trcc'
+    root.mkdir(exist_ok=True)
+    (root / 'data').mkdir(exist_ok=True)
+    platform = MockPlatform(spec, root=root)
+    init_settings(platform)
 
-    mock_lcd = MagicMock()
-    mock_lcd.restore_last_theme.return_value = {"success": True, "image": None}
-
-    # Fake discover: wires device into _devices dict
-    mock_lcd.is_lcd = True
-    mock_lcd.is_led = False
-    def _fake_discover(path=None):
-        app._devices['mock_lcd'] = mock_lcd
-        return {"success": True, "message": "1 device(s) found"}
-
-    app.discover = _fake_discover  # type: ignore[method-assign]
-
-    TrccApp._instance = app  # type: ignore[assignment]
-    app.ensure_all_calls = ensure_all_calls  # type: ignore[attr-defined]
-    yield app, mock_lcd
-    TrccApp.reset()
+    _boot._cached = None
+    trcc = Trcc(platform, renderer=QtRenderer())
+    trcc.discover(ensure_data=False)
+    trcc._ensure_all_calls = ensure_all_calls
+    _boot._cached = trcc
+    yield trcc, trcc.lcd_device
+    _boot._cached = None
 
 
 @pytest.fixture
-def no_device_app(monkeypatch):
-    """Fake TrccApp: no device found (scan returns nothing).
+def no_device_app(tmp_path, monkeypatch):
+    """Real Trcc with no devices — empty MockPlatform.
 
-    DI chain: discover() → scan() → no devices → has_lcd=False, has_led=False
-
-    lcd_from_service() returns a mock so the fallback path doesn't crash.
-    DataManager.ensure_all is a no-op (no network calls in tests).
+    DataManager.ensure_all is a no-op so any code path that triggers
+    data extraction stays offline.
     """
+    from mock_platform import MockPlatform
+    from trcc import _boot
     from trcc.adapters.infra.data_repository import DataManager
-    from trcc.core.app import TrccApp
+    from trcc.adapters.render.qt import QtRenderer
+    from trcc.conf import init_settings
+    from trcc.core.trcc import Trcc
 
-    monkeypatch.setattr(DataManager, "ensure_all", classmethod(lambda cls, *a, **kw: None))
+    monkeypatch.setattr(DataManager, "ensure_all",
+                        classmethod(lambda cls, *a, **kw: None))
 
-    TrccApp.reset()
-    app = TrccApp(MagicMock())
+    root = tmp_path / '.trcc'
+    root.mkdir(exist_ok=True)
+    (root / 'data').mkdir(exist_ok=True)
+    platform = MockPlatform([], root=root)
+    init_settings(platform)
 
-    mock_lcd = MagicMock()
-    app.lcd_from_service = lambda svc: mock_lcd  # type: ignore[method-assign]
-
-    # Fake discover: finds nothing
-    app.discover = lambda path=None: {"success": True, "message": "0 device(s) found"}  # type: ignore[method-assign]
-
-    TrccApp._instance = app  # type: ignore[assignment]
-    yield app, mock_lcd
-    TrccApp.reset()
+    _boot._cached = None
+    trcc = Trcc(platform, renderer=QtRenderer())
+    trcc.discover(ensure_data=False)
+    _boot._cached = trcc
+    yield trcc, None
+    _boot._cached = None

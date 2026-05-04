@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import subprocess
 import threading
 import time
 from typing import Any
@@ -28,9 +29,18 @@ log = logging.getLogger(__name__)
 # each poll cycle until the driver is ready (fixes LED GPU-zero-on-boot).
 try:
     import pynvml  # pyright: ignore[reportMissingImports]
+    NVML_EXC: tuple[type[BaseException], ...] = (pynvml.NVMLError, AttributeError, OSError)
 except ImportError:
     pynvml = None  # type: ignore[assignment]
+    NVML_EXC = (AttributeError, OSError)
     log.debug("pynvml not installed — NVIDIA GPU sensors unavailable")
+
+# Probe-boundary exception tuples — narrow `except Exception` at plugin boundaries.
+PSUTIL_EXC: tuple[type[BaseException], ...] = (psutil.Error, OSError, AttributeError)
+# OSError = FileNotFoundError/PermissionError; SubprocessError = TimeoutExpired/CalledProcessError
+SUBPROCESS_EXC: tuple[type[BaseException], ...] = (
+    OSError, subprocess.SubprocessError, ValueError, KeyError, IndexError,
+)
 
 _nvml_init_lock = threading.Lock()
 NVML_AVAILABLE = False
@@ -51,7 +61,7 @@ def _ensure_nvml() -> bool:
             NVML_AVAILABLE = True
             log.info("NVML initialized — NVIDIA GPU sensors available")
             return True
-        except Exception as e:
+        except NVML_EXC as e:
             log.debug("NVML not ready: %s", e)
             return False
 
@@ -201,12 +211,14 @@ class SensorEnumeratorBase(SensorEnumeratorABC):
                 if isinstance(name, bytes):
                     name = name.decode()
                 name = str(name)
-            except Exception:
+            except NVML_EXC as e:
+                log.debug("nvmlDeviceGetName(idx=%d) failed: %s", idx, e)
                 name = f'GPU {idx}'
             try:
                 mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
                 vram_mb = int(mem.total) // (1024 * 1024)
-            except Exception:
+            except NVML_EXC as e:
+                log.debug("nvmlDeviceGetMemoryInfo(idx=%d) failed: %s", idx, e)
                 vram_mb = 0
             gpus.append((f'nvidia:{idx}', f'{name} ({vram_mb} MB)', vram_mb))
         gpus.sort(key=lambda g: g[2], reverse=True)
@@ -283,8 +295,8 @@ class SensorEnumeratorBase(SensorEnumeratorABC):
                     if isinstance(name, bytes):
                         name = name.decode()
                     name = str(name)
-                except Exception:
-                    log.debug("nvidia:%d handle/name failed", i)
+                except NVML_EXC as e:
+                    log.debug("nvidia:%d handle/name failed: %s", i, e)
                     continue
 
                 self._nvidia_handles[i] = handle
@@ -299,8 +311,8 @@ class SensorEnumeratorBase(SensorEnumeratorABC):
                     SensorInfo(f'{prefix}:mem_used', f'{label} VRAM Used', 'gpu_memory', 'MB', 'nvidia'),
                     SensorInfo(f'{prefix}:mem_total', f'{label} VRAM Total', 'gpu_memory', 'MB', 'nvidia'),
                 ])
-        except Exception:
-            log.debug("NVIDIA GPU discovery failed")
+        except NVML_EXC as e:
+            log.debug("NVIDIA GPU discovery failed: %s", e)
 
     def _discover_computed(self) -> None:
         """Register date/time computed sensors."""
@@ -340,35 +352,35 @@ class SensorEnumeratorBase(SensorEnumeratorABC):
                 readings[f'{prefix}:temp'] = float(
                     pynvml.nvmlDeviceGetTemperature(
                         handle, pynvml.NVML_TEMPERATURE_GPU))
-            except Exception:
-                pass
+            except NVML_EXC as e:
+                log.debug("%s:temp poll failed: %s", prefix, e)
             try:
                 util = pynvml.nvmlDeviceGetUtilizationRates(handle)
                 readings[f'{prefix}:gpu_busy'] = float(util.gpu)
-            except Exception:
-                pass
+            except NVML_EXC as e:
+                log.debug("%s:gpu_busy poll failed: %s", prefix, e)
             try:
                 readings[f'{prefix}:clock'] = float(
                     pynvml.nvmlDeviceGetClockInfo(
                         handle, pynvml.NVML_CLOCK_GRAPHICS))
-            except Exception:
-                pass
+            except NVML_EXC as e:
+                log.debug("%s:clock poll failed: %s", prefix, e)
             try:
                 readings[f'{prefix}:power'] = (
                     pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0)
-            except Exception:
-                pass
+            except NVML_EXC as e:
+                log.debug("%s:power poll failed: %s", prefix, e)
             try:
                 readings[f'{prefix}:fan'] = float(
                     pynvml.nvmlDeviceGetFanSpeed(handle))
-            except Exception:
-                pass
+            except NVML_EXC as e:
+                log.debug("%s:fan poll failed: %s", prefix, e)
             try:
                 mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
                 readings[f'{prefix}:mem_used'] = float(mem.used) / (1024 * 1024)
                 readings[f'{prefix}:mem_total'] = float(mem.total) / (1024 * 1024)
-            except Exception:
-                pass
+            except NVML_EXC as e:
+                log.debug("%s:mem poll failed: %s", prefix, e)
 
     def _poll_computed_io(self, readings: dict[str, float]) -> None:
         """Compute disk/network rates + totals from psutil counter deltas."""
@@ -390,8 +402,8 @@ class SensorEnumeratorBase(SensorEnumeratorABC):
                         readings['computed:disk_activity'] = min(100.0, busy_ms / (dt * 10))
             if disk:
                 self._disk_prev = (disk, now)
-        except Exception:
-            log.debug("computed disk I/O failed", exc_info=True)
+        except PSUTIL_EXC as e:
+            log.debug("computed disk I/O failed: %s", e)
 
         # Network I/O totals + rates
         try:
@@ -407,8 +419,8 @@ class SensorEnumeratorBase(SensorEnumeratorABC):
                         readings['computed:net_down'] = (
                             (net.bytes_recv - prev_net.bytes_recv) / (dt * 1024))
                 self._net_prev = (net, now)
-        except Exception:
-            log.debug("computed network I/O failed", exc_info=True)
+        except PSUTIL_EXC as e:
+            log.debug("computed network I/O failed: %s", e)
 
     def _poll_datetime(self, readings: dict[str, float]) -> None:
         """Add date/time readings."""

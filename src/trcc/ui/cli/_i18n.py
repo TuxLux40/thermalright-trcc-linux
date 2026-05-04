@@ -30,8 +30,8 @@ def get_language():
 @_cli_handler
 def set_language(code: str):
     """Set the application language by ISO 639-1 code."""
+    from trcc._boot import trcc as _trcc
     from trcc.core.i18n import LANGUAGE_NAMES
-    from trcc.ui.cli._boot import trcc as _trcc
 
     result = _trcc().control_center.set_language(code)
     if not result.success:

@@ -10,8 +10,8 @@ import logging
 
 import typer
 
+from trcc._boot import trcc
 from trcc.core.models import parse_hex_color
-from trcc.ui.cli._boot import trcc
 
 log = logging.getLogger(__name__)
 

@@ -1,10 +1,11 @@
-"""GUI composition root — wires TrccApp + Qt adapter.
+"""GUI composition root — wires Qt adapter.
 
-Single entry point for the graphical interface. Owns all DI wiring:
-    TrccApp.init() → renderer → system_svc → setup → autostart → TRCCApp
-
-TRCCApp knows nothing about TrccApp. It implements AppObserver and receives
-devices via on_app_event. All adapter deps are injected here.
+Single entry point for the graphical interface. Builds the windowed
+``QApplication`` (which Qt requires before any QWidget), constructs a
+``QtRenderer`` against it, then delegates the rest of the DI graph to
+``trcc._boot.trcc()``. ``discover_now=False`` lets the splash show
+progress while USB connect + theme extraction run in a background
+``BootstrapWorker``.
 """
 from __future__ import annotations
 
@@ -43,19 +44,33 @@ def launch(verbosity: int = 0, decorated: bool = False,
 
     Returns the Qt exit code.
     """
-    from trcc.core.app import AppEvent, TrccApp
-    app = TrccApp.init()
+    # Daemon-mode gate. The GUI's LCDHandler talks to real `LCDDevice`
+    # instances; today it has no path to drive a `TrccProxy` over IPC.
+    # Running anyway under TRCC_DAEMON=1 would race the daemon for USB,
+    # so refuse to start with a clear message. Removing the gate is a
+    # follow-up GUI refactor (handlers consume Trcc.lcd command facade
+    # instead of holding LCDDevice references).
+    from trcc._boot import daemon_mode_enabled
+    if daemon_mode_enabled():
+        print(
+            "[TRCC] GUI does not yet support TRCC_DAEMON=1.\n"
+            "       Stop the daemon (`trcc kill`) and re-launch, or\n"
+            "       unset TRCC_DAEMON to run the GUI in-process.",
+            file=sys.stderr,
+        )
+        return 1
 
-    # ── Platform deps (before Qt — configure_dpi must precede QApplication) ──
-    platform = app.os
+    # ── Platform first — needed for lock check, DPI config, autostart, etc.
+    from trcc.adapters.system import make_platform
+    platform = make_platform()
 
-    # ── Single-instance lock ──────────────────────────────────────────────
+    # ── Single-instance lock — acquire before any heavy setup ────────────
     lock = platform.acquire_instance_lock()
     if lock is None:
         platform.raise_existing_instance()
         return 0
 
-    # ── Qt bootstrap ──────────────────────────────────────────────────────
+    # ── Qt bootstrap (windowed QApp — must precede QtRenderer construction)
     from trcc.ui.gui.assets import _PKG_ASSETS_DIR, set_assets_dir
     set_assets_dir(platform.resolve_assets_dir(_PKG_ASSETS_DIR))
 
@@ -79,36 +94,43 @@ def launch(verbosity: int = 0, decorated: bool = False,
         font = QFont("Sans Serif", 10)
     qapp.setFont(font)
 
-    # ── Bootstrap — platform init + device scan, with splash progress ────
+    # ── Build Trcc with the windowed QApp's renderer; defer discovery so
+    # the splash can show progress while USB connect + theme extraction
+    # run in BootstrapWorker.
+    from trcc._boot import trcc as _boot_trcc
     from trcc.adapters.render.qt import QtRenderer
+    renderer = QtRenderer()
+    t = _boot_trcc(platform, renderer=renderer,
+                   discover_now=False, verbosity=verbosity)
+
+    # ── Splash + background discover ─────────────────────────────────────
     from trcc.ui.gui.splash import run_bootstrap_with_splash
-    if not run_bootstrap_with_splash(app, QtRenderer):
+    if not run_bootstrap_with_splash(t):
         return 1
 
-    # ── System service (OS-specific sensors) ──────────────────────────────
-    system_svc = app.build_system()
-    app.set_system(system_svc)
-
-    # ── GUI adapter — receives everything injected, knows nothing of TrccApp ─
+    # ── GUI adapter — pulls Trcc handle via _boot.trcc() (cached)  ───────
     from trcc.ui.gui.trcc_app import TRCCApp as _TRCCApp
     window = _TRCCApp(
-        system_svc=system_svc,
         platform=platform,
         decorated=decorated,
     )
 
-    # ── IPC server ────────────────────────────────────────────────────────
+    # ── IPC server bound to Trcc — manifold dispatch for clients ────────
     from trcc.ipc import IPCServer
-    ipc_server = IPCServer()  # device wired later via on_app_event
+    ipc_server = IPCServer(trcc=t)
     ipc_server.start()
     window._ipc_server = ipc_server
 
-    # ── Register window as observer, replay scan results, start metrics ──
-    # bootstrap() already ran scan(); registering now replays DEVICES_CHANGED
-    # so window.on_app_event creates handlers for all pre-discovered devices.
-    app.register(window)  # type: ignore[arg-type]
-    app._notify(AppEvent.DEVICES_CHANGED, list(app._devices.values()))
-    app.start_metrics_loop()
+    # ── Replay device list to the window — subscribers run in __init__,
+    # so they missed the publish that happened during discover. ─────────
+    from itertools import chain
+
+    from trcc.core.events import Topic
+    t.events.publish(
+        Topic.DEVICE_LIST,
+        tuple(chain(t.lcd_devices, t.led_devices)),
+    )
+    t.start_metrics_loop()
 
     # ── IPC raise + signals ───────────────────────────────────────────────
     signal.signal(signal.SIGINT, lambda *_: qapp.quit())

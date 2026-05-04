@@ -220,7 +220,8 @@ class DeviceService:
             protocol = self._get_protocol(self._selected)
             success = protocol.send_data(data, width, height)
             return success
-        except Exception as e:
+        except (OSError, ValueError) as e:
+            # USB I/O failures: usb.core.USBError extends OSError; SCSI ioctl raises OSError.
             log.error("Device send error: %s", e)
             return False
         finally:
@@ -347,5 +348,7 @@ class DeviceService:
             return None
         try:
             return self._get_protocol_info(self._selected)
-        except Exception:
+        except Exception as e:
+            # Injected callable; silent fallback is intentional but log for diagnostics.
+            log.debug("get_protocol_info callable raised: %s", e)
             return None

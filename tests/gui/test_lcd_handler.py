@@ -81,14 +81,14 @@ class TestApplyDeviceConfig:
         dev.resolution = resolution
         return dev
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_sets_device_key(self, mock_settings, lcd_handler):
         mock_settings.device_config_key.return_value = 'test_key'
         mock_settings.get_device_config.return_value = {}
         lcd_handler.apply_device_config(self._device(), 320, 320)
         assert lcd_handler.device_key == 'test_key'
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_restores_brightness(self, mock_settings, lcd_handler, mock_lcd_device):
         """Stored percent value restored directly — no level mapping."""
         mock_settings.device_config_key.return_value = 'k'
@@ -97,7 +97,7 @@ class TestApplyDeviceConfig:
         assert lcd_handler.brightness_level == 50
         mock_lcd_device.set_brightness.assert_called_with(50)
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_restores_rotation(self, mock_settings, make_lcd_handler, mock_lcd_device):
         mock_settings.device_config_key.return_value = 'k'
         mock_settings.get_device_config.return_value = {'rotation': 90}
@@ -106,7 +106,7 @@ class TestApplyDeviceConfig:
         mock_lcd_device.set_rotation.assert_called_with(90)
         h._w['rotation_combo'].setCurrentIndex.assert_called_with(1)
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_resolution_change_updates_widgets(self, mock_settings, make_lcd_handler, mock_lcd_device):
         mock_settings.device_config_key.return_value = 'k'
         mock_settings.get_device_config.return_value = {}
@@ -117,7 +117,7 @@ class TestApplyDeviceConfig:
         h.apply_device_config(self._device(), 480, 480)
         h._w['preview'].set_resolution.assert_called_with(480, 480)
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_widgets_always_updated(self, mock_settings, lcd_handler):
         mock_settings.device_config_key.return_value = 'k'
         mock_settings.get_device_config.return_value = {}
@@ -127,7 +127,7 @@ class TestApplyDeviceConfig:
         lcd_handler._w['video_cut'].set_resolution.assert_called_with(320, 320)
         lcd_handler._w['theme_setting'].set_resolution.assert_called_with(320, 320)
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_split_mode_restored_for_split_resolution(self, mock_settings, make_lcd_handler, mock_lcd_device):
         mock_settings.device_config_key.return_value = 'k'
         mock_settings.get_device_config.return_value = {'split_mode': 1}
@@ -146,7 +146,7 @@ class TestApplyDeviceConfig:
 class TestReactivate:
     """reactivate() — refresh preview, theme dirs, overlay on device switch."""
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_updates_all_widget_resolutions(self, mock_settings,
                                             make_lcd_handler, mock_lcd_device):
         mock_settings.get_device_config.return_value = {}
@@ -160,7 +160,7 @@ class TestReactivate:
         h._w['video_cut'].set_resolution.assert_called_with(480, 480)
         h._w['theme_setting'].set_resolution.assert_called_with(480, 480)
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_sets_preview_image(self, mock_settings,
                                 make_lcd_handler, mock_lcd_device):
         mock_settings.get_device_config.return_value = {}
@@ -170,7 +170,7 @@ class TestReactivate:
         h.reactivate(320, 320)
         h._w['preview'].set_image.assert_called_with('fake_image')
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_clears_preview_when_no_image(self, mock_settings,
                                           make_lcd_handler, mock_lcd_device):
         """No saved theme and no current image → preview cleared."""
@@ -181,7 +181,7 @@ class TestReactivate:
         h.reactivate(320, 320)
         h._w['preview'].set_image.assert_called_with(None)
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_reloads_overlay_from_config(self, mock_settings,
                                          make_lcd_handler, mock_lcd_device):
         overlay_cfg = {'config': {'time': {'x': 10}}, 'enabled': True}
@@ -194,7 +194,7 @@ class TestReactivate:
             {'time': {'x': 10}})
         h._w['theme_setting'].set_overlay_enabled.assert_called_with(True)
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_overlay_disabled_when_no_device_key(self, mock_settings,
                                                   make_lcd_handler):
         h = make_lcd_handler()
@@ -202,7 +202,7 @@ class TestReactivate:
         h.reactivate(320, 320)
         h._w['theme_setting'].set_overlay_enabled.assert_called_with(False)
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_overlay_disabled_on_missing_config(self, mock_settings,
                                                  make_lcd_handler):
         mock_settings.get_device_config.return_value = {}
@@ -228,7 +228,7 @@ class TestUpdateThemeDirectories:
         (theme1 / '00.png').touch()
         return tmp_path
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_auto_loads_first_theme_on_first_install(self, mock_settings, make_lcd_handler, mock_lcd_device, tmp_path):
         """With no current image and no saved theme_path, auto-loads the first theme folder."""
         data_root = self._make_data_root(tmp_path)
@@ -241,7 +241,7 @@ class TestUpdateThemeDirectories:
 
         mock_lcd_device.current_image = None  # no image loaded yet
 
-        with patch('trcc.gui.lcd_handler.ThemeInfo') as mock_ti:
+        with patch('trcc.ui.gui.lcd_handler.ThemeInfo') as mock_ti:
             mock_ti.from_directory.return_value = MagicMock()
             h = make_lcd_handler(lcd=mock_lcd_device)
             h._device_key = 'dev0'
@@ -249,7 +249,7 @@ class TestUpdateThemeDirectories:
 
         mock_lcd_device.select.assert_called(), "Should auto-load first theme on first install"
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_skips_auto_load_when_saved_theme_path_exists(self, mock_settings, make_lcd_handler, mock_lcd_device, tmp_path):
         """With no current image but a saved theme_path (legacy), skips auto-load."""
         data_root = self._make_data_root(tmp_path)
@@ -268,7 +268,7 @@ class TestUpdateThemeDirectories:
         mock_lcd_device.select.assert_not_called(), \
             "Must not auto-load theme1 when user already has a saved theme_path"
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_skips_auto_load_when_saved_theme_name_exists(self, mock_settings, make_lcd_handler, mock_lcd_device, tmp_path):
         """With no current image but a saved theme_name (current format), skips auto-load."""
         data_root = self._make_data_root(tmp_path)
@@ -289,7 +289,7 @@ class TestUpdateThemeDirectories:
         mock_lcd_device.select.assert_not_called(), \
             "Must not auto-load theme1 when user already has a saved theme_name"
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_skips_auto_load_when_image_already_showing(self, mock_settings, make_lcd_handler, mock_lcd_device, tmp_path):
         """With a current image already loaded, skips auto-load regardless of saved config."""
         data_root = self._make_data_root(tmp_path)
@@ -315,8 +315,8 @@ class TestUpdateThemeDirectories:
 class TestThemeSelection:
     """select_theme_from_path, select_cloud_theme — routing + state."""
 
-    @patch('trcc.gui.lcd_handler.Settings')
-    @patch('trcc.gui.lcd_handler.ThemeInfo')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.ThemeInfo')
     def test_select_theme_from_path_calls_select(self, mock_ti, mock_settings, lcd_handler, mock_lcd_device):
         mock_ti.from_directory.return_value = MagicMock()
         path = MagicMock(spec=Path)
@@ -333,8 +333,8 @@ class TestThemeSelection:
         lcd_handler.select_theme_from_path(path)
         mock_lcd_device.select.assert_not_called()
 
-    @patch('trcc.gui.lcd_handler.Settings')
-    @patch('trcc.gui.lcd_handler.ThemeInfo')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.ThemeInfo')
     def test_select_theme_stops_video(self, mock_ti, mock_settings, lcd_handler, mock_lcd_device):
         """Theme selection calls stop() on the lcd device."""
         mock_ti.from_directory.return_value = MagicMock()
@@ -345,8 +345,8 @@ class TestThemeSelection:
         lcd_handler.select_theme_from_path(path)
         mock_lcd_device.stop.assert_called()
 
-    @patch('trcc.gui.lcd_handler.Settings')
-    @patch('trcc.gui.lcd_handler.ThemeInfo')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.ThemeInfo')
     def test_select_theme_persists_path(self, mock_ti, mock_settings, lcd_handler):
         mock_ti.from_directory.return_value = MagicMock()
         lcd_handler._device_key = 'dev0'
@@ -359,8 +359,8 @@ class TestThemeSelection:
         mock_settings.save_device_settings.assert_any_call(
             'dev0', theme_name=path.name, theme_type='local', mask_id='')
 
-    @patch('trcc.gui.lcd_handler.Settings')
-    @patch('trcc.gui.lcd_handler.ThemeInfo')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.ThemeInfo')
     def test_select_theme_no_persist(self, mock_ti, mock_settings, lcd_handler):
         mock_ti.from_directory.return_value = MagicMock()
         lcd_handler._device_key = 'dev0'
@@ -371,8 +371,8 @@ class TestThemeSelection:
         lcd_handler.select_theme_from_path(path, persist=False)
         mock_settings.save_device_setting.assert_not_called()
 
-    @patch('trcc.gui.lcd_handler.Settings')
-    @patch('trcc.gui.lcd_handler.ThemeInfo')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.ThemeInfo')
     def test_no_double_send_when_overlay_follows(self, mock_ti, mock_settings, lcd_handler, mock_lcd_device):
         """select_theme_from_path must not call send() when
         overlay config will follow — avoids double-send blink on theme switch."""
@@ -389,8 +389,8 @@ class TestThemeSelection:
             "_load_theme_overlay_config owns the single send to avoid blink"
         )
 
-    @patch('trcc.gui.lcd_handler.Settings')
-    @patch('trcc.gui.lcd_handler.ThemeInfo')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.ThemeInfo')
     def test_single_render_and_send_on_theme_switch(self, mock_ti, mock_settings, lcd_handler, mock_lcd_device):
         """Exactly one render_and_send on a normal theme switch with overlay config."""
         mock_ti.from_directory.return_value = MagicMock()
@@ -414,7 +414,7 @@ class TestThemeSelection:
 class TestMask:
     """apply_mask — loads mask, updates preview, persists."""
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_apply_mask_with_path(self, mock_settings, lcd_handler, mock_lcd_device):
         lcd_handler._device_key = 'dev0'
         mask_info = MagicMock()
@@ -434,7 +434,7 @@ class TestMask:
         lcd_handler.apply_mask(mask_info)
         lcd_handler._w['preview'].set_status.assert_called_once()
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_restore_dispatches_restore_last_theme(self, mock_settings, make_lcd_handler, mock_lcd_device):
         """apply_device_config calls restore_last_theme — shared path with CLI/API."""
         mock_settings.device_config_key.return_value = 'k'
@@ -445,7 +445,7 @@ class TestMask:
             MagicMock(device_index=0, vid=0x0402, pid=0x3922), 320, 320)
         mock_lcd_device.restore_last_theme.assert_called()
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_restore_skipped_when_auto_loaded(self, mock_settings, make_lcd_handler, mock_lcd_device):
         """apply_device_config skips restore_last_theme when first-install auto-load
         already loaded a theme (_update_theme_directories returned True)."""
@@ -457,7 +457,7 @@ class TestMask:
             MagicMock(device_index=0, vid=0x0402, pid=0x3922), 320, 320)
         mock_lcd_device.restore_last_theme.assert_not_called()
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_restore_updates_preview_on_success(self, mock_settings, make_lcd_handler, mock_lcd_device):
         """apply_device_config updates preview widget when restore_last_theme succeeds."""
         mock_settings.device_config_key.return_value = 'k'
@@ -472,7 +472,7 @@ class TestMask:
             MagicMock(device_index=0, vid=0x0402, pid=0x3922), 320, 320)
         h._w['preview'].set_image.assert_called_with(img, fast=False)
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_restore_starts_animation_timer_for_video_theme(self, mock_settings, make_lcd_handler, mock_lcd_device):
         """apply_device_config starts animation timer when restoring a video theme."""
         mock_settings.device_config_key.return_value = 'k'
@@ -489,7 +489,7 @@ class TestMask:
         h._animation_timer.start.assert_called_with(33)  # lcd.interval = 33
         h._w['preview'].set_playing.assert_called_with(True)
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_restore_no_animation_timer_for_static_theme(self, mock_settings, make_lcd_handler, mock_lcd_device):
         """apply_device_config does NOT start animation timer for a static theme."""
         mock_settings.device_config_key.return_value = 'k'
@@ -553,7 +553,7 @@ class TestVideo:
 class TestOverlay:
     """on_overlay_changed, update_metrics, flash_element."""
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_overlay_changed_dispatches_enable_and_config(self, mock_settings, lcd_handler, mock_lcd_device):
         lcd_handler._device_key = 'dev0'
         lcd_handler._lcd.enabled = False  # overlay disabled — should trigger enable_overlay
@@ -563,19 +563,19 @@ class TestOverlay:
         mock_lcd_device.enable_overlay.assert_called()
         mock_lcd_device.set_config.assert_called_with(data)
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_overlay_changed_empty_data_noop(self, mock_settings, lcd_handler, mock_lcd_device):
         mock_lcd_device.set_config.reset_mock()
         lcd_handler.on_overlay_changed({})
         mock_lcd_device.set_config.assert_not_called()
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_overlay_changed_none_data_noop(self, mock_settings, lcd_handler, mock_lcd_device):
         mock_lcd_device.set_config.reset_mock()
         lcd_handler.on_overlay_changed(None)
         mock_lcd_device.set_config.assert_not_called()
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_overlay_changed_persists(self, mock_settings, lcd_handler):
         lcd_handler._device_key = 'dev0'
         lcd_handler._w['theme_setting'].overlay_grid.overlay_enabled = True
@@ -780,7 +780,7 @@ class TestBackgroundScreencast:
 class TestThemeIO:
     """save_theme, export_config, import_config."""
 
-    @patch('trcc.gui.lcd_handler.Settings')
+    @patch('trcc.ui.gui.lcd_handler.Settings')
     def test_save_theme_success(self, mock_settings_cls, lcd_handler, mock_lcd_device, tmp_path):
         # Set data_root so orientation.theme_dir returns a valid ThemeDir
         mock_lcd_device.orientation.data_root = tmp_path

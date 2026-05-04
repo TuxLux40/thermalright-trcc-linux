@@ -27,7 +27,7 @@ import subprocess
 
 import psutil
 
-from trcc.adapters.system._base import SensorEnumeratorBase
+from trcc.adapters.system._base import SUBPROCESS_EXC, SensorEnumeratorBase
 from trcc.adapters.system.macos.hardware import _is_apple_silicon
 from trcc.adapters.system.macos.hid_sensors import (
     hid_layer_ready,
@@ -60,6 +60,9 @@ __all__ = [
 ]
 
 IS_APPLE_SILICON = _is_apple_silicon()
+
+# IOKit C-bridge surface (ctypes / CoreFoundation): no shared Python base.
+_IOKIT_EXC: tuple[type[BaseException], ...] = (OSError, AttributeError, ValueError, RuntimeError)
 
 # Reject garbage SMC floats (wrong key / datatype) from discovery and poll.
 _SMC_TEMP_C_MIN = -30.0
@@ -322,8 +325,8 @@ class MacOSSensorEnumerator(SensorEnumeratorBase):
             return
         try:
             rows = read_hid_sensor_pairs()
-        except Exception:
-            log.warning('HID sensor discovery failed', exc_info=True)
+        except _IOKIT_EXC as e:
+            log.warning('HID sensor discovery failed: %s', e)
             return
         ids: list[str] = []
         for sid, name, category, unit, val in rows:
@@ -360,8 +363,8 @@ class MacOSSensorEnumerator(SensorEnumeratorBase):
         if IS_APPLE_SILICON and self._hid_ids:
             try:
                 readings.update(poll_hid_readings(self._hid_ids))
-            except Exception:
-                log.debug('HID poll failed', exc_info=True)
+            except _IOKIT_EXC as e:
+                log.debug('HID poll failed: %s', e)
         if IS_APPLE_SILICON:
             self._poll_powermetrics_gpu(readings)
         self._poll_nvidia(readings)
@@ -401,7 +404,8 @@ class MacOSSensorEnumerator(SensorEnumeratorBase):
                 capture_output=True,
                 timeout=8,
             )
-        except Exception:
+        except SUBPROCESS_EXC as e:
+            log.debug('powermetrics subprocess failed: %s', e)
             return b''
         out = result.stdout
         return out if isinstance(out, (bytes, bytearray)) else b''
@@ -423,8 +427,8 @@ class MacOSSensorEnumerator(SensorEnumeratorBase):
                     if merged:
                         readings.update(merged)
                         return
-                except Exception:
-                    log.debug('powermetrics plist parse failed', exc_info=True)
+                except (plistlib.InvalidFileException, ValueError, KeyError, TypeError) as e:
+                    log.debug('powermetrics plist parse failed: %s', e)
 
             result = subprocess.run(
                 [
@@ -435,10 +439,9 @@ class MacOSSensorEnumerator(SensorEnumeratorBase):
             if (result.stdout or '').strip():
                 _merge_powermetrics_text(readings, result.stdout)
 
-        except Exception:
+        except SUBPROCESS_EXC as e:
             log.debug(
-                'powermetrics failed (install helper or run with sudo)',
-                exc_info=True,
+                'powermetrics failed (install helper or run with sudo): %s', e,
             )
 
     def _poll_apfs_disk_percent(self) -> float:
@@ -460,8 +463,8 @@ class MacOSSensorEnumerator(SensorEnumeratorBase):
                         in_use = int(m.group(1))
             if capacity > 0:
                 return round(in_use / capacity * 100, 1)
-        except Exception:
-            log.debug('diskutil apfs list failed', exc_info=True)
+        except SUBPROCESS_EXC as e:
+            log.debug('diskutil apfs list failed: %s', e)
         return psutil.disk_usage('/').percent
 
     def get_gpu_list(self) -> list[tuple[str, str]]:
@@ -482,7 +485,8 @@ class MacOSSensorEnumerator(SensorEnumeratorBase):
                     label = f'{name} ({vram})' if vram else name
                     key = f'smc:{name.lower().replace(" ", "_")[:20]}'
                     gpus.append((key, label))
-            except Exception:
+            except SUBPROCESS_EXC as e:
+                log.debug('system_profiler SPDisplaysDataType failed: %s', e)
                 gpus.append(('smc:gpu', 'Intel Mac GPU'))
         gpus.extend(super().get_gpu_list())
         return gpus

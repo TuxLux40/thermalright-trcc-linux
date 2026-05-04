@@ -563,8 +563,8 @@ class BaseThumbnail(ClickableFrame):
                 text)
             painter.end()
             self.thumb_label.setPixmap(QPixmap.fromImage(bg))
-        except Exception:
-            pass
+        except (OSError, RuntimeError) as e:
+            log.debug("base: text-thumbnail rendering failed: %s", e)
 
     def _update_style(self):
         cls_name = type(self).__name__

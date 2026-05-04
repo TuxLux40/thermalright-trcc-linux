@@ -135,8 +135,8 @@ class WindowsScsiTransport(ScsiTransport):
         if self._handle is not None:
             try:
                 ctypes.windll.kernel32.CloseHandle(self._handle)  # pyright: ignore[reportAttributeAccessIssue]
-            except Exception:
-                pass
+            except (OSError, AttributeError) as e:
+                log.debug("CloseHandle raised: %s", e)
             self._handle = None
 
     def send_cdb(

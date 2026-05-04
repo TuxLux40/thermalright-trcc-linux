@@ -5,8 +5,8 @@ import logging
 
 import typer
 
+from trcc._boot import trcc
 from trcc.ui.cli import _cli_handler
-from trcc.ui.cli._boot import trcc
 
 log = logging.getLogger(__name__)
 
@@ -81,8 +81,8 @@ def list_masks(*, lcd: int = 0, source: str = 'all') -> int:
 @_cli_handler
 def load_theme(builder, name, *, device=None, preview=False):
     """Load a theme by name and send to LCD."""
+    from trcc._boot import trcc as _trcc
     from trcc.services import ImageService
-    from trcc.ui.cli._boot import trcc as _trcc
     from trcc.ui.cli._display import _connect_or_fail
 
     log.debug("load_theme name=%s device=%s", name, device)
@@ -197,7 +197,7 @@ def save_theme(name, *, device=None, video=None, background=None,
     """Save current display state as a custom theme."""
     from pathlib import Path
 
-    from trcc.ui.cli._boot import trcc as _trcc
+    from trcc._boot import trcc as _trcc
     from trcc.ui.cli._display import _connect_or_fail
 
     log.debug("save_theme name=%s device=%s background=%s", name, device, background)
@@ -310,12 +310,12 @@ def import_theme(file_path, *, device=None):
     """Import a theme from .tr file."""
     from pathlib import Path
 
+    from trcc._boot import trcc as _trcc
     from trcc.adapters.infra.dc_config import DcConfig
     from trcc.adapters.infra.dc_parser import load_config_json
     from trcc.adapters.infra.dc_writer import import_theme as _import_fn
     from trcc.conf import settings as _settings
     from trcc.services import ThemeService
-    from trcc.ui.cli._boot import trcc as _trcc
     from trcc.ui.cli._display import _connect_or_fail
 
     log.debug("import_theme path=%s device=%s", file_path, device)

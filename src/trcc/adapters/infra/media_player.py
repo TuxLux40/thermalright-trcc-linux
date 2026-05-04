@@ -120,8 +120,8 @@ class VideoDecoder:
                 parts = result.stdout.strip().split(',')
                 if len(parts) >= 2:
                     return int(parts[0]), int(parts[1])
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError, ValueError) as e:
+            log.debug("ffprobe video dimensions failed: %s", e)
         return None
 
     @property
@@ -159,8 +159,8 @@ class VideoDecoder:
         except subprocess.TimeoutExpired:
             log.error("FFmpeg timed out")
             return 0
-        except Exception:
-            log.exception("FFmpeg failed")
+        except (OSError, subprocess.SubprocessError) as e:
+            log.error("FFmpeg failed: %s", e)
             return 0
 
         extracted = len([
@@ -228,7 +228,7 @@ class ThemeZtDecoder:
             )
             if result.returncode != 0 or not result.stdout:
                 raise ValueError(f"ffmpeg decode failed: {result.stderr[:100]!r}")
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
             log.warning("ThemeZtDecoder: JPEG decode failed (%s), returning blank", exc)
             w, h = target_size
             return RawFrame(bytes(w * h * 3), w, h)
@@ -264,7 +264,7 @@ def is_animated_gif(path: str | os.PathLike) -> bool:
         ], capture_output=True, timeout=5, text=True, creationflags=_NO_WINDOW)
         if result.returncode == 0 and result.stdout.strip().isdigit():
             return int(result.stdout.strip()) > 1
-    except Exception:
-        pass
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
+        log.debug("ffprobe gif frame-count failed for %s: %s", path, e)
     return False
 

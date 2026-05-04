@@ -215,7 +215,7 @@ class OverlayService:
                     self.set_config_resolution(self.width, self.height)
                     self.set_dc_data({'display_options': display_options})
                     return display_options
-            except Exception as e:
+            except (OSError, ValueError, KeyError, TypeError) as e:
                 self.log.warning("Failed to load config.json, falling back to DC: %s", e)
 
         if not dc_path or not dc_path.exists():
@@ -231,6 +231,7 @@ class OverlayService:
             self.set_dc_data(dc.to_dict())
             return dc.display_options
         except Exception as e:
+            # Injected DC parser class — binary parsing surface varies (struct.error et al).
             self.log.error("Failed to parse DC file: %s", e)
             return {}
 
@@ -358,6 +359,7 @@ class OverlayService:
                     return (center_pos[0] - mask_w // 2,
                             center_pos[1] - mask_h // 2)
         except Exception as e:
+            # Injected DC parser class — binary parsing surface varies.
             log.warning("DC config parse failed for %s — centering mask: %s",
                         dc_path, e)
         return centered

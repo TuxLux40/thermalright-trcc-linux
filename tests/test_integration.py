@@ -52,7 +52,7 @@ class TestCLISendPipeline(unittest.TestCase):
         from trcc.adapters.system.linux_platform import LinuxPlatform as LinuxOs
         from trcc.core.builder import ControllerBuilder
         from trcc.services.image import ImageService
-        return ControllerBuilder(LinuxPlatform(), LinuxOs()).with_renderer(ImageService._r())
+        return ControllerBuilder(LinuxPlatform(), LinuxOs()).with_renderer(ImageService.renderer())
 
     @patch("trcc.adapters.device.factory.DeviceProtocolFactory.get_protocol")
     @patch("trcc.core.builder.ControllerBuilder.build_detect_fn")
@@ -322,7 +322,7 @@ class TestThemeLoadRender(unittest.TestCase):
             make_test_surface(320, 320, (0, 0, 0, 128)).save(os.path.join(td, "01.png"), "PNG")
 
             # Open and composite via Qt renderer
-            r = ImageService._r()
+            r = ImageService.renderer()
             bg = r.open_image(os.path.join(td, "00.png"))
             mask = r.open_image(os.path.join(td, "01.png"))
             mask_rgba = r.convert_to_rgba(mask)

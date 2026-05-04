@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from trcc.core.device.lcd import LCDDevice
-    from trcc.ipc import DeviceProxy
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -47,7 +46,7 @@ app = FastAPI(title="TRCC Linux", version=__version__)
 
 # ── Shared state ───────────────────────────────────────────────────────
 
-# Device registry now lives on the Trcc singleton (api._boot.get_trcc()).
+# Device registry now lives on the Trcc singleton (api._boot.trcc()).
 # Endpoints look up devices via Trcc; this module owns only the
 # in-flight per-process state below.
 
@@ -55,7 +54,7 @@ app = FastAPI(title="TRCC Linux", version=__version__)
 _system_svc: SystemService | None = None
 
 # Lazy-initialized device (set when device is selected)
-_device_dispatcher: LCDDevice | DeviceProxy | None = None
+_device_dispatcher: LCDDevice | None = None
 
 # Last frame sent to LCD — updated by display/theme endpoints for preview
 _current_image = None  # QImage | None
@@ -68,27 +67,20 @@ def set_current_image(img) -> None:
 
 
 def configure_app() -> None:
-    """Initialize platform, renderer, and system service.
+    """Initialize platform, renderer, system service, and connected devices.
 
-    Called once by CLI serve command before uvicorn starts. Not called at
-    import time so tests can import the module without triggering side effects.
+    Called once by ``trcc serve`` before uvicorn starts. Not called at
+    import time so tests can import the module without triggering
+    side effects.
     """
     global _system_svc
-    from trcc.adapters.render.qt import QtRenderer
-    from trcc.core.app import AppEvent, AppObserver, TrccApp
-    from trcc.services.system import set_instance
+    from trcc._boot import trcc as _boot_trcc
+    from trcc.core.events import Topic
 
-    trcc_app = TrccApp.init()
-
-    class _ApiProgressObserver(AppObserver):
-        def on_app_event(self, event: AppEvent, data: object) -> None:
-            if event == AppEvent.BOOTSTRAP_PROGRESS:
-                print(data, flush=True)
-
-    trcc_app.register(_ApiProgressObserver())
-    trcc_app.bootstrap(renderer_factory=QtRenderer)
-    _system_svc = trcc_app.build_system()
-    set_instance(_system_svc)
+    t = _boot_trcc(discover_now=True)
+    t.events.subscribe(
+        Topic.BOOTSTRAP_PROGRESS, lambda msg: print(msg, flush=True))
+    _system_svc = t._system_svc
 
 
 # ── Video playback (background thread) ───────────────────────────────
@@ -329,8 +321,8 @@ def start_screencast(
         if not shutil.which('ffmpeg'):
             return {"success": False, "error": "ffmpeg not found"}
 
-        from trcc.ui.api._boot import get_trcc
-        capture = get_trcc().os.screen_capture_params(x, y, w, h)
+        from trcc._boot import trcc
+        capture = trcc().os.screen_capture_params(x, y, w, h)
         if capture is None:
             return {"success": False, "error": "Screencast not supported on this platform"}
         fmt, inp, region_args = capture
@@ -441,8 +433,8 @@ def stop_screencast() -> None:
     if _screencast_cast is not None:
         try:
             _screencast_cast.stop()  # type: ignore[union-attr]
-        except Exception:
-            pass
+        except (RuntimeError, AttributeError, OSError) as e:
+            log.debug("api: screencast cast.stop() raised: %s", e)
 
     if _screencast_thread and _screencast_thread.is_alive():
         _screencast_thread.join(timeout=2)
@@ -458,17 +450,17 @@ def stop_screencast() -> None:
 # ── LED keepalive loop (background thread for animated modes) ─────────
 
 def ensure_metrics_loop() -> None:
-    """Ensure TrccApp metrics loop is running — ticks all devices.
+    """Ensure the Trcc metrics loop is running — ticks all devices.
 
     Called by API endpoints that need continuous device updates (animated
     LED, overlay, keepalive). The core loop ticks all devices at 50ms
     and polls sensors at settings.refresh_interval. No-op if already running.
     """
-    from trcc.core.app import TrccApp
-    app = TrccApp.get()
-    if app._metrics_thread and app._metrics_thread.is_alive():
+    from trcc._boot import trcc
+    t = trcc()
+    if t._metrics_thread and t._metrics_thread.is_alive():
         return
-    app.start_metrics_loop()
+    t.start_metrics_loop()
 
 
 # ── Static file mounts (resolution-aware, remounted on device select) ─
@@ -606,6 +598,7 @@ from trcc.ui.api.i18n import router as i18n_router  # noqa: E402
 from trcc.ui.api.led import router as led_router  # noqa: E402
 from trcc.ui.api.system import router as system_router  # noqa: E402
 from trcc.ui.api.themes import router as themes_router  # noqa: E402
+from trcc.ui.api.trcc import router as trcc_router  # noqa: E402
 
 app.include_router(control_center_router)
 app.include_router(devices_router)
@@ -614,3 +607,4 @@ app.include_router(i18n_router)
 app.include_router(led_router)
 app.include_router(themes_router)
 app.include_router(system_router)
+app.include_router(trcc_router)

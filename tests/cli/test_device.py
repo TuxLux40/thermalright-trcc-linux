@@ -1,4 +1,4 @@
-"""Tests for trcc.cli._device — device detection, selection, probing."""
+"""Tests for trcc.ui.cli._device — device detection, selection, probing."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -407,14 +407,14 @@ class TestFormat:
     def test_probe_false_skips_probe(self, make_detected_device):
         """probe=False: _probe is never called."""
         dev = make_detected_device()
-        with patch("trcc.cli._device._probe") as mock_probe:
+        with patch("trcc.ui.cli._device._probe") as mock_probe:
             _format(dev, probe=False)
         mock_probe.assert_not_called()
 
     def test_probe_true_calls_probe(self, make_detected_device):
         """probe=True: _probe is called and result is appended."""
         dev = make_detected_device()
-        with patch("trcc.cli._device._probe", return_value={}):
+        with patch("trcc.ui.cli._device._probe", return_value={}):
             line = _format(dev, probe=True)
         # Empty probe result -> no extra parens appended
         assert "(" not in line.split("—")[1] or "(SCSI)" in line
@@ -422,14 +422,14 @@ class TestFormat:
     def test_probe_with_model(self, make_detected_device):
         """probe=True with model info: model appears in output."""
         dev = make_detected_device()
-        with patch("trcc.cli._device._probe", return_value={"model": "PA120 Digital"}):
+        with patch("trcc.ui.cli._device._probe", return_value={"model": "PA120 Digital"}):
             line = _format(dev, probe=True)
         assert "model: PA120 Digital" in line
 
     def test_probe_with_resolution(self, make_detected_device):
         """probe=True with resolution: WxH string appears in output."""
         dev = make_detected_device()
-        with patch("trcc.cli._device._probe",
+        with patch("trcc.ui.cli._device._probe",
                    return_value={"resolution": (360, 360)}):
             line = _format(dev, probe=True)
         assert "resolution: 360x360" in line
@@ -437,14 +437,14 @@ class TestFormat:
     def test_probe_with_pm(self, make_detected_device):
         """probe=True with PM: PM=N appears in output."""
         dev = make_detected_device()
-        with patch("trcc.cli._device._probe", return_value={"pm": 54}):
+        with patch("trcc.ui.cli._device._probe", return_value={"pm": 54}):
             line = _format(dev, probe=True)
         assert "PM=54" in line
 
     def test_probe_with_serial_truncated_to_16(self, make_detected_device):
         """probe=True with long serial: serial is truncated to 16 characters."""
         dev = make_detected_device()
-        with patch("trcc.cli._device._probe",
+        with patch("trcc.ui.cli._device._probe",
                    return_value={"serial": "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}):
             line = _format(dev, probe=True)
         assert "serial: ABCDEFGHIJKLMNOP" in line
@@ -452,7 +452,7 @@ class TestFormat:
     def test_probe_with_all_details(self, make_detected_device):
         """probe=True with all probe fields: all appear in output."""
         dev = make_detected_device()
-        with patch("trcc.cli._device._probe", return_value={
+        with patch("trcc.ui.cli._device._probe", return_value={
             "model": "PA120",
             "resolution": (480, 480),
             "pm": 72,
@@ -505,7 +505,7 @@ class TestDetect:
         mock_setup = self._ok_setup()
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
-             patch("trcc.cli._device._probe", return_value={}):
+             patch("trcc.ui.cli._device._probe", return_value={}):
             result = detect(show_all=False, detect_fn=lambda: [dev], platform_setup=mock_setup)
 
         assert result == 0
@@ -517,7 +517,7 @@ class TestDetect:
         mock_setup = self._ok_setup()
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
-             patch("trcc.cli._device._probe", return_value={}):
+             patch("trcc.ui.cli._device._probe", return_value={}):
             result = detect(show_all=True, detect_fn=lambda: [dev1, dev2], platform_setup=mock_setup)
 
         captured = capsys.readouterr()
@@ -531,7 +531,7 @@ class TestDetect:
         mock_setup = self._ok_setup()
 
         with patch("trcc.conf.Settings.get_selected_device", return_value="/dev/sg0"), \
-             patch("trcc.cli._device._probe", return_value={}):
+             patch("trcc.ui.cli._device._probe", return_value={}):
             detect(show_all=True, detect_fn=lambda: [dev], platform_setup=mock_setup)
 
         captured = capsys.readouterr()
@@ -543,7 +543,7 @@ class TestDetect:
         mock_setup = self._ok_setup()
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
-             patch("trcc.cli._device._probe", return_value={}):
+             patch("trcc.ui.cli._device._probe", return_value={}):
             detect(show_all=True, detect_fn=lambda: [dev], platform_setup=mock_setup)
 
         captured = capsys.readouterr()
@@ -556,7 +556,7 @@ class TestDetect:
         mock_setup = self._ok_setup()
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
-             patch("trcc.cli._device._probe", return_value={}):
+             patch("trcc.ui.cli._device._probe", return_value={}):
             detect(show_all=True, detect_fn=lambda: [dev1, dev2], platform_setup=mock_setup)
 
         captured = capsys.readouterr()
@@ -569,7 +569,7 @@ class TestDetect:
         mock_setup = self._ok_setup()
 
         with patch("trcc.conf.Settings.get_selected_device", return_value="/dev/sg1"), \
-             patch("trcc.cli._device._probe", return_value={}):
+             patch("trcc.ui.cli._device._probe", return_value={}):
             detect(show_all=False, detect_fn=lambda: [dev0, dev1], platform_setup=mock_setup)
 
         captured = capsys.readouterr()
@@ -587,7 +587,7 @@ class TestDetect:
         mock_setup.no_devices_hint.return_value = None
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
-             patch("trcc.cli._device._probe", return_value={}):
+             patch("trcc.ui.cli._device._probe", return_value={}):
             detect(show_all=False, detect_fn=lambda: [dev], platform_setup=mock_setup)
 
         captured = capsys.readouterr()
@@ -604,7 +604,7 @@ class TestDetect:
         mock_setup.no_devices_hint.return_value = None
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
-             patch("trcc.cli._device._probe", return_value={}):
+             patch("trcc.ui.cli._device._probe", return_value={}):
             detect(show_all=False, detect_fn=lambda: [dev], platform_setup=mock_setup)
 
         captured = capsys.readouterr()
@@ -621,7 +621,7 @@ class TestDetect:
         mock_setup.no_devices_hint.return_value = None
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
-             patch("trcc.cli._device._probe", return_value={}):
+             patch("trcc.ui.cli._device._probe", return_value={}):
             detect(show_all=False, detect_fn=lambda: [dev], platform_setup=mock_setup)
 
         captured = capsys.readouterr()
@@ -633,7 +633,7 @@ class TestDetect:
         mock_setup = self._ok_setup()
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
-             patch("trcc.cli._device._probe", return_value={}):
+             patch("trcc.ui.cli._device._probe", return_value={}):
             detect(show_all=False, detect_fn=lambda: [dev], platform_setup=mock_setup)
 
         captured = capsys.readouterr()

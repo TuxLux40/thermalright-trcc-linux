@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 def run_setup(auto_yes: bool = False) -> int:
     """Run interactive platform setup. OS handles everything."""
-    from trcc.ui.cli._boot import trcc as _trcc
+    from trcc._boot import trcc as _trcc
     return _trcc().os.run_setup(auto_yes=auto_yes)
 
 
@@ -100,7 +100,7 @@ def uninstall(*, yes: bool = False):
     home = Path.home()
 
     # Files that require root to remove (platform-specific)
-    from trcc.ui.cli._boot import trcc as _trcc
+    from trcc._boot import trcc as _trcc
     root_files = _trcc().os.get_system_files()
 
     # User files/dirs to remove
@@ -129,7 +129,7 @@ def uninstall(*, yes: bool = False):
             removed.append(path_str)
 
     # Disable autostart before shutting down logging
-    from trcc.ui.cli._boot import trcc as _trcc
+    from trcc._boot import trcc as _trcc
     platform = _trcc().os
     if platform.autostart_enabled():
         platform.autostart_disable()
@@ -227,9 +227,9 @@ def download_themes(pack=None, show_list=False, force=False, show_info=False):
             from trcc.conf import Settings
             Settings.clear_installed_resolutions()
 
-        from trcc.core.app import TrccApp
+        from trcc._boot import trcc
         dispatch_pack = "" if show_list else (pack or "")
-        return TrccApp.get().download_themes(dispatch_pack, force)
+        return trcc().download_themes(dispatch_pack, force)
 
     except Exception as e:
         print(f"Error: {e}")

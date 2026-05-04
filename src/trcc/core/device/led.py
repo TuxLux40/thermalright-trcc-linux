@@ -8,7 +8,6 @@ based on detected.protocol.
 """
 from __future__ import annotations
 
-import functools
 import logging
 from typing import Any
 
@@ -16,17 +15,6 @@ from .._logging import tagged_logger
 from ..models import LEDMode
 
 log = logging.getLogger(__name__)
-
-
-def _forward_to_proxy(method):
-    """Forward method call to proxy if one is active."""
-    @functools.wraps(method)
-    def wrapper(self, *args, **kwargs):
-        if self._proxy is not None:
-            log.debug("proxy forward: %s → %s", method.__name__, type(self._proxy).__name__)
-            return getattr(self._proxy, method.__name__)(*args, **kwargs)
-        return method(self, *args, **kwargs)
-    return wrapper
 
 
 class LEDDevice:
@@ -50,43 +38,22 @@ class LEDDevice:
         get_protocol: Any = None,
         led_svc_factory: Any = None,
         led_config: Any = None,
-        find_active_fn: Any = None,
-        proxy_factory_fn: Any = None,
     ) -> None:
         self._device_svc = device_svc
         self._led_svc = led_svc
         self._get_protocol = get_protocol
         self._led_svc_factory = led_svc_factory
         self._led_config = led_config
-        self._find_active_fn = find_active_fn
-        self._proxy_factory_fn = proxy_factory_fn
-        self._proxy: Any = None
         self._info: Any = None
         self._init_status: str | None = None
         self.log: logging.Logger = log
 
     # ══════════════════════════════════════════════════════════════════════
-    # Shared lifecycle (proxy routing + DeviceInfo)
+    # Shared lifecycle (DeviceInfo)
     # ══════════════════════════════════════════════════════════════════════
-
-    def wire_ipc(self, find_active_fn: Any, proxy_factory_fn: Any) -> None:
-        """Inject IPC routing functions for proxy delegation."""
-        self._find_active_fn = find_active_fn
-        self._proxy_factory_fn = proxy_factory_fn
-
-    def _try_proxy_route(self, detected: Any) -> dict | None:
-        """Check for active instance and route through proxy if found."""
-        if detected is None and self._find_active_fn and self._proxy_factory_fn:
-            active = self._find_active_fn()
-            if active is not None:
-                self._proxy = self._proxy_factory_fn(active)
-                return {"success": True, "proxy": active}
-        return None
 
     @property
     def connected(self) -> bool:
-        if self._proxy is not None:
-            return getattr(self._proxy, 'connected', True)
         if self._info is not None:
             return True
         return self._led_svc is not None
@@ -124,12 +91,6 @@ class LEDDevice:
         if self._led_svc:
             log.debug("LED connect: already connected (status=%s)", self._init_status)
             return {"success": True, "status": self._init_status or ""}
-
-        proxy_result = self._try_proxy_route(detected)
-        if proxy_result is not None:
-            log.info("LED connect: routing through proxy instance")
-            proxy_result["status"] = f"Connected (via {proxy_result['proxy'].value})"
-            return proxy_result
 
         if detected is not None and getattr(detected, 'implementation', '') == 'hid_led':
             from ..models import DeviceInfo
@@ -313,7 +274,6 @@ class LEDDevice:
                     "error": f"Segment {index} out of range (valid: 0–{n - 1})"}
         return None
 
-    @_forward_to_proxy
     def set_color(self, r: int, g: int, b: int) -> dict:
         self._led_svc.set_mode(LEDMode.STATIC)
         self._led_svc.set_color(r, g, b)
@@ -321,7 +281,6 @@ class LEDDevice:
         return {"success": True, "colors": colors,
                 "message": f"LED color set to #{r:02x}{g:02x}{b:02x}"}
 
-    @_forward_to_proxy
     def set_mode(self, mode: LEDMode | str | int) -> dict:
         resolved = self._resolve_mode(mode)
         if not resolved:
@@ -343,13 +302,11 @@ class LEDDevice:
         return {"success": True, "colors": colors,
                 "message": f"LED brightness set to {level}%"}
 
-    @_forward_to_proxy
     def toggle_global(self, on: bool) -> dict:
         self._led_svc.toggle_global(on)
         self._led_send_and_save()
         return {"success": True, "message": f"LEDs {'on' if on else 'off'}"}
 
-    @_forward_to_proxy
     def set_sensor_source(self, source: str) -> dict:
         source = source.lower()
         if source not in ('cpu', 'gpu'):
@@ -360,7 +317,6 @@ class LEDDevice:
         return {"success": True,
                 "message": f"LED sensor source set to {source.upper()}"}
 
-    @_forward_to_proxy
     def set_zone_color(self, zone: int, r: int, g: int, b: int) -> dict:
         if err := self._validate_zone(zone):
             return err
@@ -369,7 +325,6 @@ class LEDDevice:
         return {"success": True, "colors": colors,
                 "message": f"Zone {zone} color set to #{r:02x}{g:02x}{b:02x}"}
 
-    @_forward_to_proxy
     def set_zone_mode(self, zone: int, mode: LEDMode | str | int) -> dict:
         if err := self._validate_zone(zone):
             return err
@@ -381,7 +336,6 @@ class LEDDevice:
         return {"success": True, "colors": colors,
                 "message": f"Zone {zone} mode set to {resolved.name.lower()}"}
 
-    @_forward_to_proxy
     def set_zone_brightness(self, zone: int, level: int) -> dict:
         if err := self._validate_zone(zone):
             return err
@@ -392,7 +346,6 @@ class LEDDevice:
         return {"success": True, "colors": colors,
                 "message": f"Zone {zone} brightness set to {level}%"}
 
-    @_forward_to_proxy
     def toggle_zone(self, zone: int, on: bool) -> dict:
         if err := self._validate_zone(zone):
             return err
@@ -401,7 +354,6 @@ class LEDDevice:
         return {"success": True,
                 "message": f"Zone {zone} {'ON' if on else 'OFF'}"}
 
-    @_forward_to_proxy
     def set_zone_sync(self, enabled: bool,
                       interval: int | None = None) -> dict:
         if interval is not None:
@@ -419,7 +371,6 @@ class LEDDevice:
         self._led_svc.set_selected_zone(zone)
         return {"success": True}
 
-    @_forward_to_proxy
     def toggle_segment(self, index: int, on: bool) -> dict:
         if err := self._validate_segment(index):
             return err
@@ -428,14 +379,12 @@ class LEDDevice:
         return {"success": True,
                 "message": f"Segment {index} {'ON' if on else 'OFF'}"}
 
-    @_forward_to_proxy
     def set_clock_format(self, is_24h: bool) -> dict:
         self._led_svc.set_clock_format(is_24h)
         self._led_send_and_save()
         return {"success": True,
                 "message": f"Clock format set to {'24h' if is_24h else '12h'}"}
 
-    @_forward_to_proxy
     def set_week_start(self, is_sunday: bool) -> dict:
         self._led_svc.set_week_start(is_sunday)
         self._led_send_and_save()

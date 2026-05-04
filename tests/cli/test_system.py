@@ -1,4 +1,4 @@
-"""Tests for trcc.cli._system — system setup and admin commands.
+"""Tests for trcc.ui.cli._system — system setup and admin commands.
 
 ALL subprocess.run calls are mocked — CI runs as root and must never execute
 real sudo/modprobe/udevadm/getenforce/semodule commands.
@@ -94,7 +94,7 @@ class TestSudoReexec:
         assert "/usr/lib/python3" in snippet
 
     def test_dispatched_subcommand_uses_python_c(self, completed_process, capsys):
-        """Known subcommands bypass trcc.cli via python -c (#87)."""
+        """Known subcommands bypass trcc.ui.cli via python -c (#87)."""
         captured_cmd = []
 
         def fake_run(cmd, **kwargs):
@@ -111,7 +111,7 @@ class TestSudoReexec:
         assert "-m" not in captured_cmd
 
     def test_unknown_subcommand_uses_trcc_cli(self, completed_process, capsys):
-        """Unknown subcommands fall back to trcc.cli module."""
+        """Unknown subcommands fall back to trcc.ui.cli module."""
         captured_cmd = []
 
         def fake_run(cmd, **kwargs):
@@ -124,7 +124,7 @@ class TestSudoReexec:
             _sudo_reexec("some-unknown-cmd")
 
         assert "-m" in captured_cmd
-        assert "trcc.cli" in captured_cmd
+        assert "trcc.ui.cli" in captured_cmd
         assert captured_cmd[-1] == "some-unknown-cmd"
 
     def test_prints_root_required_message(self, completed_process, capsys):
@@ -218,7 +218,7 @@ class TestShowInfo:
 
     def test_text_mode_returns_zero(self, capsys):
         metrics = self._make_metrics()
-        with patch("trcc.cli._system.show_info.__module__", create=True), \
+        with patch("trcc.ui.cli._system.show_info.__module__", create=True), \
              patch("trcc.services.system.get_all_metrics", return_value=metrics), \
              patch("trcc.services.system.format_metric", side_effect=lambda k, v: str(v)):
             rc = show_info()
@@ -845,7 +845,7 @@ class TestInstallDesktop:
         home = tmp_path / "home"
         home.mkdir()
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)), \
              patch("shutil.copy2"), \
              patch("trcc.adapters.system.linux_platform.Path.exists", return_value=True):
@@ -861,7 +861,7 @@ class TestInstallDesktop:
         def fake_copy2(src, dst):
             copied.append((str(src), str(dst)))
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)), \
              patch("shutil.copy2", side_effect=fake_copy2):
             # Patch desktop_src.exists() → True
@@ -881,7 +881,7 @@ class TestInstallDesktop:
             # desktop_src doesn't exist; icon_src doesn't exist either
             return False
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)), \
              patch("shutil.copy2"):
 
@@ -907,7 +907,7 @@ class TestInstallDesktop:
 
         icon_calls = []
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("trcc.adapters.system.linux_platform.subprocess.run",
                    side_effect=lambda cmd, **kw: icon_calls.append(cmd) or completed_process(0)):
             # All Path.exists() → True so both desktop and icons are "present"
@@ -931,7 +931,7 @@ class TestInstallDesktop:
             # desktop src is first call, then each icon check
             return call_count[0] == 1
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)), \
              patch("shutil.copy2"), \
              patch.object(Path, "mkdir"):
@@ -945,7 +945,7 @@ class TestInstallDesktop:
         home = tmp_path / "home"
         home.mkdir()
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)), \
              patch("shutil.copy2"), \
              patch.object(Path, "exists", return_value=False), \
@@ -1133,11 +1133,11 @@ class TestUninstall:
         save_config({"install_info": {"method": "pip", "distro": "ubuntu"}})
         home = tmp_config / "home"
         home.mkdir()
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", return_value=False), \
              patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)), \
-             patch("trcc.cli._system._is_externally_managed", return_value=False):
+             patch("trcc.ui.cli._system._is_externally_managed", return_value=False):
             rc = uninstall(yes=True)
         assert rc == 0
 
@@ -1148,12 +1148,12 @@ class TestUninstall:
         home.mkdir()
         calls = []
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", return_value=False), \
              patch("trcc.adapters.system.linux_platform.subprocess.run",
                    side_effect=lambda cmd, **kw: calls.append(cmd) or completed_process(0)), \
-             patch("trcc.cli._system._is_externally_managed", return_value=False):
+             patch("trcc.ui.cli._system._is_externally_managed", return_value=False):
             uninstall(yes=True)
 
         pip_calls = [c for c in calls if "pip" in c and "uninstall" in c]
@@ -1166,12 +1166,12 @@ class TestUninstall:
         home.mkdir()
         calls = []
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", return_value=False), \
              patch("trcc.adapters.system.linux_platform.subprocess.run",
                    side_effect=lambda cmd, **kw: calls.append(cmd) or completed_process(0)), \
-             patch("trcc.cli._system._is_externally_managed", return_value=False):
+             patch("trcc.ui.cli._system._is_externally_managed", return_value=False):
             uninstall(yes=True)
 
         pip_calls = [c for c in calls if "pip" in c and "uninstall" in c]
@@ -1184,12 +1184,12 @@ class TestUninstall:
         home.mkdir()
         calls = []
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", return_value=False), \
              patch("trcc.adapters.system.linux_platform.subprocess.run",
                    side_effect=lambda cmd, **kw: calls.append(cmd) or completed_process(0)), \
-             patch("trcc.cli._system._is_externally_managed", return_value=False):
+             patch("trcc.ui.cli._system._is_externally_managed", return_value=False):
             uninstall(yes=False)
 
         pip_calls = [c for c in calls if "pip" in c and "uninstall" in c]
@@ -1204,12 +1204,12 @@ class TestUninstall:
         _mock_builder.os.get_system_files.return_value = ["/etc/udev/rules.d/99-trcc-lcd.rules"]
         _mock_builder.os.is_enabled.return_value = False
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=1000), \
              patch("os.path.exists", side_effect=lambda p: "/etc/udev" in str(p)), \
-             patch("trcc.cli._system.subprocess.run",
+             patch("trcc.ui.cli._system.subprocess.run",
                    side_effect=lambda cmd, **kw: calls.append(cmd) or completed_process(0)), \
-             patch("trcc.cli._system._is_externally_managed", return_value=False):
+             patch("trcc.ui.cli._system._is_externally_managed", return_value=False):
             uninstall(yes=True)
 
         sudo_rm_calls = [c for c in calls if "sudo" in c and "rm" in c]
@@ -1224,12 +1224,12 @@ class TestUninstall:
         _mock_builder.os.get_system_files.return_value = ["/etc/udev/rules.d/99-trcc-lcd.rules"]
         _mock_builder.os.is_enabled.return_value = False
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", side_effect=lambda p: "/etc/udev" in str(p)), \
              patch("os.remove", side_effect=lambda p: removed_paths.append(p)), \
              patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)), \
-             patch("trcc.cli._system._is_externally_managed", return_value=False):
+             patch("trcc.ui.cli._system._is_externally_managed", return_value=False):
             uninstall(yes=True)
 
         assert any("udev" in str(p) for p in removed_paths)
@@ -1249,14 +1249,14 @@ class TestUninstall:
                 return False
             return real_os_path_exists(p)
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", side_effect=selective_exists), \
              patch("shutil.rmtree", side_effect=lambda p, **kw: removed.append(str(p))), \
              patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)), \
              patch("trcc.conf.Settings.clear_installed_resolutions"), \
              patch("trcc.conf.Settings.get_install_info", return_value={'method': 'pip'}), \
-             patch("trcc.cli._system._is_externally_managed", return_value=False):
+             patch("trcc.ui.cli._system._is_externally_managed", return_value=False):
             uninstall(yes=True)
 
         assert any("trcc" in r for r in removed)
@@ -1268,11 +1268,11 @@ class TestUninstall:
         home.mkdir()
         _mock_builder.os.is_enabled.return_value = False
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", return_value=False), \
              patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)), \
-             patch("trcc.cli._system._is_externally_managed", return_value=False):
+             patch("trcc.ui.cli._system._is_externally_managed", return_value=False):
             uninstall(yes=True)
 
         out = capsys.readouterr().out
@@ -1288,14 +1288,14 @@ class TestUninstall:
         _mock_builder.os.get_system_files.return_value = [udev_rule]
         _mock_builder.os.is_enabled.return_value = False
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", side_effect=lambda p: str(p) == udev_rule), \
              patch("os.remove", return_value=None), \
              patch.object(Path, "exists", return_value=False), \
-             patch("trcc.cli._system.subprocess.run",
+             patch("trcc.ui.cli._system.subprocess.run",
                    side_effect=lambda cmd, **kw: calls.append(cmd) or completed_process(0)), \
-             patch("trcc.cli._system._is_externally_managed", return_value=False):
+             patch("trcc.ui.cli._system._is_externally_managed", return_value=False):
             uninstall(yes=True)
 
         udevadm_calls = [c for c in calls if "udevadm" in c]
@@ -1307,12 +1307,12 @@ class TestUninstall:
         home = tmp_config / "home"
         home.mkdir()
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", return_value=False), \
              patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)), \
              patch("trcc.conf.Settings.clear_installed_resolutions") as mock_clear, \
-             patch("trcc.cli._system._is_externally_managed", return_value=False):
+             patch("trcc.ui.cli._system._is_externally_managed", return_value=False):
             uninstall(yes=True)
         mock_clear.assert_called_once()
 
@@ -1331,7 +1331,7 @@ class TestUninstall:
         home = tmp_config / "home"
         home.mkdir()
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", return_value=False), \
              patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)):
@@ -1346,7 +1346,7 @@ class TestUninstall:
         home = tmp_config / "home"
         home.mkdir()
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", return_value=False), \
              patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)):
@@ -1362,7 +1362,7 @@ class TestUninstall:
         home.mkdir()
         calls = []
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", return_value=False), \
              patch("trcc.adapters.system.linux_platform.subprocess.run",
@@ -1380,12 +1380,12 @@ class TestUninstall:
         calls = []
 
         # _is_externally_managed is tested separately in TestIsExternallyManaged
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", return_value=False), \
              patch("trcc.adapters.system.linux_platform.subprocess.run",
                    side_effect=lambda cmd, **kw: calls.append(cmd) or completed_process(0)), \
-             patch("trcc.cli._system._is_externally_managed", return_value=True):
+             patch("trcc.ui.cli._system._is_externally_managed", return_value=True):
             uninstall(yes=True)
 
         pip_calls = [c for c in calls if "pip" in c and "uninstall" in c]
@@ -1400,12 +1400,12 @@ class TestUninstall:
         home.mkdir()
         calls = []
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists", return_value=False), \
              patch("trcc.adapters.system.linux_platform.subprocess.run",
                    side_effect=lambda cmd, **kw: calls.append(cmd) or completed_process(0)), \
-             patch("trcc.cli._system._is_externally_managed", return_value=False):
+             patch("trcc.ui.cli._system._is_externally_managed", return_value=False):
             uninstall(yes=True)
 
         pip_calls = [c for c in calls if "pip" in c and "uninstall" in c]
@@ -1425,7 +1425,7 @@ class TestUninstall:
         import os as _os
         real_exists = _os.path.exists
 
-        with patch("trcc.cli._system._real_user_home", return_value=home), \
+        with patch("trcc.ui.cli._system._real_user_home", return_value=home), \
              patch("os.geteuid", return_value=0), \
              patch("os.path.exists",
                    side_effect=lambda p: False if str(p).startswith(("/etc", "/usr")) else real_exists(p)), \

@@ -34,7 +34,7 @@ def device_svc() -> DeviceService:
 @pytest.fixture()
 def overlay_svc() -> OverlayService:
     """OverlayService at 320x320 with real renderer."""
-    return OverlayService(320, 320, renderer=ImageService._r())
+    return OverlayService(320, 320, renderer=ImageService.renderer())
 
 
 @pytest.fixture()

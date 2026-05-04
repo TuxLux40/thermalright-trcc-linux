@@ -201,7 +201,7 @@ class ThemeLoader:
         """Load and resize a static image to LCD dimensions."""
         try:
             return ImageService.open_and_resize(path, *lcd_size)
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             log.error("Failed to load image: %s", e)
             return None
 
@@ -226,8 +226,12 @@ class ThemeLoader:
             ], capture_output=True, timeout=5, text=True, creationflags=_NO_WINDOW)
             if result.returncode == 0 and result.stdout.strip().isdigit():
                 return int(result.stdout.strip()) > 1
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError, ValueError) as e:
+            # ffprobe missing or failed — assume static and move on.
+            log.debug(
+                "theme_loader: ffprobe frame-count failed for %s (%s) — treating as static",
+                path, e,
+            )
         return False
 
     def _load_mask(self, mask_path: Path, dc_path: Path | None,
@@ -241,7 +245,7 @@ class ThemeLoader:
             position = self._parse_mask_position(
                 dc_path, mask_w, mask_h, lcd_size)
             self._overlay.set_mask(mask_img, position)
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             log.error("Failed to load mask: %s", e)
 
     def _parse_mask_position(self, dc_path: Path | None,

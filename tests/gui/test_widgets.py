@@ -468,7 +468,7 @@ class TestAutostart(unittest.TestCase):
     def test_get_trcc_exec_fallback(self, mock_which):
         result = LinuxAutostartManager.get_exec()
         self.assertIn('python', result)
-        self.assertIn('trcc.cli', result)
+        self.assertIn('trcc.ui.cli', result)
         self.assertIn('PYTHONPATH=', result)
 
     # --- _desktop_entry ---

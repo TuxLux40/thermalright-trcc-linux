@@ -1,15 +1,14 @@
-"""Tests for Device (LED mode) — LED application facade."""
+"""Tests for LEDDevice — LED application facade."""
 
 import unittest
 from unittest.mock import MagicMock
 
-from trcc.core.device import Device
-from trcc.core.instance import InstanceKind
+from trcc.core.device.led import LEDDevice as Device
 from trcc.core.models import DetectedDevice, LEDMode
 
 
 def _make_led(**overrides) -> Device:
-    """Create Device(device_type=False) with mock service pre-wired."""
+    """Create LEDDevice with mock service pre-wired."""
     svc = MagicMock()
     svc.state = MagicMock()
     svc.state.zones = [MagicMock(), MagicMock()]
@@ -18,7 +17,7 @@ def _make_led(**overrides) -> Device:
     svc.apply_mask.return_value = [(255, 0, 0)]
     svc.has_protocol = True
 
-    defaults = {'led_svc': svc, 'get_protocol': MagicMock(), 'device_type': False}
+    defaults = {'led_svc': svc, 'get_protocol': MagicMock()}
     defaults.update(overrides)
     led = Device(**defaults)
     return led
@@ -33,22 +32,22 @@ class TestLEDDeviceConstruction(unittest.TestCase):
     """Device (LED mode) construction."""
 
     def test_default_no_service(self):
-        led = Device(device_type=False)
+        led = Device()
         self.assertIsNone(led._led_svc)
 
     def test_with_service(self):
         svc = MagicMock()
-        led = Device(led_svc=svc, device_type=False)
+        led = Device(led_svc=svc)
         self.assertIs(led._led_svc, svc)
 
     def test_with_get_protocol(self):
         gp = MagicMock()
-        led = Device(get_protocol=gp, device_type=False)
+        led = Device(get_protocol=gp)
         self.assertIs(led._get_protocol, gp)
 
     def test_connect_requires_device_svc(self):
         """connect() raises RuntimeError without injected device_svc."""
-        led = Device(device_type=False)
+        led = Device()
         with self.assertRaises(RuntimeError, msg="ControllerBuilder"):
             led.connect()
 
@@ -77,7 +76,6 @@ class TestLEDDeviceConnectIsolation(unittest.TestCase):
         svc = MagicMock()
         svc.initialize.return_value = "LED: AX120 (30 LEDs)"
         return Device(
-            device_type=False,
             get_protocol=MagicMock(),
             led_svc_factory=lambda **kw: svc,
             led_config=MagicMock(),
@@ -113,7 +111,6 @@ class TestLEDDeviceConnectIsolation(unittest.TestCase):
         led = Device(
             device_svc=dev_svc,
             get_protocol=MagicMock(),
-            device_type=False,
         )
 
         result = led.connect()
@@ -135,7 +132,7 @@ class TestLEDDeviceABC(unittest.TestCase):
         self.assertTrue(led.connected)
 
     def test_connected_false_without_service(self):
-        led = Device(device_type=False)
+        led = Device()
         self.assertFalse(led.connected)
 
     def test_device_info_returns_device(self):
@@ -150,7 +147,7 @@ class TestLEDDeviceABC(unittest.TestCase):
         led._led_svc.cleanup.assert_called_once()
 
     def test_cleanup_safe_without_service(self):
-        led = Device(device_type=False)
+        led = Device()
         led.cleanup()  # should not raise
 
     def test_connect_returns_success_when_already_initialized(self):
@@ -184,7 +181,7 @@ class TestLEDDeviceProperties(unittest.TestCase):
         self.assertIs(led.state, led._led_svc.state)
 
     def test_state_none_without_service(self):
-        led = Device(device_type=False)
+        led = Device()
         self.assertIsNone(led.state)
 
 
@@ -538,7 +535,7 @@ class TestTickAndConfig(unittest.TestCase):
         self.led._led_svc.save_config.assert_called_once()
 
     def test_save_config_safe_without_service(self):
-        led = Device(device_type=False)
+        led = Device()
         led.save_config()  # no crash
 
     def test_load_config(self):
@@ -546,7 +543,7 @@ class TestTickAndConfig(unittest.TestCase):
         self.led._led_svc.load_config.assert_called_once()
 
     def test_load_config_safe_without_service(self):
-        led = Device(device_type=False)
+        led = Device()
         led.load_config()  # no crash
 
     def test_update_metrics(self):
@@ -565,7 +562,7 @@ class TestInitialize(unittest.TestCase):
     """Device.initialize_led() — GUI path with pre-detected device."""
 
     def test_initialize_creates_service_if_needed(self):
-        led = Device(get_protocol=MagicMock(), device_type=False)
+        led = Device(get_protocol=MagicMock())
         device = MagicMock()
         led._led_svc = None  # force creation
         with unittest.mock.patch('trcc.core.device.Device.initialize_led') as mock_init:
@@ -580,98 +577,6 @@ class TestInitialize(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertEqual(result['style'], 3)
         self.assertIs(led._info, device)
-
-
-# =============================================================================
-# Instance detection DI — proxy routing
-# =============================================================================
-
-
-class TestLEDDeviceProxyRouting(unittest.TestCase):
-    """Device.connect() routes through proxy when another instance active."""
-
-    def test_connect_routes_through_proxy_when_active(self):
-        """When find_active_fn returns an instance, connect() sets proxy."""
-        proxy = MagicMock()
-        proxy.connected = True
-        led = Device(
-            find_active_fn=lambda: InstanceKind.GUI,
-            proxy_factory_fn=lambda kind: proxy,
-            device_type=False,
-        )
-        result = led.connect()
-        self.assertTrue(result["success"])
-        self.assertEqual(result["proxy"], InstanceKind.GUI)
-        self.assertIs(led._proxy, proxy)
-        self.assertTrue(led.connected)
-
-    def test_connect_direct_when_no_active_instance(self):
-        """When find_active_fn returns None, connect() goes direct USB."""
-        led = Device(
-            find_active_fn=lambda: None,
-            proxy_factory_fn=lambda kind: MagicMock(),
-            device_type=False,
-        )
-        # Mock the adapter imports for direct path
-        from unittest.mock import patch
-        with patch.object(Device, 'connect', wraps=led.connect):
-            # Direct path will try USB — just verify proxy is not set
-            # by giving it a DeviceService with no LED devices
-            dev_svc = MagicMock()
-            dev_svc.devices = []  # No LED devices
-            led._device_svc = dev_svc
-            result = led.connect()
-        self.assertFalse(result["success"])
-        self.assertIsNone(led._proxy)
-
-    def test_proxy_forwards_set_color(self):
-        """@_forward_to_proxy decorator forwards calls to proxy."""
-        proxy = MagicMock()
-        proxy.connected = True
-        proxy.set_color.return_value = {"success": True, "message": "ok"}
-        led = Device(
-            find_active_fn=lambda: InstanceKind.GUI,
-            proxy_factory_fn=lambda kind: proxy,
-            device_type=False,
-        )
-        led.connect()
-        result = led.set_color(255, 0, 0)
-        proxy.set_color.assert_called_once_with(255, 0, 0)
-        self.assertTrue(result["success"])
-
-    def test_proxy_forwards_off(self):
-        """@_forward_to_proxy decorator forwards off() to proxy."""
-        proxy = MagicMock()
-        proxy.connected = True
-        proxy.off.return_value = {"success": True, "message": "off"}
-        led = Device(
-            find_active_fn=lambda: InstanceKind.GUI,
-            proxy_factory_fn=lambda kind: proxy,
-            device_type=False,
-        )
-        led.connect()
-        result = led.off()
-        proxy.off.assert_called_once()
-        self.assertTrue(result["success"])
-
-    def test_no_proxy_calls_local(self):
-        """Without proxy, methods call local service."""
-        led = _make_led()
-        result = led.set_color(255, 0, 0)
-        self.assertTrue(result["success"])
-        led._led_svc.set_color.assert_called_once_with(255, 0, 0)
-
-    def test_connected_via_proxy(self):
-        """connected property works through proxy."""
-        proxy = MagicMock()
-        proxy.connected = True
-        led = Device(
-            find_active_fn=lambda: InstanceKind.API,
-            proxy_factory_fn=lambda kind: proxy,
-            device_type=False,
-        )
-        led.connect()
-        self.assertTrue(led.connected)
 
 
 if __name__ == '__main__':

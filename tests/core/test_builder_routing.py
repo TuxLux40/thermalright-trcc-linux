@@ -133,7 +133,7 @@ def test_build_device_routes_to_correct_type(vid_pid, entry, linux_builder):
         device = linux_builder.build_device(detected)
         assert isinstance(device, Device) and device.is_led
     else:
-        linux_builder._renderer = ImageService._r()
+        linux_builder._renderer = ImageService.renderer()
         device = linux_builder.build_device(detected)
         assert isinstance(device, Device) and device.is_lcd
 
@@ -147,7 +147,7 @@ def test_build_device_wires_device_service(vid_pid, entry, linux_builder):
     trait = PROTOCOL_TRAITS.get(entry.protocol, PROTOCOL_TRAITS['scsi'])
 
     if not trait.is_led:
-        linux_builder._renderer = ImageService._r()
+        linux_builder._renderer = ImageService.renderer()
 
     device = linux_builder.build_device(detected)
     assert device._device_svc is not None
@@ -165,7 +165,7 @@ def test_build_device_no_detected_builds_lcd(linux_builder):
     from trcc.core.device import Device
     from trcc.services.image import ImageService
 
-    linux_builder._renderer = ImageService._r()
+    linux_builder._renderer = ImageService.renderer()
     device = linux_builder.build_device(None)
     assert isinstance(device, Device)
     assert device.is_lcd

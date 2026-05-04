@@ -39,7 +39,7 @@ from trcc.services.overlay import OverlayService
 @pytest.fixture()
 def overlay_svc():
     """Fresh OverlayService at 320x320."""
-    return OverlayService(320, 320, renderer=ImageService._r())
+    return OverlayService(320, 320, renderer=ImageService.renderer())
 
 
 @pytest.fixture()
@@ -47,7 +47,7 @@ def display_svc():
     """DisplayService with mock device service and real overlay/media."""
     mock_devices = MagicMock()
     mock_devices.selected = None
-    overlay = OverlayService(320, 320, renderer=ImageService._r())
+    overlay = OverlayService(320, 320, renderer=ImageService.renderer())
     media = MediaService()
     from trcc.services.display import DisplayService
     return DisplayService(devices=mock_devices, overlay=overlay, media=media)
@@ -138,7 +138,7 @@ class TestEncodingCPU:
 
     def test_encode_rgb565_320(self, perf):
         """320x320 RGB565 encode stays under 5ms/iter."""
-        r = ImageService._r()
+        r = ImageService.renderer()
         surface = make_test_surface(320, 320, (255, 128, 0))
         limit = 0.005
         avg = _cpu_per_iter(lambda: r.encode_rgb565(surface, '>'))
@@ -147,7 +147,7 @@ class TestEncodingCPU:
 
     def test_encode_rgb565_480(self, perf):
         """480x480 RGB565 encode stays under 10ms/iter."""
-        r = ImageService._r()
+        r = ImageService.renderer()
         surface = make_test_surface(480, 480, (0, 128, 255))
         limit = 0.010
         avg = _cpu_per_iter(lambda: r.encode_rgb565(surface, '>'))

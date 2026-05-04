@@ -111,7 +111,7 @@ def detect(show_all=False, detect_fn=None, os_platform=None):
 
     log.debug("detect called show_all=%s", show_all)
     if detect_fn is None or os_platform is None:
-        from trcc.ui.cli._boot import trcc as _trcc
+        from trcc._boot import trcc as _trcc
         app = _trcc()
         if detect_fn is None:
             detect_fn = ControllerBuilder(app.os).build_detect_fn()
@@ -161,7 +161,7 @@ def select(number, detect_fn=None):
     )
     log.debug("select device number=%d", number)
     if detect_fn is None:
-        from trcc.ui.cli._boot import trcc as _trcc
+        from trcc._boot import trcc as _trcc
         detect_fn = ControllerBuilder(_trcc().os).build_detect_fn()
     if not (devices := detect_fn()):
         print("No devices found.")

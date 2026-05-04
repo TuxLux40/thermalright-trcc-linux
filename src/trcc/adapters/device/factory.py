@@ -171,8 +171,8 @@ class DeviceProtocol(ABC):
                 "serial": result.serial,
                 "raw": result.raw_response.hex() if result.raw_response else "",
             })
-        except Exception:
-            log.debug("Failed to cache handshake result", exc_info=True)
+        except (OSError, ValueError, TypeError) as e:
+            log.debug("Failed to cache handshake result: %s", e)
 
     @property
     def is_led(self) -> bool:
@@ -273,8 +273,8 @@ class UsbProtocol(DeviceProtocol):
         if self._transport is not None:
             try:
                 self._transport.close()
-            except Exception:
-                pass
+            except OSError as e:
+                log.debug("transport close raised: %s", e)
             self._transport = None
             self._notify_state_changed("transport_open", False)
 
@@ -395,8 +395,8 @@ class DeviceProtocolFactory:
         for proto in cls._protocols.values():
             try:
                 proto.close()
-            except Exception:
-                pass
+            except OSError as e:
+                log.debug("close_all: protocol.close raised: %s", e)
         cls._protocols.clear()
 
     @classmethod

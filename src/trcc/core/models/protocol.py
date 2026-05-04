@@ -144,10 +144,14 @@ class DeviceProfile:
     rotate: bool = False         # Pre-rotate 90° CW for non-square portrait panels
     # Device encode rotation (C# RotateImg in ImageToJpg).
     # Formula: angle = (base + direction * sign) % 360
-    # sign = -1 if encode_invert else +1. sub_byte overrides base.
+    # sign = -1 if encode_invert else +1. sub_byte / pm_byte override base.
     encode_base: int = 0
     encode_invert: bool = True   # True = (base - dir), most devices
     encode_sub_bases: tuple[tuple[int, int], ...] = ()  # ((sub, base), ...)
+    # PM-byte (PingMu) keyed override.  C# 480x480 + 320x320 dispatches on
+    # myDevicePingMu (e.g. PM=6 → 180° hardware-mount baseline for FW360
+    # Ultra).  Different from encode_sub_bases — that's mySubMode.
+    encode_pm_bases: tuple[tuple[int, int], ...] = ()   # ((pm, base), ...)
 
     @property
     def resolution(self) -> tuple[int, int]:
@@ -170,7 +174,8 @@ FBL_PROFILES: dict[int, DeviceProfile] = {
     54:  DeviceProfile(360,  360,  jpeg=True),
     58:  DeviceProfile(320,  240,  rotate=True),
     64:  DeviceProfile(640,  480,  rotate=True),
-    72:  DeviceProfile(480,  480),
+    72:  DeviceProfile(480,  480,
+                       encode_pm_bases=((6, 180),)),            # FW360 Ultra PM=6 → 180° baseline (#137)
     100: DeviceProfile(320,  320,  big_endian=True),
     101: DeviceProfile(320,  320,  big_endian=True),
     102: DeviceProfile(320,  320,  big_endian=True),
@@ -178,7 +183,8 @@ FBL_PROFILES: dict[int, DeviceProfile] = {
                        encode_base=180, encode_sub_bases=((3, 0),)),
     128: DeviceProfile(1280, 480,  jpeg=True, rotate=True,
                        encode_sub_bases=((2, 90),)),
-    129: DeviceProfile(480,  480),                              # alias for 72
+    129: DeviceProfile(480,  480,
+                       encode_pm_bases=((6, 180),)),            # alias for 72
     192: DeviceProfile(1920, 462,  jpeg=True, rotate=True,
                        encode_base=180, encode_sub_bases=((2, 0), (3, 0), (4, 0))),
     224: DeviceProfile(854,  480,  jpeg=True, rotate=True,
@@ -190,18 +196,25 @@ _DEFAULT_PROFILE = DeviceProfile(320, 320, big_endian=True)
 
 
 def get_encode_rotation(profile: DeviceProfile, sub_byte: int,
-                        direction: int) -> int:
+                        direction: int, pm_byte: int = 0) -> int:
     """Compute device encode rotation angle (C# RotateImg in ImageToJpg).
 
     Every C# angle table follows: angle = (base + direction * sign) % 360.
     sign is per-resolution (-1 if encode_invert, +1 otherwise).
-    sub_byte overrides base for specific device variants.
+    pm_byte overrides base via encode_pm_bases (C# myDevicePingMu dispatch);
+    sub_byte overrides via encode_sub_bases (C# mySubMode dispatch).
+    PM takes precedence — C# checks PingMu first for square panels.
     """
     base = profile.encode_base
-    for sub, sub_base in profile.encode_sub_bases:
-        if sub_byte == sub:
-            base = sub_base
+    for pm, pm_base in profile.encode_pm_bases:
+        if pm_byte == pm:
+            base = pm_base
             break
+    else:
+        for sub, sub_base in profile.encode_sub_bases:
+            if sub_byte == sub:
+                base = sub_base
+                break
     sign = -1 if profile.encode_invert else 1
     return (base + direction * sign) % 360
 
@@ -218,14 +231,16 @@ def get_profile(fbl: int, pm: int = 0) -> DeviceProfile:
                              big_endian=profile.big_endian, rotate=profile.rotate,
                              encode_base=profile.encode_base,
                              encode_invert=profile.encode_invert,
-                             encode_sub_bases=profile.encode_sub_bases)
+                             encode_sub_bases=profile.encode_sub_bases,
+                             encode_pm_bases=profile.encode_pm_bases)
     if fbl == 192:
         w, h = _FBL_192_BY_PM.get(pm, (1920, 462))
         return DeviceProfile(w, h, jpeg=profile.jpeg,
                              big_endian=profile.big_endian, rotate=profile.rotate,
                              encode_base=profile.encode_base,
                              encode_invert=profile.encode_invert,
-                             encode_sub_bases=profile.encode_sub_bases)
+                             encode_sub_bases=profile.encode_sub_bases,
+                             encode_pm_bases=profile.encode_pm_bases)
     return profile
 
 

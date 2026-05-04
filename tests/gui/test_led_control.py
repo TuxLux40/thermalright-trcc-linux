@@ -78,10 +78,10 @@ def _patch_led_assets(qapp):
     """Patch Assets in all LED-related modules to avoid filesystem I/O."""
     defaults = _asset_mocks()
     with (
-        patch.multiple("trcc.gui.uc_color_wheel.Assets", **defaults),
-        patch.multiple("trcc.gui.uc_screen_led.Assets", **defaults),
-        patch.multiple("trcc.gui.uc_led_control.Assets", **defaults),
-        patch("trcc.gui.uc_led_control.set_background_pixmap"),
+        patch.multiple("trcc.ui.gui.uc_color_wheel.Assets", **defaults),
+        patch.multiple("trcc.ui.gui.uc_screen_led.Assets", **defaults),
+        patch.multiple("trcc.ui.gui.uc_led_control.Assets", **defaults),
+        patch("trcc.ui.gui.uc_led_control.set_background_pixmap"),
     ):
         yield
 

@@ -10,7 +10,7 @@ from dataclasses import asdict
 
 import typer
 
-from trcc.ui.cli._boot import trcc
+from trcc._boot import trcc
 
 
 def _emit(result) -> int:

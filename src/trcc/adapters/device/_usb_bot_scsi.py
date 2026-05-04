@@ -103,10 +103,15 @@ class UsbBotScsiTransport(ScsiTransport):
                 usb.util.dispose_resources(self._dev)
                 try:
                     self._dev.attach_kernel_driver(0)
-                except Exception:
-                    pass
-            except Exception:
-                pass
+                except (OSError, AttributeError) as e:
+                    # Re-attach is best-effort — kernel driver may not have
+                    # been the one we detached, or the device disappeared.
+                    log.debug(
+                        "usb_bot_scsi: attach_kernel_driver(0) failed during close: %s", e,
+                    )
+            except (OSError, ImportError, AttributeError) as e:
+                # Outer cleanup catch — dispose_resources or import failure.
+                log.debug("usb_bot_scsi: cleanup failed (already disposed?): %s", e)
             self._dev = None
 
     def _build_cbw(self, data_length: int, direction: int, cdb: bytes) -> bytes:
@@ -150,8 +155,9 @@ class UsbBotScsiTransport(ScsiTransport):
                     return False
             return True
 
-        except Exception:
-            log.exception("%s SCSI transfer failed", self._platform_name)
+        except (OSError, ValueError) as e:
+            # USB I/O failure (USBError extends OSError); ValueError on bad endpoint.
+            log.warning("%s SCSI transfer failed: %s", self._platform_name, e)
             return False
 
     def read_cdb(
@@ -179,8 +185,9 @@ class UsbBotScsiTransport(ScsiTransport):
 
             return data
 
-        except Exception:
-            log.exception("%s SCSI read failed", self._platform_name)
+        except (OSError, ValueError) as e:
+            # USB I/O failure (USBError extends OSError); ValueError on bad endpoint.
+            log.warning("%s SCSI read failed: %s", self._platform_name, e)
             return b''
 
     def __enter__(self):

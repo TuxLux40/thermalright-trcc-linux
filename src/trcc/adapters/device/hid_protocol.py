@@ -72,7 +72,8 @@ class HidProtocol(UsbProtocol):
             try:
                 return self._handler.send_frame(image_data)
             except Exception:
-                # Drop cached handler so next send re-handshakes
+                # ANY send failure invalidates the cached handler — re-raise the
+                # original; the broad catch is intentional (cleanup-then-propagate).
                 self._handler = None
                 raise
         return self._guarded_send("HID", _do_send)

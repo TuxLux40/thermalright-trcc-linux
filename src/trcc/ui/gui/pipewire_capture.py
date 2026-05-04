@@ -357,8 +357,9 @@ class PipeWireScreenCast:
         if self._pipeline:
             try:
                 self._pipeline.set_state(Gst.State.NULL)
-            except Exception:
-                pass
+            except Exception as e:
+                # GStreamer/GObject errors don't share a Python base — broad + log.
+                logger.debug("pipewire cleanup: pipeline.set_state raised: %s", e)
             self._pipeline = None
             self._appsink = None
 
@@ -366,8 +367,8 @@ class PipeWireScreenCast:
             try:
                 import os
                 os.close(self._pipewire_fd)
-            except OSError:
-                pass
+            except OSError as e:
+                logger.debug("pipewire cleanup: fd close raised: %s", e)
             self._pipewire_fd = None
 
         if self._session_path:
@@ -377,15 +378,16 @@ class PipeWireScreenCast:
                 session_iface = dbus.Interface(
                     session, 'org.freedesktop.portal.Session')
                 session_iface.Close()
-            except Exception:
-                pass
+            except Exception as e:
+                # dbus exceptions don't share a clean Python base — broad + log.
+                logger.debug("pipewire cleanup: portal Close raised: %s", e)
             self._session_path = None
 
         if self._glib_loop and self._glib_loop.is_running():
             try:
                 self._glib_loop.quit()
-            except Exception:
-                pass
+            except (RuntimeError, AttributeError) as e:
+                logger.debug("pipewire cleanup: glib_loop.quit raised: %s", e)
             self._glib_loop = None
 
         self._node_id = None

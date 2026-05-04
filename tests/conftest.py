@@ -62,13 +62,13 @@ def make_test_surface(
 
     For RGB: pass 3-tuple. For RGBA: pass 4-tuple.
     """
-    r = ImageService._r()
+    r = ImageService.renderer()
     return r.create_surface(w, h, color)
 
 
 def surface_size(surface: Any) -> tuple[int, int]:
     """Get (width, height) from any renderer surface."""
-    return ImageService._r().surface_size(surface)
+    return ImageService.renderer().surface_size(surface)
 
 
 def get_pixel(surface: Any, x: int, y: int) -> tuple[int, ...]:
@@ -107,83 +107,125 @@ def mock_platform():
     return MagicMock()
 
 
-@pytest.fixture(autouse=True)
-def _mock_builder(mock_platform):
-    """Patch TrccApp.init() and ControllerBuilder.for_current_os() for all tests.
+@pytest.fixture
+def _mock_builder(_real_trcc_empty):
+    """Alias kept for tests that request the legacy fixture by name.
 
-    TrccApp singleton is reset before each test so state never leaks.
-    Tests that need a real builder (test_builder.py) can override by re-patching.
+    Phase 9 renamed ``_mock_builder`` → ``_real_trcc_empty`` because the
+    fixture no longer mocks anything (it's a real Trcc). Tests still
+    requesting ``_mock_builder`` get the real Trcc transparently.
     """
-    from trcc.core.app import TrccApp
-    from trcc.core.builder import ControllerBuilder
-
-    TrccApp.reset()
-
-    mock_builder = MagicMock(spec=ControllerBuilder)
-    mock_builder._os = mock_platform
-    mock_builder.os = mock_platform
-    mock_builder.build_system.return_value = MagicMock()
-    mock_builder.build_device.return_value = MagicMock()
-    mock_builder.build_detect_fn.return_value = MagicMock()
-    mock_builder.build_hardware_fns.return_value = (MagicMock(), MagicMock())
-    mock_builder.with_renderer.return_value = mock_builder
-    mock_builder.with_data_dir.return_value = mock_builder
-
-    mock_app = MagicMock()
-    mock_app.builder = mock_builder
-    mock_app._ensure_data_fn = None
-
-    # Default return values — success dicts so CLI commands don't print "Error".
-    _ok = {"success": True, "message": "ok"}
-    mock_app.discover.return_value = _ok
-    mock_app.init_platform.return_value = None
-    mock_app.set_language.return_value = _ok
-    # lcd/led properties return MagicMock by default (via spec=TrccApp)
-    # has_lcd/has_led — True by default so _connect_or_fail passes
-    mock_app.has_lcd = True
-    mock_app.has_led = True
-    # lcd_device / led_device — mocks that CLI test_display etc. access
-    # spec=False so auto-attrs work, but set is_ipc=False to match real Device
-    mock_app.lcd_device = MagicMock(is_ipc=False)
-    mock_app.led_device = MagicMock(is_ipc=False)
-    # lcd/led shorthand — writable so CLI conftest can swap them
-    mock_app.lcd = mock_app.lcd_device
-    mock_app.led = mock_app.led_device
-    # Unified accessors — device(index) returns lcd by default
-    _default_device = mock_app.lcd_device
-    mock_app.device = lambda index=0: _default_device
-    mock_app.devices = [_default_device]
-    mock_app.has_device = lambda lcd=None: True
-    # OS methods — return sensible defaults
-    mock_app.setup_platform.return_value = 0
-    mock_app.setup_udev.return_value = 0
-    mock_app.setup_selinux.return_value = 0
-    mock_app.setup_polkit.return_value = 0
-    mock_app.install_desktop.return_value = 0
-    mock_app.setup_winusb.return_value = 0
-    mock_app.download_themes.return_value = 0
-    mock_app.set_metrics_refresh.return_value = _ok
-
-    # Set the singleton so TrccApp.get() returns mock_app without needing init().
-    # Composition roots call TrccApp.get() in CLI commands — this prevents RuntimeError.
-    TrccApp._instance = mock_app  # type: ignore[assignment]
-
-    with patch("trcc.core.builder.ControllerBuilder.for_current_os", return_value=mock_builder), \
-         patch("trcc.core.app.TrccApp.init", return_value=mock_app):
-        yield mock_builder
+    return _real_trcc_empty
 
 
 @pytest.fixture(autouse=True)
-def _no_ipc():
-    """Prevent tests from routing through a live GUI/API instance.
+def _real_trcc_empty(tmp_config, mock_platform):
+    """Production-shape `Trcc` cached in ``_boot``, no devices by default.
 
-    When the GUI or API is running, find_active() returns an InstanceKind
-    and core routes through proxies, bypassing mocked services.
-    Patch core detection and IPCTransport.available().
+    Per ``feedback_tests_emulate_app.md``: tests use the same DI flow as
+    production. We construct a real ``Trcc`` against a noop ``MagicMock``
+    platform — no MockPlatform pollution, no devices to enumerate, but
+    real facades, real EventBus, real lifecycle.
+
+    Tests that need a connected LCD or LED request ``trcc_with_lcd`` /
+    ``trcc_with_led`` / ``trcc_with_both`` (defined below). Tests that
+    test pure-domain code don't touch this fixture and aren't affected.
+
+    The cached Trcc is cleared before AND after each test — singleton
+    state never leaks between tests.
     """
-    with patch("trcc.core.instance.find_active", return_value=None), \
-         patch("trcc.ipc.IPCTransport.available", return_value=False):
-        yield
+    from trcc import _boot
+    from trcc.core.trcc import Trcc
+
+    _boot._cached = None
+    trcc = Trcc(mock_platform, renderer=ImageService.renderer())
+    _boot._cached = trcc
+    yield trcc
+    _boot._cached = None
+
+
+@pytest.fixture
+def trcc_with_lcd(tmp_path, monkeypatch):
+    """Real `Trcc` with one LCD device connected via real DI flow.
+
+    Builds the same way ``_boot.trcc()`` does in production: real
+    ``MockPlatform``, real ``ControllerBuilder``, real ``QtRenderer``,
+    real ``Trcc.discover()`` connecting the noop SCSI device.
+    """
+    from mock_platform import MockPlatform
+    from trcc import _boot
+    from trcc.adapters.render.qt import QtRenderer
+    from trcc.conf import init_settings
+    from trcc.core.trcc import Trcc
+
+    spec = [{"type": "lcd", "vid": "0402", "pid": "3922",
+             "resolution": "320x320", "pm": 100}]
+    root = tmp_path / '.trcc'
+    root.mkdir(exist_ok=True)
+    (root / 'data').mkdir(exist_ok=True)
+    platform = MockPlatform(spec, root=root)
+    init_settings(platform)
+
+    _boot._cached = None
+    trcc = Trcc(platform, renderer=QtRenderer())
+    trcc.discover(ensure_data=False)
+    _boot._cached = trcc
+    yield trcc
+    _boot._cached = None
+
+
+@pytest.fixture
+def trcc_with_led(tmp_path, monkeypatch):
+    """Real `Trcc` with one LED device connected via real DI flow."""
+    from mock_platform import MockPlatform
+    from trcc import _boot
+    from trcc.adapters.render.qt import QtRenderer
+    from trcc.conf import init_settings
+    from trcc.core.trcc import Trcc
+
+    spec = [{"type": "led", "vid": "0416", "pid": "8001",
+             "model": "AX120_DIGITAL"}]
+    root = tmp_path / '.trcc'
+    root.mkdir(exist_ok=True)
+    (root / 'data').mkdir(exist_ok=True)
+    platform = MockPlatform(spec, root=root)
+    init_settings(platform)
+
+    _boot._cached = None
+    trcc = Trcc(platform, renderer=QtRenderer())
+    trcc.discover(ensure_data=False)
+    _boot._cached = trcc
+    yield trcc
+    _boot._cached = None
+
+
+@pytest.fixture
+def trcc_with_both(tmp_path, monkeypatch):
+    """Real `Trcc` with one LCD and one LED connected via real DI flow."""
+    from mock_platform import MockPlatform
+    from trcc import _boot
+    from trcc.adapters.render.qt import QtRenderer
+    from trcc.conf import init_settings
+    from trcc.core.trcc import Trcc
+
+    spec = [
+        {"type": "lcd", "vid": "0402", "pid": "3922",
+         "resolution": "320x320", "pm": 100},
+        {"type": "led", "vid": "0416", "pid": "8001",
+         "model": "AX120_DIGITAL"},
+    ]
+    root = tmp_path / '.trcc'
+    root.mkdir(exist_ok=True)
+    (root / 'data').mkdir(exist_ok=True)
+    platform = MockPlatform(spec, root=root)
+    init_settings(platform)
+
+    _boot._cached = None
+    trcc = Trcc(platform, renderer=QtRenderer())
+    trcc.discover(ensure_data=False)
+    _boot._cached = trcc
+    yield trcc
+    _boot._cached = None
 
 # =========================================================================
 # Tier 1: Data factories

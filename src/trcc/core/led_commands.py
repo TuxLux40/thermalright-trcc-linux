@@ -13,6 +13,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from ._command import command
+from .events import Topic
 from .models.led import LEDMode
 from .results import DiskInfo, LEDResult, LEDSnapshot, LEDStyleInfo, OpResult
 
@@ -38,175 +40,112 @@ class LEDCommands:
 
     # ── Color / mode / brightness ────────────────────────────────────
 
-    def set_color(
-        self, led: int, r: int, g: int, b: int,
-        *, zone: int | None = None,
-    ) -> LEDResult:
-        dev = self._get(led)
-        if dev is None:
+    @command(
+        result_cls=LEDResult, topic=Topic.LED_COLOR,
+        publish_kwargs=('zone',), extras_rename={'colors': 'display_colors'},
+    )
+    def set_color(self, led: int, r: int, g: int, b: int,
+                  *, zone: int | None = None):
+        if (dev := self._get(led)) is None:
             return LEDResult(success=False, error=f'LED {led} not found')
-        result = dev.set_zone_color(zone, r, g, b) if zone is not None \
+        return dev.set_zone_color(zone, r, g, b) if zone is not None \
             else dev.set_color(r, g, b)
-        return LEDResult(
-            success=result.get('success', False),
-            message=result.get('message', ''),
-            error=result.get('error'),
-            display_colors=result.get('colors', []),
-        )
 
-    def set_mode(
-        self, led: int, mode: LEDMode | str | int,
-        *, zone: int | None = None,
-    ) -> LEDResult:
-        dev = self._get(led)
-        if dev is None:
+    @command(
+        result_cls=LEDResult, topic=Topic.LED_MODE,
+        publish_kwargs=('zone',), extras_rename={'colors': 'display_colors'},
+    )
+    def set_mode(self, led: int, mode: LEDMode | str | int,
+                 *, zone: int | None = None):
+        if (dev := self._get(led)) is None:
             return LEDResult(success=False, error=f'LED {led} not found')
-        result = dev.set_zone_mode(zone, mode) if zone is not None \
+        return dev.set_zone_mode(zone, mode) if zone is not None \
             else dev.set_mode(mode)
-        return LEDResult(
-            success=result.get('success', False),
-            message=result.get('message', ''),
-            error=result.get('error'),
-            display_colors=result.get('colors', []),
-        )
 
-    def set_brightness(
-        self, led: int, percent: int, *, zone: int | None = None,
-    ) -> LEDResult:
-        dev = self._get(led)
-        if dev is None:
+    @command(
+        result_cls=LEDResult, topic=Topic.LED_BRIGHTNESS,
+        publish_kwargs=('zone',), extras_rename={'colors': 'display_colors'},
+    )
+    def set_brightness(self, led: int, percent: int,
+                       *, zone: int | None = None):
+        if (dev := self._get(led)) is None:
             return LEDResult(success=False, error=f'LED {led} not found')
-        result = dev.set_zone_brightness(zone, percent) if zone is not None \
+        return dev.set_zone_brightness(zone, percent) if zone is not None \
             else dev.set_brightness(percent)
-        return LEDResult(
-            success=result.get('success', False),
-            message=result.get('message', ''),
-            error=result.get('error'),
-            display_colors=result.get('colors', []),
-        )
 
-    def toggle(self, led: int, on: bool, *, zone: int | None = None) -> LEDResult:
-        dev = self._get(led)
-        if dev is None:
+    @command(
+        result_cls=LEDResult, topic=Topic.LED_TOGGLED,
+        publish_kwargs=('zone',),
+    )
+    def toggle(self, led: int, on: bool, *, zone: int | None = None):
+        if (dev := self._get(led)) is None:
             return LEDResult(success=False, error=f'LED {led} not found')
-        result = dev.toggle_zone(zone, on) if zone is not None \
+        return dev.toggle_zone(zone, on) if zone is not None \
             else dev.toggle_global(on)
-        return LEDResult(
-            success=result.get('success', False),
-            message=result.get('message', ''),
-            error=result.get('error'),
-        )
 
-    def toggle_segment(self, led: int, index: int, on: bool) -> LEDResult:
-        dev = self._get(led)
-        if dev is None:
+    @command(result_cls=LEDResult)
+    def toggle_segment(self, led: int, index: int, on: bool):
+        if (dev := self._get(led)) is None:
             return LEDResult(success=False, error=f'LED {led} not found')
-        result = dev.toggle_segment(index, on)
-        return LEDResult(
-            success=result.get('success', False),
-            message=result.get('message', ''),
-            error=result.get('error'),
-        )
+        return dev.toggle_segment(index, on)
 
     # ── Zones ────────────────────────────────────────────────────────
 
-    def select_zone(self, led: int, zone: int) -> OpResult:
-        dev = self._get(led)
-        if dev is None:
+    @command(result_cls=OpResult)
+    def select_zone(self, led: int, zone: int):
+        if (dev := self._get(led)) is None:
             return OpResult(success=False, error=f'LED {led} not found')
-        r = dev.set_selected_zone(zone)
-        return OpResult(
-            success=r.get('success', False),
-            message=r.get('message', f'Zone {zone} selected'),
-            error=r.get('error'),
-        )
+        return dev.set_selected_zone(zone)
 
-    def set_zone_sync(
-        self, led: int, enabled: bool,
-        *, zones: list[int] | None = None,
-        interval_s: int | None = None,
-    ) -> OpResult:
-        dev = self._get(led)
-        if dev is None:
+    @command(result_cls=OpResult, topic=Topic.LED_ZONE_SYNC)
+    def set_zone_sync(self, led: int, enabled: bool,
+                      *, zones: list[int] | None = None,
+                      interval_s: int | None = None):
+        if (dev := self._get(led)) is None:
             return OpResult(success=False, error=f'LED {led} not found')
         if zones is not None:
             for idx, z in enumerate(zones):
                 dev.set_zone_sync_zone(z, True)
                 log.debug('zone_sync include zone=%d (iter=%d)', z, idx)
-        r = dev.set_zone_sync(enabled, interval_s)
-        return OpResult(
-            success=r.get('success', False),
-            message=r.get('message', ''),
-            error=r.get('error'),
-        )
+        return dev.set_zone_sync(enabled, interval_s)
 
     # ── Display modes ────────────────────────────────────────────────
 
-    def set_clock_format(self, led: int, is_24h: bool) -> OpResult:
-        dev = self._get(led)
-        if dev is None:
+    @command(result_cls=OpResult, topic=Topic.LED_CLOCK)
+    def set_clock_format(self, led: int, is_24h: bool):
+        if (dev := self._get(led)) is None:
             return OpResult(success=False, error=f'LED {led} not found')
-        r = dev.set_clock_format(is_24h)
-        return OpResult(
-            success=r.get('success', False),
-            message=r.get('message', ''),
-            error=r.get('error'),
-        )
+        return dev.set_clock_format(is_24h)
 
-    def set_week_start(self, led: int, sunday: bool) -> OpResult:
-        dev = self._get(led)
-        if dev is None:
+    @command(result_cls=OpResult)
+    def set_week_start(self, led: int, sunday: bool):
+        if (dev := self._get(led)) is None:
             return OpResult(success=False, error=f'LED {led} not found')
-        r = dev.set_week_start(sunday)
-        return OpResult(
-            success=r.get('success', False),
-            message=r.get('message', ''),
-            error=r.get('error'),
-        )
+        return dev.set_week_start(sunday)
 
-    def set_memory_ratio(self, led: int, ratio: int) -> OpResult:
-        dev = self._get(led)
-        if dev is None:
+    @command(result_cls=OpResult)
+    def set_memory_ratio(self, led: int, ratio: int):
+        if (dev := self._get(led)) is None:
             return OpResult(success=False, error=f'LED {led} not found')
-        r = dev.set_memory_ratio(ratio)
-        return OpResult(
-            success=r.get('success', False),
-            message=r.get('message', f'Memory ratio: {ratio}x'),
-            error=r.get('error'),
-        )
+        return dev.set_memory_ratio(ratio)
 
-    def set_disk_index(self, led: int, index: int) -> OpResult:
-        dev = self._get(led)
-        if dev is None:
+    @command(result_cls=OpResult)
+    def set_disk_index(self, led: int, index: int):
+        if (dev := self._get(led)) is None:
             return OpResult(success=False, error=f'LED {led} not found')
-        r = dev.set_disk_index(index)
-        return OpResult(
-            success=r.get('success', False),
-            message=r.get('message', f'Disk {index} selected'),
-            error=r.get('error'),
-        )
+        return dev.set_disk_index(index)
 
-    def set_test_mode(self, led: int, enabled: bool) -> OpResult:
-        dev = self._get(led)
-        if dev is None:
+    @command(result_cls=OpResult)
+    def set_test_mode(self, led: int, enabled: bool):
+        if (dev := self._get(led)) is None:
             return OpResult(success=False, error=f'LED {led} not found')
-        r = dev.set_test_mode(enabled)
-        return OpResult(
-            success=r.get('success', False),
-            message=r.get('message', f'Test mode: {enabled}'),
-            error=r.get('error'),
-        )
+        return dev.set_test_mode(enabled)
 
-    def set_sensor_source(self, led: int, source: str) -> OpResult:
-        dev = self._get(led)
-        if dev is None:
+    @command(result_cls=OpResult, topic=Topic.LED_SENSOR)
+    def set_sensor_source(self, led: int, source: str):
+        if (dev := self._get(led)) is None:
             return OpResult(success=False, error=f'LED {led} not found')
-        r = dev.set_sensor_source(source)
-        return OpResult(
-            success=r.get('success', False),
-            message=r.get('message', ''),
-            error=r.get('error'),
-        )
+        return dev.set_sensor_source(source)
 
     # ── Listing ──────────────────────────────────────────────────────
 

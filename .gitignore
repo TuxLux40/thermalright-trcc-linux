@@ -78,7 +78,17 @@ src/trcc/data/ui_*.json
 # ──────────────────────────────────────────────
 # Dev / reference files (not for distribution)
 # ──────────────────────────────────────────────
-/dev/
+# Block /dev/* per-file so the !-negations below can re-include
+# the shared mock harness. (`/dev/` directory-level rule wouldn't
+# allow re-include — git can't unignore a file under an ignored
+# directory.)
+/dev/*
+# Mock harness IS shared tooling — every developer benefits from
+# the same MockPlatform-backed CLI / API / GUI entry points.
+!/dev/mock_cli.py
+!/dev/mock_api.py
+!/dev/mock_gui.py
+!/dev/_mock_bootstrap.py
 /dev_*
 # Dev scripts at root
 /test_*.py

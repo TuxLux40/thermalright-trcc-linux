@@ -7,8 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from conftest import get_pixel, make_test_surface
 
-from trcc.core.device import Device
-from trcc.core.instance import InstanceKind
+from trcc.core.device.lcd import LCDDevice as Device
 from trcc.core.orientation import Orientation
 from trcc.services.display import DisplayService
 from trcc.services.image import ImageService
@@ -40,7 +39,7 @@ def _make_real_lcd() -> tuple[Device, MagicMock]:
     Only DeviceService is mocked (USB boundary).
     Returns (lcd, mock_device_svc) so tests can verify send_frame calls.
     """
-    renderer = ImageService._r()
+    renderer = ImageService.renderer()
     device_svc = MagicMock()
     device_svc.selected = MagicMock()
     device_svc.selected.encoding_params = ('scsi', (320, 320), None, False)
@@ -970,91 +969,6 @@ class TestLoadThemeByName:
 # =============================================================================
 # IPC routes — load_theme_by_name and load_mask_standalone registered
 # =============================================================================
-
-
-class TestIPCDeviceMethods:
-    """IPC _DEVICE_METHODS includes theme and mask methods."""
-
-    def test_load_theme_by_name_in_methods(self):
-        from trcc.ipc import _DEVICE_METHODS
-        assert "load_theme_by_name" in _DEVICE_METHODS
-
-    def test_load_mask_standalone_in_methods(self):
-        from trcc.ipc import _DEVICE_METHODS
-        assert "load_mask_standalone" in _DEVICE_METHODS
-
-
-# =============================================================================
-# Instance detection DI — proxy routing
-# =============================================================================
-
-
-class TestDeviceProxyRouting:
-    """Device.connect() routes through proxy when another instance active."""
-
-    def test_connect_routes_through_proxy_when_active(self):
-        """When find_active_fn returns an instance, connect() sets proxy."""
-        proxy = MagicMock()
-        proxy.connected = True
-        proxy.resolution = (320, 320)
-        proxy.device_path = '/dev/sg0'
-
-        lcd = Device(
-            find_active_fn=lambda: InstanceKind.GUI,
-            proxy_factory_fn=lambda kind: proxy,
-        )
-        result = lcd.connect()
-        assert result["success"]
-        assert result["proxy"] == InstanceKind.GUI
-        assert lcd._proxy is proxy
-
-    def test_connect_direct_when_no_active_instance(self):
-        """When find_active_fn returns None, connect() goes direct."""
-        svc = MagicMock()
-        svc.selected = None
-        lcd = Device(
-            device_svc=svc,
-            build_services_fn=MagicMock(),
-            find_active_fn=lambda: None,
-            proxy_factory_fn=lambda kind: MagicMock(),
-        )
-        result = lcd.connect()
-        assert not result["success"]  # No device found
-        assert lcd._proxy is None  # No proxy set
-
-    def test_connect_skips_detection_without_di(self):
-        """Without DI params, connect() never checks for active instances."""
-        svc = MagicMock()
-        svc.selected = None
-        lcd = Device(device_svc=svc, build_services_fn=MagicMock())
-        result = lcd.connect()
-        assert not result["success"]
-        assert lcd._proxy is None
-
-    def test_connected_true_via_proxy(self):
-        """connected property returns True when proxy is set."""
-        proxy = MagicMock()
-        proxy.connected = True
-        lcd = Device(
-            find_active_fn=lambda: InstanceKind.GUI,
-            proxy_factory_fn=lambda kind: proxy,
-        )
-        lcd.connect()
-        assert lcd.connected
-
-    def test_connect_with_explicit_device_skips_detection(self):
-        """When detected= is provided, skip instance detection."""
-        find_fn = MagicMock(return_value=InstanceKind.GUI)
-        svc = MagicMock()
-        svc.selected = None
-        lcd = Device(
-            device_svc=svc,
-            build_services_fn=MagicMock(),
-            find_active_fn=find_fn,
-            proxy_factory_fn=MagicMock(),
-        )
-        lcd.connect("/dev/sg0")
-        find_fn.assert_not_called()
 
 
 # =============================================================================

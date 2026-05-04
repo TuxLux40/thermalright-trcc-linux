@@ -60,8 +60,8 @@ def get_metrics_by_category(category: str) -> dict:
 @router.get("/gpu")
 def get_gpu_list() -> dict:
     """List available GPUs and current selection via Trcc."""
-    from trcc.ui.api._boot import get_trcc
-    snap = get_trcc().control_center.snapshot()
+    from trcc._boot import trcc
+    snap = trcc().control_center.snapshot()
     return {
         "gpus": [{"key": k, "name": n} for k, n in snap.gpu_list],
         "selected": snap.gpu_device,
@@ -73,8 +73,8 @@ def set_gpu(gpu_key: str) -> dict:
     """Set the active GPU for metrics via Trcc."""
     from fastapi import HTTPException
 
-    from trcc.ui.api._boot import get_trcc
-    t = get_trcc()
+    from trcc._boot import trcc
+    t = trcc()
     valid_keys = {k for k, _ in t.control_center.list_gpus()}
     if gpu_key not in valid_keys:
         raise HTTPException(

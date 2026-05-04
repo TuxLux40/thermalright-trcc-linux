@@ -169,7 +169,7 @@ class TestRebuild:
 
     def test_rebuild_from_rotation(self):
         from trcc.services.image import ImageService
-        r = ImageService._r()
+        r = ImageService.renderer()
         base = r.create_surface(32, 32, (0, 0, 0))
         red_quad = r.create_surface(16, 16, (255, 0, 0))
         base = r.composite(base, red_quad, (0, 0))

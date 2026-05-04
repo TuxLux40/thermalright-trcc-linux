@@ -18,6 +18,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.error import URLError
 from urllib.request import Request, urlopen, urlretrieve
 
 from .. import conf
@@ -64,6 +65,7 @@ class ControlCenterCommands:
                 self._platform.autostart_enable()
             else:
                 self._platform.autostart_disable()
+            self._events.publish('control_center.autostart', enabled)
             return OpResult(
                 success=True,
                 message=f'Autostart {"enabled" if enabled else "disabled"}',
@@ -84,14 +86,17 @@ class ControlCenterCommands:
                     error=f"Invalid temp unit '{unit}' — must be 'C' or 'F'",
                 )
         conf.settings.set_temp_unit(unit_int)
+        self._events.publish('control_center.temp_unit', unit.upper())
         return OpResult(success=True, message=f'Temperature unit: °{unit.upper()}')
 
     def set_language(self, lang: str) -> OpResult:
         conf.settings.lang = lang
+        self._events.publish('control_center.language', lang)
         return OpResult(success=True, message=f'Language: {lang}')
 
     def set_hdd_enabled(self, enabled: bool) -> OpResult:
         conf.settings.set_hdd_enabled(enabled)
+        self._events.publish('control_center.hdd', enabled)
         return OpResult(
             success=True,
             message=f'HDD metrics {"enabled" if enabled else "disabled"}',
@@ -104,10 +109,12 @@ class ControlCenterCommands:
                 error=f'Refresh must be 1-100 seconds, got {seconds}',
             )
         conf.settings.set_refresh_interval(seconds)
+        self._events.publish('control_center.refresh', seconds)
         return OpResult(success=True, message=f'Refresh interval: {seconds}s')
 
     def set_gpu_device(self, gpu_key: str) -> OpResult:
         conf.settings.set_gpu_device(gpu_key)
+        self._events.publish('control_center.gpu', gpu_key)
         return OpResult(success=True, message=f'GPU: {gpu_key}')
 
     # ── Updates ──────────────────────────────────────────────────────
@@ -120,7 +127,8 @@ class ControlCenterCommands:
                           headers={'Accept': 'application/vnd.github+json'})
             with urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read())
-        except Exception as e:
+        except (URLError, OSError, TimeoutError, ValueError) as e:
+            # ValueError covers JSONDecodeError; URLError covers HTTPError; OSError covers socket errors.
             log.warning('check_for_update: %s', e)
             return UpdateResult(
                 success=False,
@@ -195,7 +203,8 @@ class ControlCenterCommands:
             try:
                 log.info('Downloading %s', url)
                 urlretrieve(url, pkg_path)
-            except Exception as e:
+            except (URLError, OSError, TimeoutError) as e:
+                log.warning('run_upgrade download failed: %s', e)
                 return OpResult(
                     success=False, error=f'Download failed: {e}',
                 )
@@ -253,7 +262,9 @@ class ControlCenterCommands:
         s = conf.settings
         try:
             autostart = self._platform.autostart_enabled()
-        except Exception:
+        except Exception as e:
+            # Per-OS impls vary widely (registry / desktop file / launchctl); default safe + log.
+            log.debug('autostart_enabled probe failed: %s', e)
             autostart = False
         install_info = Settings.get_install_info() or {}
         return AppSnapshot(

@@ -95,6 +95,6 @@ def get_usb_tree() -> list[dict]:
         if result.returncode == 0:
             data = json.loads(result.stdout)
             return data.get('SPUSBDataType', [])
-    except Exception:
-        log.debug("system_profiler USB query failed")
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError) as e:
+        log.debug("system_profiler USB query failed: %s", e)
     return []

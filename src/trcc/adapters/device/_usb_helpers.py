@@ -35,12 +35,14 @@ def close_usb_device(dev: Any, interface: int = 0) -> None:
     import usb.util
     try:
         usb.util.release_interface(dev, interface)
-    except Exception:
-        pass
+    except (OSError, AttributeError) as e:
+        # Best-effort cleanup — interface may already be released.
+        log.debug("usb_helpers: release_interface failed: %s", e)
     try:
         usb.util.dispose_resources(dev)
-    except Exception:
-        pass
+    except (OSError, AttributeError) as e:
+        # Best-effort cleanup — resources may already be disposed.
+        log.debug("usb_helpers: dispose_resources failed: %s", e)
 
 
 def _err_interface_busy() -> str:

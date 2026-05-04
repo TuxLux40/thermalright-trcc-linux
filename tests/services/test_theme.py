@@ -1529,7 +1529,7 @@ class TestLoadMaskInto:
         svc = ThemeService()
         mock_renderer = MagicMock()
         mock_renderer.open_image.side_effect = OSError('corrupt')
-        with patch('trcc.services.theme.ImageService._r', return_value=mock_renderer), \
+        with patch('trcc.services.theme.ImageService.renderer', return_value=mock_renderer), \
              patch('trcc.services.theme.log') as mock_log:
             svc._load_mask_into(data, td, 320, 320)
 

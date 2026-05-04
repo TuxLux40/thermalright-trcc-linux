@@ -643,7 +643,8 @@ class PyUsbTransport(UsbTransport):
             if self._device.is_kernel_driver_active(USB_INTERFACE):  # type: ignore[union-attr]
                 self._device.detach_kernel_driver(USB_INTERFACE)  # type: ignore[union-attr]
                 log.debug("Detached kernel driver from interface %d", USB_INTERFACE)
-        except Exception as e:
+        except (OSError, NotImplementedError, AttributeError) as e:
+            # NotImplementedError on backends without kernel-driver support; OSError covers USBError.
             log.debug("Kernel driver detach: %s", e)
 
         # C#: SetConfiguration(1), ClaimInterface(0)
@@ -699,7 +700,7 @@ class PyUsbTransport(UsbTransport):
                 "Auto-detected endpoints: OUT=0x%02x IN=0x%02x",
                 self._ep_out or 0, self._ep_in or 0,
             )
-        except Exception as e:
+        except (OSError, AttributeError, IndexError) as e:
             log.debug("Endpoint auto-detection failed: %s", e)
 
     def write(self, endpoint: int, data: bytes, timeout: int = DEFAULT_TIMEOUT_MS) -> int:
@@ -821,8 +822,8 @@ class HidApiTransport(UsbTransport):
         if self._device is not None:
             try:
                 self._device.close()
-            except Exception:
-                pass
+            except OSError as e:
+                log.debug("HID device close raised: %s", e)
             self._device = None
         self._is_open = False
 

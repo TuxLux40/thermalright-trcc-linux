@@ -22,7 +22,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from trcc.core.device import Device
+from trcc.core.device.lcd import LCDDevice
+from trcc.core.device.led import LEDDevice
 from trcc.services.display import DisplayService
 from trcc.services.image import ImageService
 from trcc.services.overlay import OverlayService
@@ -33,8 +34,8 @@ PATCH_SETTINGS_CLS = "trcc.conf.Settings"
 PATCH_DATA_MANAGER = "trcc.adapters.infra.data_repository.DataManager"
 PATCH_THEME_SVC = "trcc.services.ThemeService"
 PATCH_IMAGE_SVC = "trcc.services.ImageService"
-PATCH_CONNECT_LCD = "trcc.cli._display._connect_or_fail"
-PATCH_CONNECT_LED = "trcc.cli._led._connect_or_fail"
+PATCH_CONNECT_LCD = "trcc.ui.cli._display._connect_or_fail"
+PATCH_CONNECT_LED = "trcc.ui.cli._led._connect_or_fail"
 
 
 # ── Real renderer ────────────────────────────────────────────────────────────
@@ -42,7 +43,7 @@ PATCH_CONNECT_LED = "trcc.cli._led._connect_or_fail"
 @pytest.fixture
 def renderer() -> Any:
     """Real QtRenderer (offscreen) — same as test_display_integration."""
-    return ImageService._r()
+    return ImageService.renderer()
 
 
 # ── LCD device chain (real services) ─────────────────────────────────────────
@@ -101,8 +102,8 @@ def display_svc(renderer, mock_media, mock_device_svc) -> DisplayService:
 
 
 @pytest.fixture
-def lcd(mock_device_svc, display_svc, renderer) -> Device:
-    """Device wired to real DisplayService + real OverlayService.
+def lcd(mock_device_svc, display_svc, renderer) -> LCDDevice:
+    """LCDDevice wired to real DisplayService + real OverlayService.
 
     Only DeviceService (USB I/O) and MediaService (video decode) are mocked.
     """
@@ -114,7 +115,7 @@ def lcd(mock_device_svc, display_svc, renderer) -> Device:
         get_config_fn=Settings.get_device_config,
         apply_format_prefs_fn=Settings.apply_format_prefs,
     )
-    return Device(
+    return LCDDevice(
         device_svc=mock_device_svc,
         display_svc=display_svc,
         theme_svc=MagicMock(),
@@ -125,52 +126,41 @@ def lcd(mock_device_svc, display_svc, renderer) -> Device:
 
 @pytest.fixture
 def lcd_empty():
-    """Device with no services (not connected)."""
-    return Device()
+    """LCDDevice with no services (not connected)."""
+    return LCDDevice()
 
 
 # ── Connect fixtures ─────────────────────────────────────────────────────────
+# Per ``feedback_tests_emulate_app.md``: real DI flow. ``trcc_with_lcd`` /
+# ``trcc_with_led`` (defined in tests/conftest.py) build a real Trcc against
+# ``MockPlatform``, run discover(), and cache it in ``_boot._cached`` —
+# exactly the shape the CLI subcommands hit when they call ``_boot.trcc()``.
 
 @pytest.fixture
-def mock_connect_lcd(lcd):
-    """Patch LCD _connect_or_fail → 0 and wire TrccApp with mock lcd.
+def mock_connect_lcd(trcc_with_lcd):
+    """LCD connected via real DI; ``_connect_or_fail`` short-circuits to 0.
 
-    TrccApp.lcd returns a MagicMock wrapping the real Device so CLI
-    tests can set return_value on device methods.
+    Yields the real ``LCDDevice`` instance in ``_boot._cached.lcd_device``.
+    Tests assert against the device's real state after the CLI subcommand
+    drives it through ``trcc.lcd.set_X(idx, ...)``.
     """
-    from trcc.core.app import TrccApp
-    mock_lcd = MagicMock(wraps=lcd)
-    mock_lcd.device_path = "/dev/sg0"
-    mock_lcd.lcd_size = (320, 320)
-    mock_lcd.resolution = (320, 320)
-    mock_app = TrccApp._instance
-    mock_app.lcd_device = mock_lcd
-    mock_app.lcd = mock_lcd
-    mock_app.has_lcd = True
-    mock_app.device = lambda index=0: mock_lcd
-    mock_app.devices = [mock_lcd]
     with patch(PATCH_CONNECT_LCD, return_value=0):
-        yield mock_lcd
+        yield trcc_with_lcd.lcd_device
 
 
 @pytest.fixture
-def mock_connect_led(led):
-    """Patch LED _connect_or_fail → 0 and wire TrccApp with mock led."""
-    from trcc.core.app import TrccApp
-    mock_led = MagicMock(wraps=led)
-    mock_app = TrccApp._instance
-    mock_app.led_device = mock_led
-    mock_app.led = mock_led
-    mock_app.has_led = True
-    mock_app.device = lambda index=0: mock_led
-    mock_app.devices = [mock_led]
+def mock_connect_led(trcc_with_led):
+    """LED connected via real DI; ``_connect_or_fail`` short-circuits to 0.
+
+    Yields the real ``LEDDevice`` instance in ``_boot._cached.led_device``.
+    """
     with patch(PATCH_CONNECT_LED, return_value=0):
-        yield mock_led
+        yield trcc_with_led.led_device
 
 
 @pytest.fixture
 def mock_connect_fail():
-    """Patch both LCD and LED _connect_or_fail → 1 (no device)."""
+    """Patch both LCD and LED ``_connect_or_fail`` → 1 (no device)."""
     with patch(PATCH_CONNECT_LCD, return_value=1), \
          patch(PATCH_CONNECT_LED, return_value=1):
         yield
@@ -193,28 +183,28 @@ def mock_led_svc():
 
 @pytest.fixture
 def led(mock_led_svc):
-    """LED Device wired to mock service."""
-    return Device(led_svc=mock_led_svc, device_type=False)
+    """LEDDevice wired to mock service."""
+    return LEDDevice(led_svc=mock_led_svc)
 
 
 @pytest.fixture
 def led_empty():
-    """LED Device with no service (not connected)."""
-    return Device(device_type=False)
+    """LEDDevice with no service (not connected)."""
+    return LEDDevice()
 
 
 @pytest.fixture
 def led_no_zones(mock_led_svc):
-    """LED Device with empty zone list."""
+    """LEDDevice with empty zone list."""
     mock_led_svc.state.zones = []
-    return Device(led_svc=mock_led_svc, device_type=False)
+    return LEDDevice(led_svc=mock_led_svc)
 
 
 @pytest.fixture
 def led_no_segments(mock_led_svc):
-    """LED Device with empty segment list."""
+    """LEDDevice with empty segment list."""
     mock_led_svc.state.segment_on = []
-    return Device(led_svc=mock_led_svc, device_type=False)
+    return LEDDevice(led_svc=mock_led_svc)
 
 
 # ── Theme factories ───────────────────────────────────────────────────────────

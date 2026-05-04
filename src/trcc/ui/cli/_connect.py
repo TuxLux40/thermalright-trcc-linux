@@ -12,21 +12,19 @@ def connect_device(device_path: str | None = None) -> int:
     Args:
         device_path: Optional device path (e.g. '/dev/sg0').
     """
-    from trcc.core.app import TrccApp
-    from trcc.core.instance import find_active
-    from trcc.ipc import create_device_proxy
+    from trcc._boot import trcc
 
     log.debug("connecting device=%s", device_path)
-    app = TrccApp.get()
-    app.set_ipc_handlers(find_active, create_device_proxy)
-    result = app.discover(path=device_path)
-    if not result["success"] or not app.devices:
-        error = result.get("error", "No device found.")
+    t = trcc()
+    result = t.discover(path=device_path)
+    devices = list(t.lcd_devices) + list(t.led_devices)
+    if not result.success or not devices:
+        error = result.error or "No device found."
         log.warning("connect failed: %s", error)
         print(error)
         print("Run 'trcc report' to diagnose.")
         return 1
-    log.debug("connected successfully (%d device(s))", len(app.devices))
+    log.debug("connected successfully (%d device(s))", len(devices))
     return 0
 
 

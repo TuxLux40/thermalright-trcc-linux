@@ -83,25 +83,13 @@ def main() -> None:
     # Bootstrap: paths, preflight, MockPlatform installed in ControllerBuilder.
     platform = bootstrap(report_path)
 
-    # ── Build TrccApp manually (mirrors gui/__init__.py::launch()) ────────
-    from trcc.core.app import AppEvent, TrccApp
-    from trcc.core.builder import ControllerBuilder
-
-    builder = ControllerBuilder(cast(Any, platform))
-    TrccApp.reset()
-    app = TrccApp(builder)
-    TrccApp._instance = app
-    app._ensure_data_fn = builder.build_ensure_data_fn()
-    dl_pack, dl_list = builder.build_download_fns()
-    app._download_pack_fn = dl_pack
-    app._list_available_fn = dl_list
-
-    # ── Qt bootstrap ─────────────────────────────────────────────────────
+    # ── Qt bootstrap (must precede QtRenderer construction) ──────────────
     from trcc.ui.gui.assets import _PKG_ASSETS_DIR, set_assets_dir
     set_assets_dir(platform.resolve_assets_dir(_PKG_ASSETS_DIR))
 
     os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.services=false")
     os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+    os.environ.pop("QT_QPA_PLATFORM", None)
 
     from PySide6.QtGui import QFont
     from PySide6.QtWidgets import QApplication
@@ -114,31 +102,29 @@ def main() -> None:
         font = QFont("Sans Serif", 10)
     qapp.setFont(font)
 
-    # ── Bootstrap — THE REAL FLOW ────────────────────────────────────────
+    # ── Build Trcc via _boot — same composition root as production ───────
+    from trcc._boot import trcc as _boot_trcc
     from trcc.adapters.render.qt import QtRenderer
-    app.init_platform(verbosity=verbosity, renderer_factory=lambda: QtRenderer())
-    app.scan()
-    app._ensure_data_blocking()
+    renderer = QtRenderer()
+    t = _boot_trcc(cast(Any, platform), renderer=renderer,
+                   discover_now=True, verbosity=verbosity)
 
-    # ── System service (real sensors from this machine) ──────────────────
-    system_svc = app.build_system()
-    app.set_system(system_svc)
-
-    from trcc.services.system import set_instance
-    set_instance(system_svc)
-
-    # ── GUI — production TRCCApp, injected deps ──────────────────────────
+    # ── GUI — production TRCCApp pulls Trcc via _boot.trcc() (cached) ────
     from trcc.ui.gui.trcc_app import TRCCApp as _TRCCApp
     window = _TRCCApp(
-        system_svc=system_svc,
         platform=cast(Any, platform),
         decorated=decorated,
     )
 
-    # ── Register + replay device scan → handlers created ─────────────────
-    app.register(cast(Any, window))
-    app._notify(AppEvent.DEVICES_CHANGED, list(app._devices.values()))
-    app.start_metrics_loop(interval=2)
+    # ── Replay device list to subscribers (mirrors gui/__init__.py) ──────
+    from itertools import chain
+
+    from trcc.core.events import Topic
+    t.events.publish(
+        Topic.DEVICE_LIST,
+        tuple(chain(t.lcd_devices, t.led_devices)),
+    )
+    t.start_metrics_loop()
 
     # ── Run ──────────────────────────────────────────────────────────────
     signal.signal(signal.SIGINT, lambda *_: qapp.quit())
