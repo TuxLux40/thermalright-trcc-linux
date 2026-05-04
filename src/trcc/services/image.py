@@ -96,8 +96,15 @@ class ImageService:
                           resolution: tuple[int, int],
                           fbl: int | None,
                           use_jpeg: bool,
-                          encode_angle: int = 0) -> bytes:
+                          encode_angle: int = 0) -> tuple[Any, bytes]:
         """Encode surface for LCD device — JPEG or RGB565.
+
+        Returns ``(rotated_surface, wire_bytes)``: the surface in device
+        orientation (post-rotation, post-resize, pre-RGB565-mirror) AND
+        the encoded byte payload that goes over USB.  The Observer pattern
+        relies on the surface to publish ``Topic.FRAME`` so every consumer
+        (GUI preview, API WebSocket) sees pixel-for-pixel what the device
+        sees — single source of truth.
 
         encode_angle: device-level rotation (C# RotateImg) computed by
         DisplayService._encode_angle(). Applied before encoding so the
@@ -126,13 +133,19 @@ class ImageService:
             if (img_w, img_h) != (native_w, native_h):
                 img = rnd.resize(img, native_w, native_h)
 
+        # `img` is now what the device sees — pass it back so the caller
+        # can publish Topic.FRAME with the same surface that becomes USB
+        # bytes below.  RGB565 portrait pre-rotation (`profile.rotate`)
+        # is wire-format-only so it does NOT alter the published surface.
+        device_surface = img
+
         if use_jpeg or (profile and profile.jpeg):
-            return ImageService.to_jpeg(img)
+            return device_surface, ImageService.to_jpeg(img)
 
         if profile and profile.rotate:
             img = rnd.apply_rotation(img, 90)
         byte_order = profile.byte_order if profile else '<'
-        return ImageService.to_rgb565(img, byte_order)
+        return device_surface, ImageService.to_rgb565(img, byte_order)
 
     # ── ANSI preview (CLI cold path) ──────────────────────────────
 

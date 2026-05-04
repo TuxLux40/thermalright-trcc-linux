@@ -618,10 +618,17 @@ class DisplayService:
                     r = ImageService.renderer()
                     surface = r.copy_surface(surface)
                     surface = r.composite(surface, self._cache.text_overlay, (0, 0))
-                protocol, resolution, fbl, use_jpeg, enc_angle = self._cache.encoding_params
-                encoded = ImageService.encode_for_device(
-                    surface, protocol, resolution, fbl, use_jpeg,
-                    encode_angle=enc_angle)
+                # Encode + rotate (sole rotator) — read encode_angle fresh
+                # from current state so rotation changes apply on next tick
+                # without rebuilding the cache.
+                device = self.devices.selected
+                if device is not None:
+                    protocol, resolution, fbl, use_jpeg = device.encoding_params
+                    _device_surface, encoded = ImageService.encode_for_device(
+                        surface, protocol, resolution, fbl, use_jpeg,
+                        encode_angle=self._encode_angle())
+                else:
+                    encoded = None
             else:
                 encoded = None
             return {
@@ -674,7 +681,6 @@ class DisplayService:
         if not device:
             self.log.warning("_build_video_cache: no device selected — skipping")
             return
-        protocol, resolution, fbl, use_jpeg = device.encoding_params
         cache = VideoFrameCache()
         cache.build(
             frames=self.media._frames,
@@ -683,12 +689,6 @@ class DisplayService:
                   else None),
             mask_position=self.overlay.theme_mask_position,
             brightness=self.brightness,
-            rotation=self._image_rotation,
-            protocol=protocol,
-            resolution=resolution,
-            fbl=fbl,
-            use_jpeg=use_jpeg,
-            encode_angle=self._encode_angle(),
         )
         self._cache = cache  # atomic assignment — GIL keeps this safe
         if self._cpu_percent_fn is not None:
@@ -925,14 +925,15 @@ class DisplayService:
         return self._encode_for_device(image)
 
     def _encode_for_device(self, img: Any) -> bytes:
-        """Encode image for LCD device."""
+        """Encode image for LCD device — returns wire bytes only."""
         device = self.devices.selected
         if not device:
             raise RuntimeError("Cannot encode for device — no device selected")
         protocol, resolution, fbl, use_jpeg = device.encoding_params
-        return ImageService.encode_for_device(
+        _device_surface, frame_bytes = ImageService.encode_for_device(
             img, protocol, resolution, fbl, use_jpeg,
             encode_angle=self._encode_angle())
+        return frame_bytes
 
     # -- Theme save (delegates to ThemePersistence) ------------------------
 

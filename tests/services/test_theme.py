@@ -1278,7 +1278,14 @@ class TestLoadDcDisplayOptions:
         assert opts == {'rotation': 90}
 
     def test_config_json_exception(self, tmp_path: Path) -> None:
-        """Exception during config.json parse -> fall through to DC."""
+        """Exception during config.json parse -> fall through to DC.
+
+        Phase 11.6: the broad-except in `_load_dc_display_options` was
+        narrowed to `(OSError, ValueError, KeyError, TypeError)` — the
+        realistic surface of `json.load` + `dict[k]` access.  Use
+        ``ValueError`` here (covers `json.JSONDecodeError`, the actual
+        parse failure path) instead of ``RuntimeError``.
+        """
         td = _make_theme_dir(
             tmp_path, 'ExcJson',
             has_json=True, has_dc=True,
@@ -1286,7 +1293,7 @@ class TestLoadDcDisplayOptions:
         )
         dc_path = td / 'config1.dc'
 
-        mock_load = MagicMock(side_effect=RuntimeError('parse error'))
+        mock_load = MagicMock(side_effect=ValueError('parse error'))
         MockDcCls = MagicMock()
         mock_dc = MagicMock()
         mock_dc.display_options = {'mode': 2}

@@ -249,7 +249,7 @@ class DeviceService:
                 raise RuntimeError("Cannot encode for device — no device selected")
             protocol, resolution, fbl, use_jpeg = self._selected.encoding_params
 
-            data = ImageService.encode_for_device(
+            _device_surface, data = ImageService.encode_for_device(
                 image, protocol, resolution, fbl, use_jpeg,
                 encode_angle=encode_angle)
             self._last_encode_id = img_id
@@ -288,7 +288,7 @@ class DeviceService:
                 raise RuntimeError("Cannot encode for device — no device selected")
             protocol, resolution, fbl, use_jpeg = self._selected.encoding_params
 
-            data = ImageService.encode_for_device(
+            _device_surface, data = ImageService.encode_for_device(
                 image, protocol, resolution, fbl, use_jpeg,
                 encode_angle=encode_angle)
             self._last_encode_id = img_id

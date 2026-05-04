@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from conftest import make_test_surface
 
-from trcc.core.device import Device
+from trcc.core.device.lcd import LCDDevice as Device
 from trcc.services.display import DisplayService
 from trcc.services.image import ImageService
 from trcc.services.overlay import OverlayService

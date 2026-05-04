@@ -45,22 +45,16 @@ class VideoFrameCache:
         self._text_overlay: Any | None = None
         self._text_key: tuple | None = None
 
-        # Brightness / rotation state
+        # Brightness state (rotation/encode_angle are NOT cached — they're
+        # derived from current device state at tick time so a rotation
+        # change takes effect on the next frame, no rebuild required).
         self._brightness: int = 100
-        self._rotation: int = 0
 
-        # Encoding params (from DeviceInfo — set at build time)
-        self._protocol: str = 'scsi'
-        self._resolution: tuple[int, int] | None = None
-        self._fbl: int | None = None
-        self._use_jpeg: bool = False
-        self._encode_angle: int = 0
-
-        # L3: per-frame brightness+rotation-adjusted native surfaces.
-        # None = not yet adjusted for this frame index.
+        # L3: per-frame brightness-adjusted native surfaces (source coord
+        # space).  Rotation/encode_angle are applied downstream by
+        # `DisplayService._produce_and_emit` — Observer/SSoT pattern.
         self._l3_surfaces: list[Any | None] = []
         self._l3_brightness: int = 100
-        self._l3_rotation: int = 0
 
         self._active: bool = False
 
@@ -80,11 +74,6 @@ class VideoFrameCache:
         """True if a text overlay surface is currently stored."""
         return self._text_overlay is not None
 
-    @property
-    def encoding_params(self) -> tuple[str, tuple[int, int] | None, int | None, bool, int]:
-        """(protocol, resolution, fbl, use_jpeg, encode_angle) for encode_for_device."""
-        return self._protocol, self._resolution, self._fbl, self._use_jpeg, self._encode_angle
-
     # -- Full build (video load) -------------------------------------------
 
     def build(
@@ -93,14 +82,15 @@ class VideoFrameCache:
         mask: Any | None,
         mask_position: tuple[int, int],
         brightness: int,
-        rotation: int,
-        protocol: str,
-        resolution: tuple[int, int],
-        fbl: int | None,
-        use_jpeg: bool,
-        encode_angle: int = 0,
     ) -> None:
-        """Build L2 cache. Safe to call from a background thread."""
+        """Build L2 cache. Safe to call from a background thread.
+
+        Rotation, encoding-format, and encode_angle are NO LONGER cached —
+        they live on the device/display state and are read fresh by
+        `DisplayService._produce_and_emit` at tick time.  Cache concerns
+        itself only with the expensive bit (mask compositing) and a tiny
+        per-frame brightness layer.
+        """
         if not frames:
             return
 
@@ -114,12 +104,6 @@ class VideoFrameCache:
             frames = [r.from_raw_rgb24(f) for f in frames]
 
         self._brightness = brightness
-        self._rotation = rotation
-        self._protocol = protocol
-        self._resolution = resolution
-        self._fbl = fbl
-        self._use_jpeg = use_jpeg
-        self._encode_angle = encode_angle
 
         self._build_layer2(frames, mask, mask_position)
         self._reset_l3()
@@ -155,12 +139,13 @@ class VideoFrameCache:
         self._brightness = brightness
         self._reset_l3()
 
-    def rebuild_from_rotation(self, rotation: int) -> None:
-        """Update rotation. L3 slots refill naturally on next access."""
-        if not self._masked_frames:
-            return
-        self._rotation = rotation
-        self._reset_l3()
+    def rebuild_from_rotation(self, _rotation: int) -> None:
+        """No-op since rotation moved to encode boundary (Observer SSoT).
+
+        Kept as a stable surface for callers; rotation now flows through
+        `DisplayService._encode_angle()` per tick — no cache rebuild needed.
+        """
+        return
 
     # -- Per-tick access ---------------------------------------------------
 

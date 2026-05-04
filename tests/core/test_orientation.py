@@ -87,7 +87,7 @@ class TestOrientationSquare:
     def test_square_is_rotated_false(self):
         o = Orientation(320, 320)
         o.rotation = 90
-        assert o._is_rotated() is False
+        assert o.is_rotated() is False
 
 
 class TestOrientationNonSquare:

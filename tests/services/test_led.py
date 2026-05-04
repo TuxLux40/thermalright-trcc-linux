@@ -1171,19 +1171,19 @@ class TestLEDServiceProtocolAndConfig:
     def test_send_colors_with_protocol_calls_send_led_data(self, led_svc):
         """send_colors with protocol calls protocol.send_led_data and returns its result."""
         proto = MagicMock()
-        proto.send_led_data.return_value = True
+        proto.send_data.return_value = True
         led_svc.set_protocol(proto)
         result = led_svc.send_colors([(255, 0, 0)] * 10)
-        proto.send_led_data.assert_called_once()
+        proto.send_data.assert_called_once()
         assert result is True
 
     def test_send_tick_calls_tick_then_send_colors(self, led_svc):
         """send_tick calls tick() and passes colors to send_colors."""
         proto = MagicMock()
-        proto.send_led_data.return_value = True
+        proto.send_data.return_value = True
         led_svc.set_protocol(proto)
         led_svc.send_tick()
-        assert proto.send_led_data.call_count >= 1
+        assert proto.send_data.call_count >= 1
 
     def test_initialize_no_get_protocol_returns_message(self):
         """initialize returns 'LED protocol factory not configured' when get_protocol is None."""

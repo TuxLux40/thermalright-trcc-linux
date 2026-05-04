@@ -112,7 +112,7 @@ class TestLedDevice:
             def handshake(self):
                 return HandshakeResult()
 
-            def send_led_data(self, packet):
+            def send_data(self, packet):
                 return True
 
             @property
@@ -124,7 +124,7 @@ class TestLedDevice:
 
         dev = StubLed()
         assert dev.is_sending is False
-        assert dev.send_led_data(b'\xff') is True
+        assert dev.send_data(b'\xff') is True
 
 
 # =========================================================================

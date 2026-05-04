@@ -403,6 +403,9 @@ class TestFindLCDDevices:
         dev.scsi_device = None
         dev.protocol = 'scsi'
         dev.device_type = 1
+        # Phase 9: device_config_key formats vid/pid as hex — give them ints.
+        dev.vid = 0
+        dev.pid = 0
         fake_detect.return_value = [dev]
         assert find_lcd_devices(detect_fn=fake_detect) == []
 

@@ -264,11 +264,11 @@ class TestSend:
         dev = DeviceInfo(name='t', path='p', vid=1, pid=2, device_index=0)
         svc.select(dev)
         protocol = MagicMock()
-        protocol.send_image.return_value = True
+        protocol.send_data.return_value = True
         svc._get_protocol.return_value = protocol
 
         assert svc.send_rgb565(b'\x00' * 100, w, h) is True
-        protocol.send_image.assert_called_once()
+        protocol.send_data.assert_called_once()
 
     def test_send_rgb565_busy_skips(self):
         w, h = FBL_PROFILES[100].resolution
@@ -286,7 +286,7 @@ class TestSend:
         dev.resolution = (w, h)
         svc.select(dev)
         protocol = MagicMock()
-        protocol.send_image.return_value = True
+        protocol.send_data.return_value = True
         svc._get_protocol.return_value = protocol
 
         img = MagicMock()
@@ -295,7 +295,7 @@ class TestSend:
         svc._last_encode_data = cached_data
 
         svc.send_frame(img, w, h)
-        protocol.send_image.assert_called_once_with(cached_data, w, h)
+        protocol.send_data.assert_called_once_with(cached_data, w, h)
 
     def test_send_frame_callback(self):
         w, h = FBL_PROFILES[100].resolution
@@ -303,7 +303,7 @@ class TestSend:
         dev = DeviceInfo(name='t', path='p', vid=1, pid=2, device_index=0)
         svc.select(dev)
         protocol = MagicMock()
-        protocol.send_image.return_value = True
+        protocol.send_data.return_value = True
         svc._get_protocol.return_value = protocol
 
         callback = MagicMock()
@@ -320,7 +320,8 @@ class TestSend:
         svc = _make_service()
         dev = DeviceInfo(name='t', path='p', vid=1, pid=2, device_index=0)
         svc.select(dev)
-        svc._get_protocol.side_effect = RuntimeError("disconnected")
+        # Phase 9: send_rgb565 catches (OSError, ValueError) — use OSError.
+        svc._get_protocol.side_effect = OSError("disconnected")
 
         assert svc.send_rgb565(b'\x00', w, h) is False
         assert svc.is_busy is False

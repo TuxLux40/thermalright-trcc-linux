@@ -349,27 +349,27 @@ class TestEncodeForDevice:
     # ── JPEG path ──────────────────────────────────────────────────────
 
     def test_bulk_jpeg(self, small_image):
-        data = ImageService.encode_for_device(
+        _surface, data = ImageService.encode_for_device(
             small_image, protocol='bulk', resolution=(480, 480),
             fbl=None, use_jpeg=True)
         assert data[:2] == b'\xff\xd8'  # JPEG SOI marker
 
     def test_ly_jpeg(self, small_image):
-        data = ImageService.encode_for_device(
+        _surface, data = ImageService.encode_for_device(
             small_image, protocol='ly', resolution=(1920, 462),
             fbl=192, use_jpeg=True)
         assert data[:2] == b'\xff\xd8'
 
     def test_hid_jpeg_fbl_54(self, small_image):
         """FBL 54 (360x360) is in JPEG_MODE_FBLS."""
-        data = ImageService.encode_for_device(
+        _surface, data = ImageService.encode_for_device(
             small_image, protocol='hid', resolution=(360, 360),
             fbl=54, use_jpeg=False)
         assert data[:2] == b'\xff\xd8'
 
     def test_bulk_pm32_rgb565(self, small_image):
         """Bulk with use_jpeg=False (PM=32) uses RGB565."""
-        data = ImageService.encode_for_device(
+        _surface, data = ImageService.encode_for_device(
             small_image, protocol='bulk', resolution=(480, 480),
             fbl=None, use_jpeg=False)
         assert data[:2] != b'\xff\xd8'
@@ -378,21 +378,21 @@ class TestEncodeForDevice:
     # ── RGB565 path ────────────────────────────────────────────────────
 
     def test_scsi_rgb565(self, small_image):
-        data = ImageService.encode_for_device(
+        _surface, data = ImageService.encode_for_device(
             small_image, protocol='scsi', resolution=(320, 320),
             fbl=100, use_jpeg=False)
         assert len(data) == 100 * 100 * 2
 
     def test_hid_non_jpeg_rgb565(self, small_image):
         """HID with non-JPEG FBL uses RGB565."""
-        data = ImageService.encode_for_device(
+        _surface, data = ImageService.encode_for_device(
             small_image, protocol='hid', resolution=(240, 240),
             fbl=36, use_jpeg=False)
         assert len(data) == 100 * 100 * 2
 
     def test_nonsquare_rotates_before_rgb565(self, nonsquare_image):
         """Non-square SCSI image gets 90 CW rotation → 240x320."""
-        data = ImageService.encode_for_device(
+        _surface, data = ImageService.encode_for_device(
             nonsquare_image, protocol='scsi', resolution=(320, 240),
             fbl=50, use_jpeg=False)
         # After rotation: 240x320 → 240*320*2 bytes

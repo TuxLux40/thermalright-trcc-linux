@@ -18,15 +18,17 @@ def _make_mask(w: int = 32, h: int = 32):
     return make_test_surface(w, h, (255, 255, 255, 128))
 
 
-def _build(frames, *, mask=None, brightness=100, rotation=0,
-           protocol='scsi', resolution=(32, 32), fbl=None, use_jpeg=False):
-    """Helper: build a VideoFrameCache from frames."""
+def _build(frames, *, mask=None, brightness=100):
+    """Helper: build a VideoFrameCache from frames.
+
+    Cache is now brightness-only — rotation, encode_angle, protocol/fbl are
+    read fresh by `DisplayService._encode_angle()` at tick time so a rotation
+    change applies on the next frame without a rebuild.
+    """
     cache = VideoFrameCache()
     cache.build(
         frames=frames, mask=mask, mask_position=(0, 0),
-        brightness=brightness, rotation=rotation,
-        protocol=protocol, resolution=resolution,
-        fbl=fbl, use_jpeg=use_jpeg,
+        brightness=brightness,
     )
     return cache
 
@@ -58,15 +60,15 @@ class TestBuild:
         # Masked frames differ from originals (mask composited)
         assert bytes(cache._masked_frames[0].constBits()) != bytes(frames[0].constBits())
 
-    def test_encoding_params_stored(self):
-        cache = _build(_make_frames(2), protocol='hid', resolution=(320, 320),
-                       fbl=100, use_jpeg=True)
-        protocol, resolution, fbl, use_jpeg, encode_angle = cache.encoding_params
-        assert protocol == 'hid'
-        assert resolution == (320, 320)
-        assert fbl == 100
-        assert use_jpeg is True
-        assert encode_angle == 0
+    def test_brightness_stored(self):
+        """Cache only stores brightness — encoding params live on the device.
+
+        Encoding params (protocol, resolution, fbl, use_jpeg, encode_angle)
+        are read fresh from `device.encoding_params` + `display._encode_angle()`
+        at tick time so changes apply on the next frame without a rebuild.
+        """
+        cache = _build(_make_frames(2), brightness=75)
+        assert cache._brightness == 75
 
 
 class TestAccess:
@@ -159,7 +161,11 @@ class TestRebuild:
         assert bytes(s_dim.constBits()) != bytes(s_full.constBits())
 
     def test_rebuild_from_brightness_same_value(self):
-        """Rebuild at same brightness — surfaces are identical."""
+        """Rebuild at same brightness — surfaces remain consistent.
+
+        At brightness=100 the cache returns L2 frames directly (zero copy
+        optimization), so identity is preserved across rebuilds.
+        """
         frames = [make_test_surface(32, 32, (200, 200, 200)) for _ in range(3)]
         cache = _build(frames, brightness=100)
         s1 = cache.get_surface(0)
@@ -167,20 +173,18 @@ class TestRebuild:
         s2 = cache.get_surface(0)
         assert bytes(s1.constBits()) == bytes(s2.constBits())
 
-    def test_rebuild_from_rotation(self):
-        from trcc.services.image import ImageService
-        r = ImageService.renderer()
-        base = r.create_surface(32, 32, (0, 0, 0))
-        red_quad = r.create_surface(16, 16, (255, 0, 0))
-        base = r.composite(base, red_quad, (0, 0))
-        frames = [r.copy_surface(base) for _ in range(3)]
-        cache = _build(frames, rotation=0)
-        s0 = cache.get_surface(0)
+    def test_rebuild_from_rotation_is_noop(self):
+        """rebuild_from_rotation is a no-op — rotation moved to encode boundary.
 
+        After the Observer/SSoT refactor, rotation flows through
+        `DisplayService._encode_angle()` and applies at `encode_for_device`
+        time.  Cache stays in source coord space — no rotation in surfaces.
+        """
+        cache = _build(_make_frames(3))
+        s0 = cache.get_surface(0)
         cache.rebuild_from_rotation(90)
-        assert cache._rotation == 90
-        s90 = cache.get_surface(0)
-        assert bytes(s0.constBits()) != bytes(s90.constBits())
+        # Same surface returned — rotation does not invalidate the cache.
+        assert cache.get_surface(0) is s0
 
 
 class TestInactiveCache:

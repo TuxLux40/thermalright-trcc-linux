@@ -3,6 +3,8 @@
 import unittest
 from unittest.mock import MagicMock
 
+import pytest
+
 from trcc.core.device.led import LEDDevice as Device
 from trcc.core.models import DetectedDevice, LEDMode
 
@@ -172,9 +174,9 @@ class TestLEDDeviceProperties(unittest.TestCase):
         led._init_status = 'AX120'
         self.assertEqual(led.status, 'AX120')
 
+    @pytest.mark.skip(reason="Phase 9: LEDDevice.service property removed; access _led_svc directly")
     def test_service_accessor(self):
-        led = _make_led()
-        self.assertIs(led.service, led._led_svc)
+        pass
 
     def test_state_from_service(self):
         led = _make_led()
@@ -319,10 +321,9 @@ class TestGlobalOperations(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertIn('off', result['message'])
 
+    @pytest.mark.skip(reason="Phase 9: LEDDevice.off() removed; use update_global_on(False)")
     def test_off(self):
-        result = self.led.off()
-        self.assertTrue(result['success'])
-        self.led._led_svc.toggle_global.assert_called_with(False)
+        pass
 
     def test_set_sensor_source_cpu(self):
         result = self.led.set_sensor_source('cpu')
@@ -565,7 +566,10 @@ class TestInitialize(unittest.TestCase):
         led = Device(get_protocol=MagicMock())
         device = MagicMock()
         led._led_svc = None  # force creation
-        with unittest.mock.patch('trcc.core.device.Device.initialize_led') as mock_init:
+        # Phase 9: Device is now a Union alias of LCDDevice|LEDDevice; patch
+        # the concrete class's initialize_led directly.
+        with unittest.mock.patch(
+            'trcc.core.device.led.LEDDevice.initialize_led') as mock_init:
             mock_init.return_value = {"success": True, "status": "", "style": 2}
             result = led.initialize_led(device, 2)
         self.assertTrue(result['success'])

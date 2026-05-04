@@ -11,6 +11,9 @@ Tests cover:
 - Integration with device_factory.BulkProtocol
 """
 
+# Phase 9: load factory first so bulk_protocol is fully imported (factory.py
+# imports BulkProtocol at module bottom; without this, direct imports of
+# bulk_protocol hit a partially-initialized module).
 import os
 import struct
 import sys
@@ -18,6 +21,8 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+import trcc.adapters.device.factory  # noqa: F401
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
 
@@ -804,6 +809,7 @@ class TestBulkDeviceDetection(unittest.TestCase):
         all_devs = _get_all_devices()
         self.assertIn((0x87AD, 0x70DB), all_devs)
 
+    @unittest.skip("Phase 9: find_lcd_devices removed from scsi.py — discovery moved to platform.create_detect_fn() / DeviceDetector.")
     def test_find_lcd_devices_bulk(self):
         """find_lcd_devices returns bulk device with correct protocol."""
         from trcc.adapters.device.detector import DetectedDevice
