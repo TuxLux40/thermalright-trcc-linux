@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from trcc.ui.cli._device import (
     _format,
     _probe,
@@ -496,7 +498,7 @@ class TestDetect:
     def test_no_devices_returns_1(self):
         """No devices detected -> prints message, returns 1."""
         mock_setup = self._ok_setup()
-        result = detect(show_all=False, detect_fn=lambda: [], platform_setup=mock_setup)
+        result = detect(show_all=False, detect_fn=lambda: [], os_platform=mock_setup)
         assert result == 1
 
     def test_single_device_returns_0(self, make_detected_device):
@@ -506,7 +508,7 @@ class TestDetect:
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
              patch("trcc.ui.cli._device._probe", return_value={}):
-            result = detect(show_all=False, detect_fn=lambda: [dev], platform_setup=mock_setup)
+            result = detect(show_all=False, detect_fn=lambda: [dev], os_platform=mock_setup)
 
         assert result == 0
 
@@ -518,7 +520,7 @@ class TestDetect:
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
              patch("trcc.ui.cli._device._probe", return_value={}):
-            result = detect(show_all=True, detect_fn=lambda: [dev1, dev2], platform_setup=mock_setup)
+            result = detect(show_all=True, detect_fn=lambda: [dev1, dev2], os_platform=mock_setup)
 
         captured = capsys.readouterr()
         assert "[1]" in captured.out
@@ -532,7 +534,7 @@ class TestDetect:
 
         with patch("trcc.conf.Settings.get_selected_device", return_value="/dev/sg0"), \
              patch("trcc.ui.cli._device._probe", return_value={}):
-            detect(show_all=True, detect_fn=lambda: [dev], platform_setup=mock_setup)
+            detect(show_all=True, detect_fn=lambda: [dev], os_platform=mock_setup)
 
         captured = capsys.readouterr()
         assert "* [1]" in captured.out
@@ -544,7 +546,7 @@ class TestDetect:
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
              patch("trcc.ui.cli._device._probe", return_value={}):
-            detect(show_all=True, detect_fn=lambda: [dev], platform_setup=mock_setup)
+            detect(show_all=True, detect_fn=lambda: [dev], os_platform=mock_setup)
 
         captured = capsys.readouterr()
         assert "trcc select" not in captured.out
@@ -557,7 +559,7 @@ class TestDetect:
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
              patch("trcc.ui.cli._device._probe", return_value={}):
-            detect(show_all=True, detect_fn=lambda: [dev1, dev2], platform_setup=mock_setup)
+            detect(show_all=True, detect_fn=lambda: [dev1, dev2], os_platform=mock_setup)
 
         captured = capsys.readouterr()
         assert "trcc select" in captured.out
@@ -570,13 +572,14 @@ class TestDetect:
 
         with patch("trcc.conf.Settings.get_selected_device", return_value="/dev/sg1"), \
              patch("trcc.ui.cli._device._probe", return_value={}):
-            detect(show_all=False, detect_fn=lambda: [dev0, dev1], platform_setup=mock_setup)
+            detect(show_all=False, detect_fn=lambda: [dev0, dev1], os_platform=mock_setup)
 
         captured = capsys.readouterr()
         assert "[1]" in captured.out
         assert "[2]" in captured.out
         assert "Device B" in captured.out
 
+    @pytest.mark.skip(reason="Phase 9: udev warning logic removed from cli._device.detect — moved to platform.run_setup")
     def test_udev_warning_printed_when_rules_missing(self, capsys, make_detected_device):
         """Device needing udev rule update prints a warning."""
         dev = self._scsi_dev(make_detected_device, protocol="scsi")
@@ -588,12 +591,13 @@ class TestDetect:
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
              patch("trcc.ui.cli._device._probe", return_value={}):
-            detect(show_all=False, detect_fn=lambda: [dev], platform_setup=mock_setup)
+            detect(show_all=False, detect_fn=lambda: [dev], os_platform=mock_setup)
 
         captured = capsys.readouterr()
         assert "udev rules" in captured.out
         assert "setup-udev" in captured.out
 
+    @pytest.mark.skip(reason="Phase 9: udev warning logic removed from cli._device.detect — moved to platform.run_setup")
     def test_udev_warning_includes_reboot_for_scsi(self, capsys, make_detected_device):
         """SCSI protocol (requires_reboot=True) adds reboot notice to udev warning."""
         dev = self._scsi_dev(make_detected_device, protocol="scsi")
@@ -605,7 +609,7 @@ class TestDetect:
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
              patch("trcc.ui.cli._device._probe", return_value={}):
-            detect(show_all=False, detect_fn=lambda: [dev], platform_setup=mock_setup)
+            detect(show_all=False, detect_fn=lambda: [dev], os_platform=mock_setup)
 
         captured = capsys.readouterr()
         assert "reboot" in captured.out
@@ -622,7 +626,7 @@ class TestDetect:
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
              patch("trcc.ui.cli._device._probe", return_value={}):
-            detect(show_all=False, detect_fn=lambda: [dev], platform_setup=mock_setup)
+            detect(show_all=False, detect_fn=lambda: [dev], os_platform=mock_setup)
 
         captured = capsys.readouterr()
         assert "reboot" not in captured.out
@@ -634,7 +638,7 @@ class TestDetect:
 
         with patch("trcc.conf.Settings.get_selected_device", return_value=None), \
              patch("trcc.ui.cli._device._probe", return_value={}):
-            detect(show_all=False, detect_fn=lambda: [dev], platform_setup=mock_setup)
+            detect(show_all=False, detect_fn=lambda: [dev], os_platform=mock_setup)
 
         captured = capsys.readouterr()
         assert "udev rules" not in captured.out

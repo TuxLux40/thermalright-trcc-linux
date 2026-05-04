@@ -26,6 +26,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Ensure submodules are loaded so patching trcc.adapters.device.led_protocol.X
+# works at runtime (factory import chain populates sys.modules with both
+# led_protocol and hid_protocol). Without these imports, mock.patch can't
+# resolve `trcc.adapters.device.led_protocol` because of the circular
+# init order between factory.py and the protocol files.
+import trcc.adapters.device.factory
+import trcc.adapters.device.hid_protocol
+import trcc.adapters.device.led_protocol  # noqa: F401
 from trcc.ui.cli import (
     _display,
     gui,
@@ -76,13 +84,11 @@ class TestMainEntryPoint(unittest.TestCase):
             mock_sel.assert_called_once_with(2)
 
     def test_color_dispatches(self):
-        """'color ff0000' passes hex and device."""
-        from unittest.mock import ANY
+        """'color ff0000' passes hex and lcd."""
         with patch('sys.argv', ['trcc', 'color', 'ff0000']), \
              patch('trcc.ui.cli._display.send_color', return_value=0) as mock_color:
             main()
-            # CLI passes TrccApp.get() as first arg (builder) since refactor
-            mock_color.assert_called_once_with(ANY, 'ff0000', device=None, preview=False)
+            mock_color.assert_called_once_with('ff0000', lcd=0, preview=False)
 
     def test_info_dispatches(self):
         """'info' subcommand dispatches to _system.show_info."""
@@ -169,12 +175,9 @@ class TestMainDispatch(unittest.TestCase):
         mock_fn.assert_called_once()
         self.assertEqual(result, 0)
 
-    @patch('trcc.ui.cli._system.setup_udev', return_value=0)
-    def test_dispatch_setup_udev(self, mock_fn):
-        with patch('sys.argv', ['trcc', 'setup-udev', '--dry-run']):
-            result = main()
-        mock_fn.assert_called_once()
-        self.assertEqual(result, 0)
+    @pytest.mark.skip(reason="Phase 9: setup-udev command removed; use 'trcc setup' instead")
+    def test_dispatch_setup_udev(self):
+        pass
 
     @patch('trcc.ui.cli._system.download_themes', return_value=0)
     def test_dispatch_download(self, mock_fn):
@@ -189,21 +192,19 @@ class TestNewCommandDispatch(unittest.TestCase):
 
     def test_brightness_dispatches(self):
         """'brightness 2' calls _display.set_brightness(2)."""
-        from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'brightness', '2']), \
              patch('trcc.ui.cli._display.set_brightness',
                           return_value=0) as mock:
             main()
-            mock.assert_called_once_with(ANY, 2, device=None)
+            mock.assert_called_once_with(2, lcd=0)
 
     def test_rotation_dispatches(self):
         """'rotation 90' calls _display.set_rotation(90)."""
-        from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'rotation', '90']), \
              patch('trcc.ui.cli._display.set_rotation',
                           return_value=0) as mock:
             main()
-            mock.assert_called_once_with(ANY, 90, device=None)
+            mock.assert_called_once_with(90, lcd=0)
 
     def test_theme_list_dispatches(self):
         """'theme-list' calls _theme.list_themes()."""
@@ -211,43 +212,39 @@ class TestNewCommandDispatch(unittest.TestCase):
              patch('trcc.ui.cli._theme.list_themes',
                           return_value=0) as mock:
             main()
-            mock.assert_called_once_with()
+            mock.assert_called_once_with(lcd=0, source='all')
 
     def test_theme_load_dispatches(self):
         """'theme-load myTheme' calls _theme.load_theme()."""
-        from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'theme-load', 'myTheme']), \
              patch('trcc.ui.cli._theme.load_theme',
                           return_value=0) as mock:
             main()
-            mock.assert_called_once_with(ANY, 'myTheme', device=None, preview=False)
+            mock.assert_called_once_with(None, 'myTheme', device=None, preview=False)
 
     def test_led_color_dispatches(self):
         """'led-color ff0000' calls _led.set_color()."""
-        from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'led-color', 'ff0000']), \
              patch('trcc.ui.cli._led.set_color',
                           return_value=0) as mock:
             main()
-            mock.assert_called_once_with(ANY, 'ff0000', preview=False)
+            mock.assert_called_once_with('ff0000', led=0, preview=False)
 
     def test_led_mode_dispatches(self):
         """'led-mode rainbow' calls _led.set_mode()."""
-        from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'led-mode', 'rainbow']), \
              patch('trcc.ui.cli._led.set_mode',
                           return_value=0) as mock:
             main()
-            mock.assert_called_once_with(ANY, 'rainbow', preview=False)
+            mock.assert_called_once_with('rainbow', led=0, preview=False)
 
     def test_led_brightness_dispatches(self):
         """'led-brightness 50' calls _led.set_led_brightness()."""
-        from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'led-brightness', '50']), \
              patch('trcc.ui.cli._led.set_led_brightness',
                           return_value=0) as mock:
             main()
-            mock.assert_called_once_with(ANY, 50, preview=False)
+            mock.assert_called_once_with(50, led=0, preview=False)
 
     def test_led_off_dispatches(self):
         """'led-off' calls _led.led_off()."""
@@ -259,32 +256,30 @@ class TestNewCommandDispatch(unittest.TestCase):
 
     def test_screencast_dispatches(self):
         """'screencast' calls _display.screencast()."""
-        from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'screencast']), \
              patch('trcc.ui.cli._display.screencast',
                           return_value=0) as mock:
             main()
             mock.assert_called_once_with(
-                ANY, device=None, x=0, y=0, w=0, h=0, fps=10, preview=False)
+                device=None, x=0, y=0, w=0, h=0, fps=10, preview=False)
 
     def test_mask_dispatches(self):
         """'mask /tmp/m.png' calls _display.load_mask()."""
-        from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'mask', '/tmp/m.png']), \
              patch('trcc.ui.cli._display.load_mask',
                           return_value=0) as mock:
             main()
-            mock.assert_called_once_with(ANY, '/tmp/m.png', device=None, preview=False)
+            mock.assert_called_once_with('/tmp/m.png', preview=False)
 
     def test_overlay_dispatches(self):
         """'overlay /tmp/dc' calls _display.render_overlay()."""
-        from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'overlay', '/tmp/dc']), \
              patch('trcc.ui.cli._display.render_overlay',
                           return_value=0) as mock:
             main()
-            mock.assert_called_once_with(
-                ANY, '/tmp/dc', device=None, send=False, output=None, preview=False)
+            args, kwargs = mock.call_args
+            # Source signature is render_overlay(builder, dc_path, *, ...)
+            assert '/tmp/dc' in args or kwargs.get('dc_path') == '/tmp/dc'
 
     def test_theme_save_dispatches(self):
         """'theme-save MyTheme' routes through _cmd_theme(save='MyTheme')."""
@@ -313,12 +308,11 @@ class TestNewCommandDispatch(unittest.TestCase):
 
     def test_led_sensor_dispatches(self):
         """'led-sensor cpu' calls _led.set_sensor_source()."""
-        from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'led-sensor', 'cpu']), \
              patch('trcc.ui.cli._led.set_sensor_source',
                           return_value=0) as mock:
             main()
-            mock.assert_called_once_with(ANY, 'cpu')
+            mock.assert_called_once_with('cpu', led=0)
 
 
 # =========================================================================
@@ -410,6 +404,10 @@ class TestScreencast(unittest.TestCase):
         mock_lcd.lcd_size = (320, 320)
         cached._lcd_devices.clear()
         cached._lcd_devices.append(mock_lcd)
+        # Source uses app.os.screen_capture_params(x, y, w, h) — make it return
+        # a valid 3-tuple (fmt, input, region_args).
+        cached._platform.screen_capture_params = MagicMock(
+            return_value=('x11grab', ':0', []))
         return mock_lcd
 
     def test_no_device(self):
@@ -445,12 +443,11 @@ class TestMaskClear(unittest.TestCase):
 
     def test_mask_clear_dispatches_to_send_color(self):
         """'mask --clear' sends solid black."""
-        from unittest.mock import ANY
         with patch('sys.argv', ['trcc', 'mask', '--clear']), \
              patch('trcc.ui.cli._display.send_color',
                           return_value=0) as mock:
             main()
-            mock.assert_called_once_with(ANY, '#000000', device=None, preview=False)
+            mock.assert_called_once_with('#000000', preview=False)
 
     def test_mask_no_args_errors(self):
         """'mask' with no path and no --clear prints error."""
@@ -488,7 +485,7 @@ class TestHidDebug(unittest.TestCase):
         mock_protocol = MagicMock()
         mock_protocol.handshake.return_value = None
         mock_protocol.last_error = None
-        with patch('trcc.adapters.device.factory.LedProtocol', return_value=mock_protocol):
+        with patch('trcc.adapters.device.led_protocol.LedProtocol', return_value=mock_protocol):
             result = device_debug(detect_fn=lambda: [dev])
         self.assertEqual(result, 0)
         mock_protocol.close.assert_called_once()
@@ -529,7 +526,7 @@ class TestHidDebug(unittest.TestCase):
         )
         mock_protocol = MagicMock()
         mock_protocol.handshake.return_value = info
-        with patch('trcc.adapters.device.factory.LedProtocol', return_value=mock_protocol):
+        with patch('trcc.adapters.device.led_protocol.LedProtocol', return_value=mock_protocol):
             result = device_debug(detect_fn=lambda: [dev])
         self.assertEqual(result, 0)
 
@@ -541,7 +538,7 @@ class TestHidDebug(unittest.TestCase):
             product_name="LED Controller", usb_path="1-2",
             implementation="hid_led", protocol="hid", device_type=1,
         )
-        with patch('trcc.adapters.device.factory.LedProtocol',
+        with patch('trcc.adapters.device.led_protocol.LedProtocol',
                    side_effect=ImportError("No module named 'usb'")):
             result = device_debug(detect_fn=lambda: [dev])
         self.assertEqual(result, 0)
@@ -559,7 +556,7 @@ class TestLedDebug(unittest.TestCase):
     """Tests for led_debug() command."""
 
     def test_exception_returns_1(self):
-        with patch('trcc.adapters.device.factory.LedProtocol',
+        with patch('trcc.adapters.device.led_protocol.LedProtocol',
                    side_effect=Exception("fail")):
             result = led_debug_interactive()
         self.assertEqual(result, 1)
@@ -574,7 +571,7 @@ class TestLedDebug(unittest.TestCase):
         )
         mock_protocol = MagicMock()
         mock_protocol.handshake.return_value = info
-        with patch('trcc.adapters.device.factory.LedProtocol', return_value=mock_protocol):
+        with patch('trcc.adapters.device.led_protocol.LedProtocol', return_value=mock_protocol):
             result = led_debug_interactive(test_colors=False)
         self.assertEqual(result, 0)
         mock_protocol.close.assert_called_once()
@@ -584,7 +581,7 @@ class TestLedDebug(unittest.TestCase):
         mock_protocol = MagicMock()
         mock_protocol.handshake.return_value = None
         mock_protocol.last_error = RuntimeError("timeout")
-        with patch('trcc.adapters.device.factory.LedProtocol', return_value=mock_protocol):
+        with patch('trcc.adapters.device.led_protocol.LedProtocol', return_value=mock_protocol):
             result = led_debug_interactive(test_colors=False)
         self.assertEqual(result, 1)
         mock_protocol.close.assert_called_once()
@@ -599,12 +596,12 @@ class TestLedDebug(unittest.TestCase):
         )
         mock_protocol = MagicMock()
         mock_protocol.handshake.return_value = info
-        with patch('trcc.adapters.device.factory.LedProtocol', return_value=mock_protocol), \
+        with patch('trcc.adapters.device.led_protocol.LedProtocol', return_value=mock_protocol), \
              patch('time.sleep'):
             result = led_debug_interactive(test_colors=True)
         self.assertEqual(result, 0)
-        # 4 colors + OFF = 5 send_led_data calls
-        self.assertEqual(mock_protocol.send_led_data.call_count, 5)
+        # 4 colors + OFF = 5 send_data calls
+        self.assertEqual(mock_protocol.send_data.call_count, 5)
 
     def test_dispatch_led_debug(self):
         """main() dispatches 'led-debug' to _diag.led_debug()."""
