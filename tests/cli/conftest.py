@@ -35,7 +35,8 @@ PATCH_DATA_MANAGER = "trcc.adapters.infra.data_repository.DataManager"
 PATCH_THEME_SVC = "trcc.services.ThemeService"
 PATCH_IMAGE_SVC = "trcc.services.ImageService"
 PATCH_CONNECT_LCD = "trcc.ui.cli._display._connect_or_fail"
-PATCH_CONNECT_LED = "trcc.ui.cli._led._connect_or_fail"
+# Phase 9: _connect_or_fail lives only in _display now (used by both _led and _theme).
+PATCH_CONNECT_LED = "trcc.ui.cli._display._connect_or_fail"
 
 
 # ── Real renderer ────────────────────────────────────────────────────────────
