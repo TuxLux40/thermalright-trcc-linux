@@ -148,8 +148,10 @@ class DisplayService:
         dev = self.devices.selected
         if not dev or dev.fbl_code is None:
             return 0
-        profile = get_profile(dev.fbl_code)
-        return get_encode_rotation(profile, dev.sub_byte, self.rotation)
+        profile = get_profile(dev.fbl_code, dev.pm_byte)
+        return get_encode_rotation(
+            profile, dev.sub_byte, self.rotation, pm_byte=dev.pm_byte,
+        )
 
     @property
     def mask_source_dir(self) -> Path | None:
