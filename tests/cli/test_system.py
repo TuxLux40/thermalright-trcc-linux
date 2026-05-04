@@ -1572,20 +1572,26 @@ class TestReport:
 # ===========================================================================
 
 class TestDownloadThemes:
-    """download_themes — calls TrccApp.download_themes() directly."""
+    """download_themes — calls trcc().download_themes() directly."""
 
     def test_no_pack_calls_download(self):
         """pack=None calls download_themes('', False)."""
-        from trcc.core.app import TrccApp
-        rc = download_themes(pack=None)
-        TrccApp.get().download_themes.assert_called_with("", False)
+        from trcc import _boot
+        mock_t = MagicMock()
+        mock_t.download_themes.return_value = 0
+        with patch.object(_boot, "_cached", mock_t):
+            rc = download_themes(pack=None)
+        mock_t.download_themes.assert_called_with("", False)
         assert rc == 0
 
     def test_show_list_calls_download_with_empty_pack(self):
         """show_list=True calls download_themes('', False)."""
-        from trcc.core.app import TrccApp
-        rc = download_themes(pack="themes-320x320", show_list=True)
-        TrccApp.get().download_themes.assert_called_with("", False)
+        from trcc import _boot
+        mock_t = MagicMock()
+        mock_t.download_themes.return_value = 0
+        with patch.object(_boot, "_cached", mock_t):
+            rc = download_themes(pack="themes-320x320", show_list=True)
+        mock_t.download_themes.assert_called_with("", False)
         assert rc == 0
 
     def test_show_info_calls_pack_info_directly(self):
@@ -1597,28 +1603,40 @@ class TestDownloadThemes:
 
     def test_force_clears_installed_resolutions(self):
         """force=True clears resolution cache before downloading."""
-        with patch("trcc.conf.Settings.clear_installed_resolutions") as mock_clear:
+        from trcc import _boot
+        mock_t = MagicMock()
+        mock_t.download_themes.return_value = 0
+        with patch("trcc.conf.Settings.clear_installed_resolutions") as mock_clear, \
+             patch.object(_boot, "_cached", mock_t):
             download_themes(pack="themes-320x320", force=True)
         mock_clear.assert_called_once()
 
     def test_normal_download_calls_with_pack(self):
         """Normal download calls download_themes with the pack name."""
-        from trcc.core.app import TrccApp
-        download_themes(pack="themes-320x320")
-        TrccApp.get().download_themes.assert_called_with("themes-320x320", False)
+        from trcc import _boot
+        mock_t = MagicMock()
+        mock_t.download_themes.return_value = 0
+        with patch.object(_boot, "_cached", mock_t):
+            download_themes(pack="themes-320x320")
+        mock_t.download_themes.assert_called_with("themes-320x320", False)
 
     def test_force_passes_force_flag(self):
         """force=True is passed through to download_themes."""
-        from trcc.core.app import TrccApp
-        with patch("trcc.conf.Settings.clear_installed_resolutions"):
+        from trcc import _boot
+        mock_t = MagicMock()
+        mock_t.download_themes.return_value = 0
+        with patch("trcc.conf.Settings.clear_installed_resolutions"), \
+             patch.object(_boot, "_cached", mock_t):
             download_themes(pack="themes-320x320", force=True)
-        TrccApp.get().download_themes.assert_called_with("themes-320x320", True)
+        mock_t.download_themes.assert_called_with("themes-320x320", True)
 
     def test_exception_returns_one(self, capsys):
         """Exceptions propagate as rc=1 with error message."""
-        from trcc.core.app import TrccApp
-        TrccApp.get().download_themes.side_effect = RuntimeError("network error")
-        rc = download_themes(pack=None)
+        from trcc import _boot
+        mock_t = MagicMock()
+        mock_t.download_themes.side_effect = RuntimeError("network error")
+        with patch.object(_boot, "_cached", mock_t):
+            rc = download_themes(pack=None)
         assert rc == 1
         out = capsys.readouterr().out
         assert "Error" in out
@@ -1690,21 +1708,23 @@ class TestRunSetup:
 
     @pytest.fixture(autouse=True)
     def _wire_setup_platform(self, _mock_builder):
-        """Wire TrccApp.setup_platform to call builder.os.run().
+        """Phase 9: run_setup() now calls trcc().os.run_setup(auto_yes=...).
 
-        run_setup() calls TrccApp.get().setup_platform() which delegates to
-        builder.os.run(). The conftest mock_app is a MagicMock, so
-        setup_platform is already callable, but we want the builder.build_setup
-        chain to fire for these tests.
+        Replace the cached Trcc's platform with a MagicMock whose ``run_setup``
+        delegates to the per-OS check chain via the existing builder.os.
         """
-        from trcc.core.app import TrccApp
-        mock_app = TrccApp.get()
+        from trcc import _boot
+        # _real_trcc_empty has built a Trcc against MagicMock platform
+        # already; we replace that platform with one whose run_setup hits
+        # the diagnostics check chain via the mock builder.
+        cached = _boot._cached
+        assert cached is not None
 
-        def _setup_platform(auto_yes=False):
+        def _run_setup(auto_yes=False):
             setup = _mock_builder.os
             return setup.run(auto_yes=auto_yes)
 
-        mock_app.setup_platform = _setup_platform  # type: ignore[method-assign]
+        cached._platform.run_setup = _run_setup  # type: ignore[attr-defined]
 
     def _make_dep(self, name="pkg", ok=True, required=True,
                   version="1.0", note="", install_cmd=""):

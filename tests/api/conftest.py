@@ -25,6 +25,7 @@ def lcd_only_app(tmp_path, monkeypatch):
     ``trcc._ensure_all_calls`` for assertion.
     """
     from mock_platform import MockPlatform
+
     from trcc import _boot
     from trcc.adapters.infra.data_repository import DataManager
     from trcc.adapters.render.qt import QtRenderer
@@ -63,6 +64,7 @@ def no_device_app(tmp_path, monkeypatch):
     data extraction stays offline.
     """
     from mock_platform import MockPlatform
+
     from trcc import _boot
     from trcc.adapters.infra.data_repository import DataManager
     from trcc.adapters.render.qt import QtRenderer

@@ -18,7 +18,6 @@ from trcc.core.models import FBL_PROFILES, SCSI_DEVICES, DeviceInfo
 from trcc.ui.api import app, configure_auth
 from trcc.ui.api.models import dispatch_result, parse_hex_or_400
 
-
 # Phase 9 retired the legacy single-device proxy layer (DisplayProxy /
 # LEDProxy / IPCTransport) and the API's module-level _device_svc holder.
 # TrccProxy (manifold) replaces the proxies; devices live on Trcc.
@@ -293,8 +292,6 @@ class TestDisplayEndpoints(unittest.TestCase):
     """Display control endpoints (POST /display/*)."""
 
     def setUp(self):
-        from trcc.core.app import TrccApp
-
         configure_auth(None)
         self.client = TestClient(app)
         # Set up a mock LCDDevice
@@ -303,17 +300,10 @@ class TestDisplayEndpoints(unittest.TestCase):
         self.mock_lcd.resolution = (320, 320)
         self.mock_lcd.device_path = "/dev/sg0"
         api_module._device_dispatcher = self.mock_lcd
-        TrccApp.reset()
-        TrccApp._instance = TrccApp(MagicMock())
-
         self.mock_lcd.is_lcd, self.mock_lcd.is_led = True, False
-        TrccApp.get()._devices['mock_lcd'] = self.mock_lcd
 
     def tearDown(self):
-        from trcc.core.app import TrccApp
-
         api_module._device_dispatcher = None
-        TrccApp.reset()
 
     def test_display_status_connected(self):
         resp = self.client.get("/display/status")
@@ -423,25 +413,16 @@ class TestLEDEndpoints(unittest.TestCase):
     """LED control endpoints (POST /led/*)."""
 
     def setUp(self):
-        from trcc.core.app import TrccApp
-
         configure_auth(None)
         self.client = TestClient(app)
         self.mock_led = MagicMock()
         self.mock_led.connected = True
         self.mock_led.status = "AX120 Digital (style 1)"
         api_module._device_dispatcher = self.mock_led
-        TrccApp.reset()
-        TrccApp._instance = TrccApp(MagicMock())
-
         self.mock_led.is_lcd, self.mock_led.is_led = False, True
-        TrccApp.get()._devices['mock_led'] = self.mock_led
 
     def tearDown(self):
-        from trcc.core.app import TrccApp
-
         api_module._device_dispatcher = None
-        TrccApp.reset()
 
     def test_led_status_connected(self):
         resp = self.client.get("/led/status")
@@ -492,26 +473,15 @@ class TestThemeOperations(unittest.TestCase):
     """Theme load/save/import endpoints."""
 
     def setUp(self):
-        from trcc.core.app import TrccApp
-
         configure_auth(None)
         self.client = TestClient(app)
-        TrccApp.reset()
-        TrccApp._instance = TrccApp(MagicMock())
 
     def tearDown(self):
-        from trcc.core.app import TrccApp
-
         api_module._device_dispatcher = None
-        TrccApp.reset()
 
     def _wire(self, mock_lcd) -> None:
-        from trcc.core.app import TrccApp
-
-
         api_module._device_dispatcher = mock_lcd
         mock_lcd.is_lcd, mock_lcd.is_led = True, False
-        TrccApp.get()._devices['mock_lcd'] = mock_lcd
 
     def test_load_theme_no_device(self):
         api_module._device_dispatcher = None
@@ -681,25 +651,27 @@ class TestI18nEndpoints(unittest.TestCase):
         self.assertEqual(data["name"], "English")
 
     def test_set_language(self):
-        from trcc.core.app import TrccApp
+        from trcc.core.results import OpResult
 
-        mock_app = MagicMock()
-        mock_app.set_language.return_value = {"success": True, "message": "Language set to de"}
-        with patch.object(TrccApp, 'get', return_value=mock_app):
+        mock_trcc = MagicMock()
+        mock_trcc.control_center.set_language.return_value = OpResult(
+            success=True, message="Language set to de")
+        with patch('trcc._boot.trcc', return_value=mock_trcc):
             resp = self.client.put("/i18n/language/de")
 
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data["code"], "de")
         self.assertEqual(data["name"], "Deutsch")
-        mock_app.set_language.assert_called_once_with("de")
+        mock_trcc.control_center.set_language.assert_called_once_with("de")
 
     def test_set_language_invalid(self):
-        from trcc.core.app import TrccApp
+        from trcc.core.results import OpResult
 
-        mock_app = MagicMock()
-        mock_app.set_language.return_value = {"success": False, "error": "Unknown language code: zzz"}
-        with patch.object(TrccApp, 'get', return_value=mock_app):
+        mock_trcc = MagicMock()
+        mock_trcc.control_center.set_language.return_value = OpResult(
+            success=False, error="Unknown language code: zzz")
+        with patch('trcc._boot.trcc', return_value=mock_trcc):
             resp = self.client.put("/i18n/language/zzz")
 
         self.assertEqual(resp.status_code, 400)
@@ -889,9 +861,6 @@ class TestVideoPlaybackEndpoints(unittest.TestCase):
 
     def test_load_animated_theme_starts_video(self):
         """Loading an animated theme routes through dispatcher and returns animated flag."""
-        from trcc.core.app import TrccApp
-
-
         mock_lcd = MagicMock()
         mock_lcd.connected = True
         mock_lcd.resolution = (320, 320)
@@ -900,10 +869,7 @@ class TestVideoPlaybackEndpoints(unittest.TestCase):
             "message": "Theme: VideoTheme",
         }
         api_module._device_dispatcher = mock_lcd
-        TrccApp.reset()
-        TrccApp._instance = TrccApp(MagicMock())
         mock_lcd.is_lcd, mock_lcd.is_led = True, False
-        TrccApp.get()._devices['mock_lcd'] = mock_lcd
 
         resp = self.client.post("/themes/load", json={"name": "VideoTheme"})
 
@@ -912,7 +878,6 @@ class TestVideoPlaybackEndpoints(unittest.TestCase):
         self.assertTrue(data.get("is_animated"))
         mock_lcd.load_theme_by_name.assert_called_once_with("VideoTheme", 0, 0)
         api_module._device_dispatcher = None
-        TrccApp.reset()
 
     def test_display_route_stops_video_on_static_send(self):
         """Sending a static color stops any running video playback."""
@@ -1089,6 +1054,12 @@ class TestKeepaliveLoop(unittest.TestCase):
 # IPC frame sharing (GUI daemon mode)
 # =============================================================================
 
+@pytest.mark.skip(
+    reason="Phase 9: IPC proxy layer (DisplayProxy/LEDProxy/IPCTransport, "
+           "find_active, InstanceKind, IPCServer.capture_frame/_get_frame/"
+           "_pause_device/_resume_device) was removed when TrccProxy + manifold "
+           "dispatch landed. Tests reference dead code and need rewriting against "
+           "the new wire protocol.")
 class TestIPCFrameSharing(unittest.TestCase):
     """IPC daemon detection and direct frame reading."""
 
@@ -1771,25 +1742,16 @@ class TestLEDErrorPaths(unittest.TestCase):
     """LED 409 / 422 paths and dispatch-failure cases."""
 
     def setUp(self) -> None:
-        from trcc.core.app import TrccApp
-
-
         configure_auth(None)
         self.client = TestClient(app)
         self.mock_led = MagicMock()
         self.mock_led.connected = True
         self.mock_led.status = "PA120 (style 2)"
         api_module._device_dispatcher = self.mock_led
-        TrccApp.reset()
-        TrccApp._instance = TrccApp(MagicMock())
         self.mock_led.is_lcd, self.mock_led.is_led = False, True
-        TrccApp.get()._devices['mock_led'] = self.mock_led
 
     def tearDown(self) -> None:
-        from trcc.core.app import TrccApp
-
         api_module._device_dispatcher = None
-        TrccApp.reset()
 
     def test_brightness_over_100_rejected(self) -> None:
         resp = self.client.post("/led/brightness", json={"level": 101})
@@ -1868,19 +1830,12 @@ class TestThemeEdgeCases(unittest.TestCase):
     """Uncovered theme paths."""
 
     def setUp(self) -> None:
-        from trcc.core.app import TrccApp
-
         configure_auth(None)
         self.client = TestClient(app)
         api_module._device_dispatcher = None
-        TrccApp.reset()
-        TrccApp._instance = TrccApp(MagicMock())
 
     def tearDown(self) -> None:
-        from trcc.core.app import TrccApp
-
         api_module._device_dispatcher = None
-        TrccApp.reset()
 
     def test_list_themes_resolution_boundary_min(self) -> None:
         with patch("trcc.ui.api.themes.ThemeService.discover_local_merged", return_value=[]), \
@@ -1978,9 +1933,6 @@ class TestThemeEdgeCases(unittest.TestCase):
 
     def test_load_theme_success_delegates_to_dispatcher(self) -> None:
         """API layer delegates to lcd.load_theme_by_name — thin adapter."""
-        from trcc.core.app import TrccApp
-
-
         mock_lcd = MagicMock()
         mock_lcd.connected = True
         mock_lcd.resolution = (320, 320)
@@ -1989,7 +1941,6 @@ class TestThemeEdgeCases(unittest.TestCase):
         }
         api_module._device_dispatcher = mock_lcd
         mock_lcd.is_lcd, mock_lcd.is_led = True, False
-        TrccApp.get()._devices['mock_lcd'] = mock_lcd
 
         resp = self.client.post("/themes/load", json={"name": "Theme001"})
 
@@ -1998,9 +1949,6 @@ class TestThemeEdgeCases(unittest.TestCase):
 
     def test_load_theme_failure_returns_400(self) -> None:
         """Dispatcher failure propagated as 400 via dispatch_result."""
-        from trcc.core.app import TrccApp
-
-
         mock_lcd = MagicMock()
         mock_lcd.connected = True
         mock_lcd.resolution = (320, 320)
@@ -2009,7 +1957,6 @@ class TestThemeEdgeCases(unittest.TestCase):
         }
         api_module._device_dispatcher = mock_lcd
         mock_lcd.is_lcd, mock_lcd.is_led = True, False
-        TrccApp.get()._devices['mock_lcd'] = mock_lcd
 
         resp = self.client.post("/themes/load", json={"name": "Broken"})
 
@@ -2256,8 +2203,6 @@ class TestDisplayHappyPaths(unittest.TestCase):
     """POST /display/* success paths — device connected, operations succeed."""
 
     def setUp(self) -> None:
-        from trcc.core.app import TrccApp
-
         configure_auth(None)
         self.client = TestClient(app)
         self.mock_lcd = MagicMock()
@@ -2271,19 +2216,11 @@ class TestDisplayHappyPaths(unittest.TestCase):
             mock_sys = MagicMock()
             mock_sys.all_metrics = HardwareMetrics()
             api_module._system_svc = mock_sys
-        # Real TrccApp so LCD methods route to mock_lcd directly
-        TrccApp.reset()
-        TrccApp._instance = TrccApp(MagicMock())
-
         self.mock_lcd.is_lcd, self.mock_lcd.is_led = True, False
-        TrccApp.get()._devices['mock_lcd'] = self.mock_lcd
 
     def tearDown(self) -> None:
-        from trcc.core.app import TrccApp
-
         api_module._device_dispatcher = None
         api_module._system_svc = self._saved_system_svc
-        TrccApp.reset()
 
     @patch('trcc.ui.api.stop_overlay_loop')
     @patch('trcc.ui.api.stop_video_playback')
@@ -2425,26 +2362,16 @@ class TestLEDHappyPaths(unittest.TestCase):
     """POST /led/* success paths — device connected, operations succeed."""
 
     def setUp(self) -> None:
-        from trcc.core.app import TrccApp
-
         configure_auth(None)
         self.client = TestClient(app)
         self.mock_led = MagicMock()
         self.mock_led.connected = True
         self.mock_led.status = "AX120 Digital (style 1)"
         api_module._device_dispatcher = self.mock_led
-        # Real TrccApp so LED methods route to mock_led directly
-        TrccApp.reset()
-        TrccApp._instance = TrccApp(MagicMock())
-
         self.mock_led.is_lcd, self.mock_led.is_led = False, True
-        TrccApp.get()._devices['mock_led'] = self.mock_led
 
     def tearDown(self) -> None:
-        from trcc.core.app import TrccApp
-
         api_module._device_dispatcher = None
-        TrccApp.reset()
 
     # ── Global operations ──────────────────────────────────────────────
 
@@ -2752,6 +2679,10 @@ class TestPerfEndpoints(unittest.TestCase):
         self.assertEqual(data["summary"]["device_count"], 0)
 
 
+@pytest.mark.skip(
+    reason="Phase 9: IPCServer._pause_device/_resume_device/_dispatch with "
+           "device.pause/device.resume removed. New IPCServer is manifold-only "
+           "with role/method/args wire shape.")
 class TestIPCPauseResume(unittest.TestCase):
     """IPC display.pause / display.resume for exclusive device access."""
 
@@ -2895,18 +2826,12 @@ class TestDisplayTestEndpoint(unittest.TestCase):
     @patch('trcc.ui.api.stop_overlay_loop')
     @patch('trcc.ui.api.stop_video_playback')
     def test_display_test_success(self, mock_stop_v, mock_stop_o, mock_solid, mock_sleep):
-        from trcc.core.app import TrccApp
-
-
         mock_lcd = MagicMock()
         mock_lcd.connected = True
         mock_lcd.resolution = (320, 320)
         mock_lcd.send_color.return_value = {"success": True, "message": "ok"}
         api_module._device_dispatcher = mock_lcd
-        TrccApp.reset()
-        TrccApp._instance = TrccApp(MagicMock())
         mock_lcd.is_lcd, mock_lcd.is_led = True, False
-        TrccApp.get()._devices['mock_lcd'] = mock_lcd
 
         mock_img = MagicMock()
         mock_solid.return_value = mock_img
@@ -2921,7 +2846,6 @@ class TestDisplayTestEndpoint(unittest.TestCase):
         self.assertEqual(mock_sleep.call_count, 7)
 
         api_module._device_dispatcher = None
-        TrccApp.reset()
 
 
 # ── Screencast endpoints ──────────────────────────────────────────────
