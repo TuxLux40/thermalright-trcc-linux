@@ -181,24 +181,27 @@ class VideoFrameCache:
     # -- Private -----------------------------------------------------------
 
     def _ensure_surface(self, index: int) -> None:
-        """Apply brightness+rotation to L2 frame → L3 surface if not cached."""
-        if (self._brightness != self._l3_brightness
-                or self._rotation != self._l3_rotation):
+        """Apply brightness to L2 frame → L3 surface if not cached.
+
+        Rotation is NOT applied here — `encode_for_device` is the sole
+        rotator on the encode boundary so every element (bg + mask + text)
+        ends up with the same rotation count.  Layer-3 stays in source
+        coord space; text overlay composited at tick time aligns naturally.
+        """
+        if self._brightness != self._l3_brightness:
             self._reset_l3()
 
         if self._l3_surfaces[index] is not None:
             return  # L3 hit — pure list lookup
 
         from .image import ImageService
-        r = ImageService.renderer()
-
-        surface = r.copy_surface(self._masked_frames[index])
 
         if self._brightness < 100:
+            r = ImageService.renderer()
+            surface = r.copy_surface(self._masked_frames[index])
             surface = ImageService.apply_brightness(surface, self._brightness)
-
-        if self._rotation:
-            surface = ImageService.apply_rotation(surface, self._rotation)
+        else:
+            surface = self._masked_frames[index]
 
         self._l3_surfaces[index] = surface
 
@@ -207,7 +210,6 @@ class VideoFrameCache:
         n = len(self._masked_frames)
         self._l3_surfaces = [None] * n
         self._l3_brightness = self._brightness
-        self._l3_rotation = self._rotation
 
     def _build_layer2(
         self,

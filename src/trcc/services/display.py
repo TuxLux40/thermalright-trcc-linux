@@ -489,7 +489,7 @@ class DisplayService:
     # -- Rendering ---------------------------------------------------------
 
     def _render_and_process(self) -> Any | None:
-        """Render overlay on current image, apply brightness + rotation."""
+        """Render overlay on current image, apply brightness + preview rotation."""
         if not self.current_image:
             self.log.debug("_render_and_process: no current_image")
             return None
@@ -499,10 +499,10 @@ class DisplayService:
         if self.overlay.enabled:
             image = self.overlay.render(image)
             self.log.debug("_render_and_process: after overlay type=%s", type(image).__name__)
-        return self._apply_adjustments(image)
+        return self._apply_for_preview(self._apply_adjustments(image))
 
     def render_overlay(self) -> Any | None:
-        """Force-render overlay (for live editing). Returns image or None."""
+        """Force-render overlay (for live editing). Returns rotated preview image."""
         # Use clean background (no old overlay baked in)
         bg = self._clean_background or self.current_image
         if not bg:
@@ -510,23 +510,35 @@ class DisplayService:
             self._create_black_background()
             bg = self.current_image
         image = self.overlay.render(bg, force=True)
-        return self._apply_adjustments(image)
+        return self._apply_for_preview(self._apply_adjustments(image))
 
     def _apply_adjustments(self, image: Any) -> Any:
-        """Apply brightness, rotation, and split overlay to image.
+        """Apply brightness + split overlay.  No pixel rotation here.
 
-        Pixel rotation comes from Orientation.image_rotation — returns 0
-        when any portrait dir handles orientation (dir switch, not pixel rotate).
+        Rotation is the encode boundary's responsibility (`encode_for_device`
+        with `encode_angle`) so every element (bg + mask + text) ends up with
+        the same rotation count.  Preview consumers wrap this with
+        `_apply_for_preview` to add a single user-rotation for display.
+        """
+        self.log.debug("_apply_adjustments: brightness=%d split_mode=%d",
+                  self.brightness, self.split_mode)
+        if self.brightness >= 100 and not self.split_mode:
+            return image
+        if self.brightness < 100:
+            image = ImageService.apply_brightness(image, self.brightness)
+        return self._apply_split_overlay(image)
+
+    def _apply_for_preview(self, image: Any) -> Any:
+        """Wrap `_apply_adjustments` output with user rotation for GUI preview.
+
+        Encode-bound paths bypass this — they go through
+        `encode_for_device(..., encode_angle=self._encode_angle())` which
+        is the sole rotator for device bytes.
         """
         rot = self._image_rotation
-        self.log.debug("_apply_adjustments: brightness=%d rotation=%d split_mode=%d",
-                  self.brightness, rot, self.split_mode)
-        if self.brightness >= 100 and rot == 0 and not self.split_mode:
-            return image
-        image = ImageService.apply_brightness(image, self.brightness)
         if rot:
             image = ImageService.apply_rotation(image, rot)
-        return self._apply_split_overlay(image)
+        return image
 
     def _apply_split_overlay(self, image: Any) -> Any:
         """Composite Dynamic Island overlay for widescreen split mode."""
@@ -592,14 +604,16 @@ class DisplayService:
 
         self.current_image = frame
 
-        # Cache path: get brightness+rotation surface, composite text, encode
+        # Cache path: get brightness surface, composite text, encode
         if self._cache and self._cache.active:
             cf = self.media.state.current_frame
             total = self.media.state.total_frames
             index = (cf - 1) % total if total > 0 else 0
             surface = self._cache.get_surface(index)
             if surface is not None:
-                # Composite text overlay (same surface for all frames)
+                # Composite text overlay (same surface for all frames).
+                # Text is composited in source coord space — encode rotates
+                # the unified bg+mask+text together so they stay aligned.
                 if self._cache.has_text:
                     r = ImageService.renderer()
                     surface = r.copy_surface(surface)
@@ -611,7 +625,7 @@ class DisplayService:
             else:
                 encoded = None
             return {
-                'preview': surface,
+                'preview': self._apply_for_preview(surface) if surface is not None else None,
                 'frame_index': index,
                 'progress': progress,
                 'send_image': None,
@@ -624,7 +638,9 @@ class DisplayService:
 
         processed = self._apply_adjustments(frame)
 
-        result = {'preview': processed, 'progress': progress,
+        # processed is un-rotated; send_frame encodes rotation via encode_angle.
+        # Preview gets a rotated copy so the GUI shows what the device shows.
+        result = {'preview': self._apply_for_preview(processed), 'progress': progress,
                   'send_image': processed if (should_send and self.auto_send) else None}
 
         return result
