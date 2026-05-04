@@ -14,6 +14,13 @@ Structure
 5. Protocol debug helpers — shared between report and interactive CLI
 6. Interactive debug      — device_debug, led_debug_interactive
 7. DebugReport            — collect(), __str__(), all section methods
+
+Design note on broad-excepts:  this module is the diagnostic surface.
+Almost every ``except Exception`` is intentional Pattern A — a section
+that captures any failure and surfaces it to the user-visible report
+(via ``print`` or ``sec.lines.append``).  Narrowing here would silently
+hide section failures from the user running ``trcc report``.  Sites that
+only ``pass`` silently are narrowed + logged in the Phase 11.6 sweep.
 """
 
 from __future__ import annotations
@@ -345,7 +352,8 @@ def _enable_ansi_windows() -> None:
         mode = ctypes.c_ulong()
         kernel32.GetConsoleMode(handle, ctypes.byref(mode))
         kernel32.SetConsoleMode(handle, mode.value | 0x0004)
-    except Exception:
+    except (OSError, AttributeError):
+        # Non-Windows or missing windll — caller falls back to ASCII output.
         pass
 
 
@@ -468,8 +476,9 @@ def _check_winusb_devices() -> None:
                       f"needs WinUSB (status: {status})")
                 print("         Install via Zadig: https://zadig.akeo.ie/")
                 print("         Or run: trcc setup-winusb")
-    except Exception:
-        pass
+    except Exception as e:
+        # WMI/COM exceptions don't share a Python base; section is best-effort.
+        print(f"  WinUSB enumeration failed: {e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -700,7 +709,9 @@ def check_udev() -> UdevResult:
                 missing_vids=missing,
             )
         return UdevResult(ok=True, message='udev rules installed')
-    except Exception:
+    except (OSError, ImportError, AttributeError):
+        # Defensive: file exists but unreadable / detector import failed.
+        # Default to "installed" rather than alarm the user.
         return UdevResult(ok=True, message='udev rules installed')
 
 
@@ -713,7 +724,7 @@ def check_selinux() -> SelinuxResult:
         status = r.stdout.strip().lower()
     except FileNotFoundError:
         return SelinuxResult(ok=True, message='SELinux not installed')
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return SelinuxResult(ok=True, message='SELinux status unknown')
 
     if status != 'enforcing':
@@ -1372,12 +1383,13 @@ class DebugReport:
             info = Settings.get_install_info()
             if info and info.get('method'):
                 return info['method']
-        except Exception:
+        except (OSError, KeyError, AttributeError, ImportError):
+            # Settings or config.json unavailable — fall through to detect.
             pass
         try:
             from trcc.core.platform import detect_install_method
             return detect_install_method()
-        except Exception:
+        except (ImportError, OSError, AttributeError):
             return "unknown"
 
     def _lsusb(self) -> None:
@@ -1496,8 +1508,9 @@ class DebugReport:
                     status = "OK" if readable else "NO ACCESS"
                     sec.lines.append(f"  {path}: mode={mode}  {status}")
                     sg_found = True
-                except Exception:
-                    pass
+                except OSError as e:
+                    sec.lines.append(f"  {path}: stat failed ({e})")
+                    sg_found = True
         if not sg_found:
             sec.lines.append("  /dev/sg*: (none found)")
 
