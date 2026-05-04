@@ -275,9 +275,9 @@ class TestGetMemoryInfo:
         """All slots empty → psutil fallback provides basic total."""
         mock_run.return_value = _make_run_result(DMIDECODE_ALL_EMPTY)
         mem_mock = SimpleNamespace(total=34359738368)  # 32 GB
-        with patch.dict('sys.modules', {'psutil': MagicMock()}):
-            import sys as _sys
-            _sys.modules['psutil'].virtual_memory.return_value = mem_mock
+        psutil_mock = MagicMock()
+        psutil_mock.virtual_memory.return_value = mem_mock
+        with patch('trcc.adapters.system.linux_platform.psutil', psutil_mock):
             slots = get_memory_info()
         assert len(slots) == 1
         assert slots[0]['size'] == '32.0 GB'
@@ -290,8 +290,9 @@ class TestGetMemoryInfo:
         """Non-zero returncode from dmidecode triggers psutil fallback."""
         mock_run.return_value = _make_run_result(stdout='', returncode=1)
         mem_mock = SimpleNamespace(total=17179869184)  # 16 GB
-        with patch.dict('sys.modules', {'psutil': MagicMock()}):
-            sys.modules['psutil'].virtual_memory.return_value = mem_mock
+        psutil_mock = MagicMock()
+        psutil_mock.virtual_memory.return_value = mem_mock
+        with patch('trcc.adapters.system.linux_platform.psutil', psutil_mock):
             slots = get_memory_info()
         assert len(slots) == 1
         assert slots[0]['size'] == '16.0 GB'
@@ -320,18 +321,14 @@ class TestGetMemoryInfo:
     @patch('trcc.adapters.system.linux_platform._privileged_cmd',
            return_value=['dmidecode', '-t', 'memory'])
     def test_both_dmidecode_and_psutil_fail(self, mock_cmd: MagicMock, mock_run: MagicMock) -> None:
-        """Both dmidecode exception and psutil ImportError → empty list."""
+        """Both dmidecode exception and psutil failure → empty list."""
         mock_run.side_effect = OSError('permission denied')
 
-        # Make psutil import raise ImportError inside the function
-        real_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
-
-        def fail_psutil(name: str, *args, **kwargs):  # type: ignore[no-untyped-def]
-            if name == 'psutil':
-                raise ImportError('no psutil')
-            return real_import(name, *args, **kwargs)
-
-        with patch('builtins.__import__', side_effect=fail_psutil):
+        # Phase 9: psutil is module-level imported in linux_platform; patch its
+        # virtual_memory to raise the same exception type as PSUTIL_EXC catches.
+        psutil_mock = MagicMock()
+        psutil_mock.virtual_memory.side_effect = OSError('no psutil')
+        with patch('trcc.adapters.system.linux_platform.psutil', psutil_mock):
             slots = get_memory_info()
         assert slots == []
 
@@ -382,8 +379,9 @@ Memory Device
         """Empty dmidecode stdout (no Memory Device sections) → psutil fallback."""
         mock_run.return_value = _make_run_result('')
         mem_mock = SimpleNamespace(total=8589934592)  # 8 GB
-        with patch.dict('sys.modules', {'psutil': MagicMock()}):
-            sys.modules['psutil'].virtual_memory.return_value = mem_mock
+        psutil_mock = MagicMock()
+        psutil_mock.virtual_memory.return_value = mem_mock
+        with patch('trcc.adapters.system.linux_platform.psutil', psutil_mock):
             slots = get_memory_info()
         assert len(slots) == 1
         assert slots[0]['size'] == '8.0 GB'

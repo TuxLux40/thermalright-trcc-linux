@@ -266,7 +266,7 @@ class TestNvidiaLinuxPoll:
         e = SensorEnumerator()
         e._nvidia_handles = {0: 'h'}
         readings: dict[str, float] = {}
-        e._poll_nvidia_linux(readings)
+        e._poll_nvidia(readings)
 
         assert readings['nvidia:0:temp'] == 65.0
         assert readings['nvidia:0:gpu_util'] == 80.0
@@ -283,17 +283,17 @@ class TestNvidiaLinuxPoll:
         mock_nvml.NVML_TEMPERATURE_GPU = 0
         mock_nvml.NVML_CLOCK_GRAPHICS = 0
         mock_nvml.NVML_CLOCK_MEM = 1
-        mock_nvml.nvmlDeviceGetTemperature.side_effect = RuntimeError
+        mock_nvml.nvmlDeviceGetTemperature.side_effect = OSError
         mock_nvml.nvmlDeviceGetUtilizationRates.return_value = MagicMock(gpu=50, memory=20)
-        mock_nvml.nvmlDeviceGetClockInfo.side_effect = RuntimeError
-        mock_nvml.nvmlDeviceGetPowerUsage.side_effect = RuntimeError
-        mock_nvml.nvmlDeviceGetMemoryInfo.side_effect = RuntimeError
+        mock_nvml.nvmlDeviceGetClockInfo.side_effect = OSError
+        mock_nvml.nvmlDeviceGetPowerUsage.side_effect = OSError
+        mock_nvml.nvmlDeviceGetMemoryInfo.side_effect = OSError
         mock_nvml.nvmlDeviceGetFanSpeed.return_value = 45
 
         e = SensorEnumerator()
         e._nvidia_handles = {0: 'h'}
         readings: dict[str, float] = {}
-        e._poll_nvidia_linux(readings)
+        e._poll_nvidia(readings)
 
         assert 'nvidia:0:temp' not in readings
         assert readings['nvidia:0:gpu_util'] == 50.0
@@ -303,7 +303,7 @@ class TestNvidiaLinuxPoll:
     def test_noop_without_nvml(self, _mock_ensure):
         e = SensorEnumerator()
         readings: dict[str, float] = {}
-        e._poll_nvidia_linux(readings)
+        e._poll_nvidia(readings)
         assert readings == {}
 
 
@@ -323,7 +323,7 @@ class TestPsutilLinux:
 
         e = SensorEnumerator()
         r: dict[str, float] = {}
-        e._poll_psutil_linux(r)
+        e._poll_psutil(r)
         assert r['psutil:cpu_freq'] == 3200.0
 
     @patch(f'{MODULE}.psutil')
@@ -336,7 +336,7 @@ class TestPsutilLinux:
 
         e = SensorEnumerator()
         r: dict[str, float] = {}
-        e._poll_psutil_linux(r)
+        e._poll_psutil(r)
         assert 'psutil:cpu_freq' not in r
 
 

@@ -145,9 +145,7 @@ class TestDetect:
 
     @patch('usb.core.find')
     def test_detect_finds_known_device(self, mock_find, mock_usb_device):
-        mock_find.side_effect = lambda idVendor, idProduct: (
-            mock_usb_device if (idVendor, idProduct) == (0x87CD, 0x70DB) else None
-        )
+        mock_find.side_effect = lambda idVendor, idProduct, find_all=False: ([mock_usb_device] if (idVendor, idProduct) == (0x87CD, 0x70DB) else [])
         detect_fn = DeviceDetector.make_detect_fn(scsi_resolver=None)
         devices = detect_fn()
         found = [d for d in devices if d.vid == 0x87CD and d.pid == 0x70DB]
@@ -157,9 +155,7 @@ class TestDetect:
     @patch('usb.core.find')
     def test_detect_calls_scsi_resolver_for_scsi_devices(self, mock_find, mock_usb_device):
         resolver = MagicMock(return_value='/dev/sg0')
-        mock_find.side_effect = lambda idVendor, idProduct: (
-            mock_usb_device if (idVendor, idProduct) == (0x0402, 0x3922) else None
-        )
+        mock_find.side_effect = lambda idVendor, idProduct, find_all=False: ([mock_usb_device] if (idVendor, idProduct) == (0x0402, 0x3922) else [])
         detect_fn = DeviceDetector.make_detect_fn(scsi_resolver=resolver)
         devices = detect_fn()
         found = [d for d in devices if d.vid == 0x0402]
@@ -176,9 +172,7 @@ class TestDetect:
     def test_detect_skips_scsi_resolver_for_bulk(self, mock_find, mock_usb_device):
         """SCSI resolver must NOT be called for bulk devices (87AD:70DB)."""
         resolver = MagicMock(return_value='/dev/sg0')
-        mock_find.side_effect = lambda idVendor, idProduct: (
-            mock_usb_device if (idVendor, idProduct) == (0x87AD, 0x70DB) else None
-        )
+        mock_find.side_effect = lambda idVendor, idProduct, find_all=False: ([mock_usb_device] if (idVendor, idProduct) == (0x87AD, 0x70DB) else [])
         detect_fn = DeviceDetector.make_detect_fn(scsi_resolver=resolver)
         devices = detect_fn()
         found = [d for d in devices if d.vid == 0x87AD]
@@ -190,9 +184,7 @@ class TestDetect:
     def test_detect_usb_path_format(self, mock_find, mock_usb_device):
         mock_usb_device.bus = 2
         mock_usb_device.address = 5
-        mock_find.side_effect = lambda idVendor, idProduct: (
-            mock_usb_device if (idVendor, idProduct) == (0x87CD, 0x70DB) else None
-        )
+        mock_find.side_effect = lambda idVendor, idProduct, find_all=False: ([mock_usb_device] if (idVendor, idProduct) == (0x87CD, 0x70DB) else [])
         detect_fn = DeviceDetector.make_detect_fn(scsi_resolver=None)
         devices = detect_fn()
         found = [d for d in devices if d.vid == 0x87CD]

@@ -50,7 +50,7 @@ class TestRunDeviceBenchmarks:
         proto = MagicMock()
         proto.handshake.return_value = MagicMock()
         proto.send_image.return_value = True
-        proto.send_led_data.return_value = True
+        proto.send_data.return_value = True
         proto.close.return_value = None
         proto.handshake_info = None
         return proto
@@ -167,7 +167,7 @@ class TestRunDeviceBenchmarks:
 
         _run(mock_svc, mock_factory)
 
-        calls = proto.send_led_data.call_args_list
+        calls = proto.send_data.call_args_list
         assert any(len(c[0][0]) == 128 for c in calls)
 
     @pytest.mark.usefixtures("_renderer")
@@ -189,6 +189,7 @@ class TestRunDeviceBenchmarks:
         assert d["summary"]["device_count"] > 0
 
 
+@pytest.mark.skip(reason="Phase 9: _ipc_pause/_ipc_resume helpers removed from services.perf — daemon coordination moved to TrccProxy + manifold IPC.")
 class TestIPCPauseResume:
     """IPC pause/resume integration in run_device_benchmarks."""
 

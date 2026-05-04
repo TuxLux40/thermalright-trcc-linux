@@ -137,13 +137,13 @@ class TestCLIDetectPipeline(unittest.TestCase):
         dev = _make_device()
         with patch("trcc.conf.Settings.get_selected_device", return_value="/dev/sg0"):
             result = detect(show_all=True, detect_fn=lambda: [dev],
-                            platform_setup=self._mock_setup())
+                            os_platform=self._mock_setup())
         self.assertEqual(result, 0)
 
     def test_detect_no_devices(self):
         """detect() with no devices returns 1."""
         from trcc.ui.cli import detect
-        result = detect(detect_fn=lambda: [], platform_setup=self._mock_setup())
+        result = detect(detect_fn=lambda: [], os_platform=self._mock_setup())
         self.assertEqual(result, 1)
 
     def test_detect_multiple_devices(self):
@@ -157,7 +157,7 @@ class TestCLIDetectPipeline(unittest.TestCase):
         ]
         with patch("trcc.conf.Settings.get_selected_device", return_value="/dev/sg0"):
             result = detect(show_all=True, detect_fn=lambda: devs,
-                            platform_setup=self._mock_setup())
+                            os_platform=self._mock_setup())
         self.assertEqual(result, 0)
 
 
@@ -174,9 +174,9 @@ class TestDeviceDetectorRoundTrip(unittest.TestCase):
 
         mock_usb_dev = MagicMock()
         mock_find.side_effect = lambda **kw: (
-            mock_usb_dev
+            [mock_usb_dev]
             if (kw.get('idVendor') == 0x87CD and kw.get('idProduct') == 0x70DB)
-            else None
+            else []
         )
         mock_scsi_resolver.return_value = "/dev/sg0"
 

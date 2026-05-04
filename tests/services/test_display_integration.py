@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from conftest import get_pixel
 
-from trcc.core.device import Device
+from trcc.core.device.lcd import LCDDevice as Device
 from trcc.core.models import ThemeInfo, ThemeType
 from trcc.services.display import DisplayService
 from trcc.services.image import ImageService
@@ -875,16 +875,11 @@ class TestDisplayServiceContracts:
         r, g, b = get_pixel(result, 160, 160)[:3]
         assert r < 200
 
+    @pytest.mark.skip(reason="Phase 11 rotation refactor: rotation moved out of _apply_adjustments and into encode_for_device — single-source-of-truth fix for #137")
     def test_apply_adjustments_applies_rotation(
         self, display_svc: DisplayService, renderer: Any,
     ) -> None:
-        """_apply_adjustments applies rotation when non-zero."""
-        img = renderer.create_surface(320, 320, (10, 20, 30))
-        display_svc.brightness = 100
-        display_svc.rotation = 180
-        display_svc.split_mode = 0
-        result = display_svc._apply_adjustments(img)
-        assert result is not img
+        pass
 
     def test_set_video_fit_mode_updates_current_image_on_success(
         self, display_svc: DisplayService, renderer: Any,
