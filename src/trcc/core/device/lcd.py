@@ -50,6 +50,7 @@ class LCDDevice:
         theme_info_from_dir_fn: Any = None,
         lcd_config: Any = None,
         build_services_fn: Any = None,
+        events: Any = None,
     ) -> None:
         self._device_svc = device_svc
         self._display_svc = display_svc
@@ -60,6 +61,7 @@ class LCDDevice:
         self._theme_info_from_dir_fn = theme_info_from_dir_fn
         self._lcd_config = lcd_config
         self._build_services_fn = build_services_fn
+        self._events = events  # EventBus, injected by ControllerBuilder
         self._info: Any = None  # DeviceInfo, set during connect()
         self.log: logging.Logger = log
         self.orientation = Orientation(0, 0)
@@ -224,6 +226,37 @@ class LCDDevice:
         if image:
             self.send(image)
         return new_frame
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Observer / SSoT — frame publication chokepoint
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _publish_frame(self, image: Any) -> None:
+        """Publish ``Topic.FRAME`` for the current preview surface.
+
+        The Observer pattern's chokepoint: every state change on this
+        LCDDevice (rotation, brightness, split mode, theme select, …) ends
+        with a single call here, so any subscriber (GUI preview, API
+        WebSocket, IPC) sees the rendered output without recomputing it.
+
+        ``image`` is the post-render preview surface (Qt QImage today —
+        framework-neutral once the renderer port matures).  When the caller
+        also mutates device state, the surface here is what the device
+        will display on its next physical refresh; consumers can rely on
+        observed-pixels = device-pixels.
+
+        No-op if events were not injected (CLI / standalone Trcc that
+        skips the bus).
+        """
+        if not self._events or image is None:
+            return
+        path = self.device_path or '?'
+        try:
+            # Topic.FRAME contract is (device_path, preview_image) —
+            # GUI handler subscribes with that exact arity.
+            self._events.publish('frame', path, image)
+        except Exception:
+            self.log.exception("publish FRAME for %s raised", path)
 
 
     # ══════════════════════════════════════════════════════════════════════
@@ -391,6 +424,7 @@ class LCDDevice:
                     "error": f"Brightness must be 0–100, got {percent}"}
         image = self._display_svc.set_brightness(percent)
         self._persist('brightness_level', percent)
+        self._publish_frame(image)
         return {"success": True, "image": image,
                 "message": f"Brightness set to {percent}%"}
 
@@ -433,6 +467,7 @@ class LCDDevice:
                 self.log.debug("set_rotation: skipping mask reload — "
                           "theme built-in mask %s", saved_mask_dir)
 
+        self._publish_frame(image)
         return {"success": True, "image": image,
                 "message": f"Rotation set to {degrees}°"}
 
@@ -508,6 +543,7 @@ class LCDDevice:
                     "error": "Split mode must be 0, 1, 2, or 3"}
         image = self._display_svc.set_split_mode(mode)
         self._persist('split_mode', mode)
+        self._publish_frame(image)
         return {"success": True, "image": image,
                 "message": f"Split mode: {'off' if mode == 0 else f'style {mode}'}"}
 

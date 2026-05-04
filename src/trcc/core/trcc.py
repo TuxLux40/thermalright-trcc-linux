@@ -231,7 +231,7 @@ class Trcc:
         from .device.led import LEDDevice
         from .models import PROTOCOL_TRAITS
 
-        builder = ControllerBuilder(self._platform)
+        builder = ControllerBuilder(self._platform, events=self.events)
         if self._renderer is not None:
             builder = builder.with_renderer(self._renderer)
 
@@ -323,7 +323,7 @@ class Trcc:
         from .device.led import LEDDevice
         from .models import PROTOCOL_TRAITS
 
-        builder = ControllerBuilder(self._platform)
+        builder = ControllerBuilder(self._platform, events=self.events)
         if self._renderer is not None:
             builder = builder.with_renderer(self._renderer)
 

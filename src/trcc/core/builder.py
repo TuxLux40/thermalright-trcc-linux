@@ -36,10 +36,16 @@ class ControllerBuilder:
         system  = builder.build_system()
     """
 
-    def __init__(self, platform: Platform) -> None:
+    def __init__(self, platform: Platform, events: Any = None) -> None:
         self._os = platform
         self._renderer: Renderer | None = None
         self._data_dir: Path | None = None
+        # EventBus is injected when the builder is constructed by Trcc — it
+        # gets threaded into LCDDevice / LEDDevice so device-level state
+        # changes can publish Topic.FRAME directly (Observer SSoT).  Free-
+        # standing builder uses (CLI / tests / dev/mock_gui without a Trcc)
+        # leave it None and the device skips publish silently.
+        self._events = events
 
     # ── Factory entry point (overrideable) ─────────────────────────
 
@@ -170,6 +176,7 @@ class ControllerBuilder:
             theme_info_from_dir_fn=theme_info_from_directory,
             lcd_config=lcd_config,
             build_services_fn=build_fn,
+            events=self._events,
         )
         if self._data_dir:
             device.initialize(self._data_dir)
