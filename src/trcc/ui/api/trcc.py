@@ -51,7 +51,12 @@ def status() -> dict:
         return {"running": False}
     response = send_manifold_request("_meta", "status", (), {}, timeout=2.0)
     if not response.get("success"):
-        return {"running": False, "error": response.get("error")}
+        # Don't leak the IPC error verbatim — it can include exception
+        # types and serialized arguments from the daemon-side dispatch
+        # (`f"{type(e).__name__}: {e}"`).  Log it; return a generic
+        # signal to the HTTP client.  CodeQL py/stack-trace-exposure.
+        log.warning("daemon status query failed: %s", response.get("error"))
+        return {"running": False, "error": "daemon status unavailable"}
     return {
         "running": True,
         "pid": response.get("pid"),

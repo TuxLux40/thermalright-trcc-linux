@@ -57,6 +57,18 @@ def load_theme(key: str, body: ThemeRequest,
     path = Path(body.path).expanduser().resolve()
     if not path.exists() or not path.is_dir():
         raise HTTPException(400, f"Theme path not a directory: {path}")
+    # Confine theme paths to the platform's user content dir to prevent
+    # path-traversal: a malicious client could otherwise send any
+    # filesystem path the API server can read (CodeQL py/path-injection).
+    platform = request.app.state.trcc.platform
+    allowed_root = platform.user_content_dir().resolve()
+    try:
+        path.relative_to(allowed_root)
+    except ValueError:
+        raise HTTPException(
+            400,
+            f"Theme path must be under {allowed_root}",
+        ) from None
     result = request.app.state.trcc.dispatch(
         LoadTheme(key=key, path=path),
     )
