@@ -50,9 +50,13 @@ class DeviceService:
         self._send_lock = threading.Lock()
         self._send_busy = False
         self.on_frame_sent: Any = None  # callback(image) — called after every send
-        # Encoded frame cache — skip re-encoding when same image is sent repeatedly
-        # (C#-matching 150ms refresh sends the same frame ~6x before metrics change)
-        self._last_encode_id: int | None = None
+        # Encoded frame cache — skip re-encoding when same image+angle is
+        # sent repeatedly (C# 150ms refresh sends the same frame ~6x).
+        # Key includes encode_angle so a rotation change invalidates
+        # without an explicit clear; previously keyed on id(image) alone,
+        # which returned stale-rotation bytes when the same source surface
+        # was sent at a new angle (e.g. user rotates while video paused).
+        self._last_encode_key: tuple[int, int] | None = None
         self._last_encode_data: bytes | None = None
 
         # Persistent send worker — avoids 30 thread creations/sec during video
@@ -181,14 +185,14 @@ class DeviceService:
                 fbl = getattr(result, 'fbl', None) or getattr(result, 'model_id', None)
                 if fbl:
                     dev.fbl_code = fbl
-                pm = getattr(result, 'pm_byte', 0)
-                sub = getattr(result, 'sub_byte', 0)
-                if pm:
-                    dev.pm_byte = pm
-                if sub:
-                    dev.sub_byte = sub
+                # Always copy pm/sub — 0 is a legitimate value (e.g.
+                # PM=0 SUB=0 is in the button image table at line 273).
+                # Previously guarded with `if pm:` which silently dropped
+                # PM=0 devices into the default code path.
+                dev.pm_byte = getattr(result, 'pm_byte', 0)
+                dev.sub_byte = getattr(result, 'sub_byte', 0)
                 log.debug("discover_resolution: %s fbl=%s pm=%d sub=%d",
-                          dev.path, fbl, pm, sub)
+                          dev.path, fbl, dev.pm_byte, dev.sub_byte)
                 # Resolve button image now that PM/SUB are known
                 if (effective_pm := dev.pm_byte or dev.fbl_code):
                     btn_img = get_button_image(effective_pm, dev.sub_byte)
@@ -239,8 +243,8 @@ class DeviceService:
         re-sends the same overlay frame ~6x per second between metric
         changes.  Cache hit skips the entire encode pipeline.
         """
-        img_id = id(image)
-        if img_id == self._last_encode_id and self._last_encode_data is not None:
+        cache_key = (id(image), encode_angle)
+        if cache_key == self._last_encode_key and self._last_encode_data is not None:
             data = self._last_encode_data
         else:
             from .image import ImageService
@@ -252,7 +256,7 @@ class DeviceService:
             _device_surface, data = ImageService.encode_for_device(
                 image, protocol, resolution, fbl, use_jpeg,
                 encode_angle=encode_angle)
-            self._last_encode_id = img_id
+            self._last_encode_key = cache_key
             self._last_encode_data = data
         ok = self.send_rgb565(data, width, height)
         if ok and self.on_frame_sent:
@@ -278,8 +282,8 @@ class DeviceService:
         The send queue (maxlen=1) handles latest-frame-wins semantics —
         no need to guard with is_busy here.
         """
-        img_id = id(image)
-        if img_id == self._last_encode_id and self._last_encode_data is not None:
+        cache_key = (id(image), encode_angle)
+        if cache_key == self._last_encode_key and self._last_encode_data is not None:
             data = self._last_encode_data
         else:
             from .image import ImageService
@@ -291,7 +295,7 @@ class DeviceService:
             _device_surface, data = ImageService.encode_for_device(
                 image, protocol, resolution, fbl, use_jpeg,
                 encode_angle=encode_angle)
-            self._last_encode_id = img_id
+            self._last_encode_key = cache_key
             self._last_encode_data = data
 
         self.send_rgb565_async(data, width, height)

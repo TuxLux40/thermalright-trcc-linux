@@ -86,6 +86,24 @@ class Orientation:
             return 0
         return self.rotation
 
+    def image_rotation_for(self, overlay_w: int, overlay_h: int) -> int:
+        """Pixel rotation taking overlay aspect into account.
+
+        Same as :attr:`image_rotation`, plus a second portrait signal:
+        when the overlay (mask + text composite) is itself in portrait
+        dimensions, the canvas already represents the rotated frame so
+        no further pixel rotation is needed at this layer.
+
+        Single source of truth for "do I need to pixel-rotate?" — both
+        Orientation and DisplayService consult this method instead of
+        re-implementing the predicate at each site.
+        """
+        if not self.is_rotated():
+            return self.rotation
+        if self.has_portrait_themes or overlay_h > overlay_w:
+            return 0
+        return self.rotation
+
     # ── Content directory properties ───────────────────────────────
     # All derived from roots + resolution. Rotation swaps w,h in the name.
 

@@ -135,12 +135,14 @@ class DisplayService:
 
     @property
     def _image_rotation(self) -> int:
-        """Pixel rotation angle. 0 when content is already portrait."""
-        o = self._orientation
-        w, h = o.native
-        if w != h and o.rotation in (90, 270) and self.overlay.height > self.overlay.width:
-            return 0
-        return self._orientation.image_rotation
+        """Pixel rotation angle. 0 when content is already portrait.
+
+        Delegates to ``Orientation.image_rotation_for`` — single SSoT
+        for the rotation predicate; see that method for the rules.
+        """
+        return self._orientation.image_rotation_for(
+            self.overlay.width, self.overlay.height,
+        )
 
     def _encode_angle(self) -> int:
         """Device encode rotation angle (C# RotateImg in ImageToJpg)."""

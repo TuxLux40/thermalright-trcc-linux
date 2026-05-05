@@ -291,7 +291,7 @@ class TestSend:
 
         img = MagicMock()
         cached_data = b'\x00' * 50
-        svc._last_encode_id = id(img)
+        svc._last_encode_key = (id(img), 0)
         svc._last_encode_data = cached_data
 
         svc.send_frame(img, w, h)
@@ -310,7 +310,7 @@ class TestSend:
         svc.on_frame_sent = callback
 
         img = MagicMock()
-        svc._last_encode_id = id(img)
+        svc._last_encode_key = (id(img), 0)
         svc._last_encode_data = b'\x00'
         svc.send_frame(img, w, h)
         callback.assert_called_once_with(img)
