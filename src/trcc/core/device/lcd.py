@@ -16,7 +16,7 @@ from typing import Any
 from .._logging import tagged_logger
 from ..models import DEFAULT_BRIGHTNESS_LEVEL, ThemeInfo, ThemeType
 from ..orientation import Orientation
-from ..paths import masks_dir_name, resolve_theme_dir, theme_dir_name, web_dir_name
+from ..paths import resolve_theme_dir
 
 log = logging.getLogger(__name__)
 
@@ -383,19 +383,28 @@ class LCDDevice:
         self.log.debug("_persist: %s = %r", field, value)
 
     def _persist_dirs(self) -> None:
-        """Write device's native-resolution dirs to config."""
+        """Write the active per-orientation dirs to config.
+
+        Reads ``theme_dir`` / ``web_dir`` / ``masks_dir`` from
+        ``Orientation`` so non-square devices started rotated persist the
+        portrait-variant paths the runtime is actually using.  Previously
+        this rebuilt names from ``o.native`` ignoring rotation, so a
+        1280x480 device started at rotation=90 wrote landscape paths into
+        config while the running app served portrait dirs — restart-from-
+        config then loaded the wrong content.
+        """
         o = self.orientation
         if not isinstance(o, Orientation) or not o.data_root:
             return
-        w, h = o.native
-        if not w or not h:
+        if not all(o.native):
             return
-        td = o.data_root / theme_dir_name(w, h)
-        self._persist('theme_dir', str(td) if td.exists() else None)
-        web = o.data_root / 'web' / web_dir_name(w, h)
-        self._persist('web_dir', str(web) if web.exists() else None)
-        masks = o.data_root / 'web' / masks_dir_name(w, h)
-        self._persist('masks_dir', str(masks) if masks.exists() else None)
+        td = o.theme_dir
+        self._persist('theme_dir',
+                      str(td.path) if td and td.path.exists() else None)
+        web = o.web_dir
+        self._persist('web_dir', str(web) if web else None)
+        masks = o.masks_dir
+        self._persist('masks_dir', str(masks) if masks else None)
 
     def refresh_dirs(self) -> None:
         """Re-probe filesystem dirs and update config."""
