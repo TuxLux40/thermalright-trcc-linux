@@ -19,8 +19,13 @@ class TestGetUsbList:
         assert len(lines) == 2
         assert 'THERMALRIGHT' in lines[1]
 
-    @patch(f'{MODULE}.subprocess')
-    def test_returns_empty_on_failure(self, mock_sub):
-        mock_sub.run.side_effect = RuntimeError("no usbconfig")
+    @patch(f'{MODULE}.subprocess.run')
+    def test_returns_empty_on_failure(self, mock_run):
+        # Patch subprocess.run only — replacing the whole subprocess module
+        # would turn subprocess.SubprocessError in the except clause into a
+        # MagicMock and the except would TypeError.  Production catches
+        # (OSError, SubprocessError); FileNotFoundError is the realistic
+        # "usbconfig not installed" mode.
+        mock_run.side_effect = FileNotFoundError("no usbconfig")
         from trcc.adapters.device.bsd.detector import get_usb_list
         assert get_usb_list() == []

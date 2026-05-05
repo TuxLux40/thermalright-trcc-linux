@@ -390,7 +390,9 @@ class TestReadAll:
 
             def _run(cmd, **kwargs):
                 if 'powermetrics' in cmd:
-                    raise RuntimeError("no root")
+                    # Production catches SUBPROCESS_EXC. PermissionError
+                    # (an OSError) is the realistic "not running as root" mode.
+                    raise PermissionError("no root")
                 return MagicMock(stdout='')
             sub.run.side_effect = _run
             from trcc.adapters.system.macos.sensors import MacOSSensorEnumerator

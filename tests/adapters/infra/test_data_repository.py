@@ -789,9 +789,13 @@ class TestExtract7zCLI(unittest.TestCase):
             result = DataManager.extract_7z('/fake/archive.7z', d)
             self.assertFalse(result)
 
-    @patch('trcc.adapters.infra.data_repository.subprocess.run', side_effect=RuntimeError("fail"))
+    @patch('trcc.adapters.infra.data_repository.subprocess.run', side_effect=OSError("fail"))
     def test_7z_cli_exception(self, _):
-        """7z CLI raises unexpected exception -> returns False."""
+        """7z CLI raises OSError/SubprocessError -> returns False.
+
+        Production catches (OSError, SubprocessError); bare RuntimeError is
+        intentionally not caught and would surface to the caller.
+        """
         with tempfile.TemporaryDirectory() as d:
             result = DataManager.extract_7z('/fake/archive.7z', d)
             self.assertFalse(result)

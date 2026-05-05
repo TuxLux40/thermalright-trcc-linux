@@ -24,7 +24,9 @@ class TestSysctl:
 
     @patch(f'{MODULE}.subprocess')
     def test_returns_empty_on_exception(self, mock_sub):
-        mock_sub.run.side_effect = RuntimeError("timeout")
+        # Production catches SUBPROCESS_EXC (OSError + SubprocessError + value/key/index).
+        # OSError = FileNotFoundError / PermissionError — realistic sysctl failures.
+        mock_sub.run.side_effect = OSError("not found")
         from trcc.adapters.system.bsd_platform import _sysctl
         assert _sysctl('hw.physmem') == ''
 

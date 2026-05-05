@@ -36,7 +36,9 @@ class TestMacOSScsiTransport:
             m_close.assert_called_once()
 
     def test_cbw_constants(self):
-        from trcc.adapters.device.macos.scsi import CBW_SIGNATURE, CBW_SIZE, CSW_SIZE
+        # CBW/CSW constants live in the shared USB BOT module (also used by
+        # FreeBSD/OpenBSD); the macOS module just subclasses UsbBotScsiTransport.
+        from trcc.adapters.device._usb_bot_scsi import CBW_SIGNATURE, CBW_SIZE, CSW_SIZE
         assert CBW_SIGNATURE == 0x43425355
         assert CBW_SIZE == 31
         assert CSW_SIZE == 13

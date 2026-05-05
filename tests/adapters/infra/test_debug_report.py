@@ -351,14 +351,19 @@ class TestDevicePermissionsExtra:
 
     @patch("os.listdir", return_value=["sg0"])
     @patch("os.stat", side_effect=PermissionError)
-    def test_stat_failure_skipped(self, mock_stat, _):
-        """Stat failure on sg device is silently skipped."""
+    def test_stat_failure_reported(self, mock_stat, _):
+        """Stat failure on a sg device is reported, not silently skipped.
+
+        The device exists (it appeared in /dev) but cannot be stat'd — that
+        is a real diagnostic signal. Production reports `stat failed (...)`
+        and treats the device as "found" so the (none found) line is NOT
+        emitted.
+        """
         rpt = DebugReport()
         rpt._device_permissions()
         _, body = _section(rpt)
-        # sg0 failed stat, so it's not in output and we still show no sg
-        # Actually the code skips on any Exception, so sg_found stays False
-        assert "/dev/sg*: (none found)" in body
+        assert "/dev/sg0: stat failed" in body
+        assert "/dev/sg*: (none found)" not in body
 
     @patch("os.listdir", return_value=["sg0", "sg1"])
     @patch("os.stat")

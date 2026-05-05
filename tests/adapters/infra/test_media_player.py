@@ -179,8 +179,10 @@ class TestExtractFrames(unittest.TestCase):
                 '/fake/vid.mp4', outdir, (320, 320))
             self.assertEqual(result, 0)
 
-    @patch('subprocess.run', side_effect=Exception("ffmpeg crashed"))
+    @patch('subprocess.run', side_effect=OSError("ffmpeg crashed"))
     def test_ffmpeg_exception_returns_zero(self, _):
+        # Production catches (OSError, SubprocessError) — typical ffmpeg failure
+        # modes — and returns 0. Bare Exception is intentionally not caught.
         with tempfile.TemporaryDirectory() as outdir:
             result = VideoDecoder.extract_frames(
                 '/fake/vid.mp4', outdir, (320, 320))

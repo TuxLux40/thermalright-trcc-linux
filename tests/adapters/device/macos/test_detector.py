@@ -21,10 +21,12 @@ class TestMacOSDetector:
         mock_dev.bus = 1
         mock_dev.address = 5
 
-        def mock_find(idVendor=None, idProduct=None):
+        def mock_find(find_all=False, idVendor=None, idProduct=None):
+            # Production calls usb.core.find(find_all=True, idVendor=..., idProduct=...)
+            # — the iterable form returns matching devices, not None.
             if idVendor == vid and idProduct == pid:
-                return mock_dev
-            return None
+                return iter([mock_dev]) if find_all else mock_dev
+            return iter(()) if find_all else None
 
         with patch('usb.core.find', side_effect=mock_find):
             from trcc.adapters.device.macos.detector import MacOSDeviceDetector
@@ -75,8 +77,13 @@ class TestGetUsbTree:
         assert len(tree) == 1
         assert tree[0]['_name'] == 'USB 3.0 Bus'
 
-    @patch(f'{MODULE}.subprocess')
-    def test_returns_empty_on_failure(self, mock_sub):
-        mock_sub.run.side_effect = RuntimeError("no system_profiler")
+    @patch(f'{MODULE}.subprocess.run')
+    def test_returns_empty_on_failure(self, mock_run):
+        # Patch subprocess.run only — patching the whole `subprocess` module
+        # would replace `subprocess.SubprocessError` in the except clause with
+        # a MagicMock and the except would TypeError.  Production catches
+        # (OSError, SubprocessError, ValueError, KeyError); FileNotFoundError
+        # is the realistic "system_profiler not installed" mode.
+        mock_run.side_effect = FileNotFoundError("no system_profiler")
         from trcc.adapters.device.macos.detector import get_usb_tree
         assert get_usb_tree() == []

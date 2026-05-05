@@ -59,7 +59,9 @@ class TestDiscover:
 
     def test_sysctl_failure_degrades_gracefully(self, mock_io_no_nvidia):
         with patch(f'{MODULE}.subprocess') as sub:
-            sub.run.side_effect = RuntimeError("no sysctl")
+            # Production catches SUBPROCESS_EXC — realistic sysctl absence is
+            # FileNotFoundError, which is an OSError.
+            sub.run.side_effect = FileNotFoundError("no sysctl")
             from trcc.adapters.system.bsd_platform import SensorEnumerator
             e = SensorEnumerator()
             sensors = e.discover()
@@ -87,7 +89,9 @@ class TestReadAll:
 
     def test_sysctl_failure_returns_base_readings_only(self, mock_io_no_nvidia):
         with patch(f'{MODULE}.subprocess') as sub:
-            sub.run.side_effect = RuntimeError("sysctl died")
+            # Production catches SUBPROCESS_EXC. OSError covers permission /
+            # not-found / timeout-style failures; bare RuntimeError is not caught.
+            sub.run.side_effect = OSError("sysctl died")
             from trcc.adapters.system.bsd_platform import SensorEnumerator
             e = SensorEnumerator()
             e.discover()
