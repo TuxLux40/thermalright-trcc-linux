@@ -1,5 +1,23 @@
 # Changelog
 
+## v9.5.3
+
+### User-facing fixes
+- **Square-device rotation works live, no restart** (#137 satoru8 FW360 Ultra; closes the same bug class for every square panel — Frozen Warframe Pro 320×320, GrandVision 360 480×480, Mjolnir 480×480, FW360 Ultra 480×480). Three independent issues collided to mask each other: (1) `VideoFrameCache.encoding_params` cached `encode_angle` at build time so rotation changes never reached the device until restart; (2) `_apply_adjustments` and `encode_for_device` BOTH applied the user's rotation, so they cancelled — square devices silently ignored every rotation setting; (3) FW360 Ultra has a hardware-mounted 180° baseline that the FBL=72 profile didn't encode. Cache no longer stores encode_angle (read fresh per tick), encode is the sole rotator (matches C# `ImageToJpg`), and `DeviceProfile.encode_pm_bases` adds PM-keyed baselines (FBL=72 PM=6 → 180°). Now a rotation knob actually rotates.
+- **GUI no longer crashes on RAPL permission denied** (#139 Zombie-hive). `_discover_rapl` did `Path.exists()` on `/sys/class/powercap/intel-rapl:*/energy_uj`; on pipx installs without `trcc setup-rapl` run, the file isn't world-readable and `Path.exists()` raises `PermissionError`, aborting the whole GUI launch. Wrapped both the directory glob and per-domain `exists()` check in OSError guards. RAPL discovery silently skips when perms aren't there; `trcc setup-rapl` still fixes the perms permanently if you want the readings.
+- **Localized weekday abbreviations** (#141 ronny79privat). The LCD overlay's weekday label was hardcoded English; only Chinese had a parallel list. Added per-language tables for German (`MO`/`DI`/`MI`/`DO`/`FR`/`SA`/`SO`), French, Spanish, Portuguese, Russian, Japanese, and Korean — keyed by ISO 639-1 code, follows the existing TRCC language setting. Live update on language change, no restart.
+- **Non-square rotated devices write correct dirs to config** (audit). `LCDDevice._persist_dirs` rebuilt `theme_dir`/`web_dir`/`masks_dir` paths from `Orientation.native` ignoring rotation, while the running app served portrait-variant dirs through `Orientation.theme_dir`/`web_dir`/`masks_dir`. Restart-from-config loaded the wrong content for non-square users started rotated. Now reads from `Orientation` directly — single source of truth.
+- **PM=0 devices keep their handshake byte** (audit). `_discover_resolution` had `if pm: dev.pm_byte = pm` — silently dropped PM=0 (a legitimate value in the button-image table) into the default code path. Now copies unconditionally.
+
+### Architecture
+- **Encode cache key includes rotation angle** — `DeviceService._last_encode_id` (just `id(image)`) renamed `_last_encode_key` and gains the angle: `(id(image), encode_angle)`. Same source surface sent at a new angle now triggers a re-encode instead of returning stale-rotation bytes. Same shape as the cache-stale fix above; this closes the equivalent path in `send_frame` / `send_frame_async` for any caller that bypasses the device chokepoint.
+- **One source of truth for "is rotated"** — `Orientation.image_rotation_for(overlay_w, overlay_h)` is now the single predicate; `DisplayService._image_rotation` delegates to it instead of re-implementing with its own portrait-overlay check. Closes the drift surface that produced the rotation bug class.
+- **Topic.FRAME on every state change** — LCDDevice publishes `Topic.FRAME(device_path, image)` after `set_brightness`/`set_rotation`/`set_split_mode`, not just on the metrics tick. UIs (GUI preview, API WebSocket, IPC daemon clients) observe what the device sees without polling.
+
+### Maintainer-facing
+- **Test suite green again**: 17 stale fixture failures from the Phase 9 + 10A migration cleaned up (adapter exception types, MockProtocol method names, GUI handler observer-only contract, BSD/macOS platform skip markers, 0xDD parser positive-test rewrite). 5,646 passing, 0 failing on `main`.
+- Phase 11.6 broad-except narrowing previously landed (~150 sites narrowed from `except Exception` to documented per-API exception tuples). With the Phase 9+10A+11.6 stack now stable on `main`, the v10.0.0 major bump (Phase 9 deleted public symbols `TrccApp`, `find_active`, `InstanceKind`, `DeviceProxy` and friends) is the next milestone — gated on hardware donor confirmation across HID/Bulk/LY/LED protocols.
+
 ## v9.5.2
 
 PyPI re-release of v9.5.1 — original v9.5.1 hit PyPI's per-project 10 GB
