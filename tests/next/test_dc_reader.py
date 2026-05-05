@@ -61,10 +61,23 @@ def test_rejects_wrong_magic(tmp_path: Path) -> None:
         load_dc_as_theme_config(f)
 
 
-def test_rejects_dd_cloud_format(tmp_path: Path) -> None:
+def test_accepts_dd_cloud_format(tmp_path: Path) -> None:
+    """0xDD (cloud-theme) format is now supported — parser walks the
+    variable-length element list.  An all-zero payload yields a 0-element
+    theme with default trailer; only a malformed/short DD file raises.
+    """
     f = tmp_path / "cloud.dc"
     f.write_bytes(b"\xDD" + b"\x00" * 50)
-    with pytest.raises(ThemeError, match="Cloud-theme"):
+    cfg = load_dc_as_theme_config(f)
+    assert cfg["elements"] == []
+
+
+def test_rejects_dd_cloud_format_with_bogus_count(tmp_path: Path) -> None:
+    """0xDD with element_count > 100 is rejected as malformed."""
+    f = tmp_path / "cloud.dc"
+    # magic + system_info_flag(1) + count(int32 = 999)
+    f.write_bytes(b"\xDD" + b"\x01" + (999).to_bytes(4, "little") + b"\x00" * 200)
+    with pytest.raises(ThemeError, match="0xDD element count"):
         load_dc_as_theme_config(f)
 
 
