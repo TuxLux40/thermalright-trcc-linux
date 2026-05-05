@@ -796,15 +796,31 @@ class SensorEnumerator(SensorEnumeratorBase):
 
     def _discover_rapl(self) -> None:
         rapl_base = Path('/sys/class/powercap')
-        if not rapl_base.exists():
+        try:
+            if not rapl_base.exists():
+                return
+            rapl_dirs = sorted(rapl_base.glob('intel-rapl:*'))
+        except OSError as e:
+            # /sys/class/powercap exists but isn't traversable for this user
+            # (pipx / non-root install w/o `trcc setup-rapl` run yet).
+            # Skip RAPL silently — without the setup step the sensor
+            # values would be unreadable anyway.  Issue #139.
+            log.debug("RAPL discovery skipped: %s", e)
             return
 
-        for rapl_dir in sorted(rapl_base.glob('intel-rapl:*')):
+        for rapl_dir in rapl_dirs:
             if ':' in rapl_dir.name.split('intel-rapl:')[1]:
                 continue
             energy_path = rapl_dir / 'energy_uj'
             name_path = rapl_dir / 'name'
-            if not energy_path.exists():
+            try:
+                if not energy_path.exists():
+                    continue
+            except OSError as e:
+                # Same permission problem at the per-domain energy_uj
+                # level — `Path.exists()` calls os.stat which raises
+                # PermissionError when the file isn't readable.
+                log.debug("RAPL %s skipped: %s", rapl_dir.name, e)
                 continue
 
             domain_name = SysUtils.read_sysfs(str(name_path)) or rapl_dir.name
