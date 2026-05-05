@@ -1499,7 +1499,13 @@ class TestRebuildAllHandlersRestore:
 
     @patch('trcc.ui.gui.trcc_app.Settings')
     def test_restores_inactive_lcd_themes(self, mock_settings, bare_trcc_app):
-        """Inactive LCD devices get their saved theme sent to hardware on startup."""
+        """Inactive LCD devices get their saved theme sent to hardware on startup.
+
+        Restore is now driven by ``LCDHandler.restore_inactive_state()``, which
+        internally calls ``LCDDevice.restore_device_settings()`` +
+        ``restore_last_theme()`` on the per-device LCD.  trcc_app.py only
+        delegates to the handler — the fan-out lives in the handler.
+        """
         mock_settings.get_last_device.return_value = 0
 
         h0 = self._make_lcd_handler(device_index=0, device_key='k0')
@@ -1521,13 +1527,11 @@ class TestRebuildAllHandlersRestore:
         devices = [MagicMock(device_info=h0.device_info), MagicMock(device_info=h1.device_info)]
         app._rebuild_all_handlers(devices)
 
-        # h1 is inactive — core-layer restore must fire
-        h1.display.restore_device_settings.assert_called_once()
-        h1.display.restore_last_theme.assert_called_once()
+        # h1 is inactive — handler-layer restore_inactive_state must fire
+        h1.restore_inactive_state.assert_called_once()
 
-        # h0 is the active device — gets normal _activate_device flow, not core-layer restore
-        h0.display.restore_device_settings.assert_not_called()
-        h0.display.restore_last_theme.assert_not_called()
+        # h0 is the active device — _activate_device flow, not inactive restore
+        h0.restore_inactive_state.assert_not_called()
 
 
 class TestHandshakeDoneGuard:

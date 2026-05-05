@@ -780,19 +780,20 @@ class TestBackgroundScreencast:
 class TestThemeIO:
     """save_theme, export_config, import_config."""
 
-    @patch('trcc.ui.gui.lcd_handler.Settings')
-    def test_save_theme_success(self, mock_settings_cls, lcd_handler, mock_lcd_device, tmp_path):
-        # Set data_root so orientation.theme_dir returns a valid ThemeDir
+    def test_save_theme_success(self, lcd_handler, mock_lcd_device, tmp_path):
+        # Persistence (Settings.save_device_setting calls for theme_name /
+        # theme_type) moved from the handler to Trcc.lcd.save_theme — the
+        # legacy handler path used here just delegates to LCDDevice.save()
+        # and refreshes the theme browser.  See LcdCommands.save_theme in
+        # core/lcd_commands.py for the persistence side.
         mock_lcd_device.orientation.data_root = tmp_path
         mock_lcd_device.current_theme_path = Path('/themes/Custom_MyTheme')
         lcd_handler._device_key = 'dev0'
         lcd_handler.save_theme("MyTheme")
-        mock_lcd_device.save.assert_called()
+        mock_lcd_device.save.assert_called_with("MyTheme")
         lcd_handler._w['preview'].set_status.assert_called_with('Saved')
-        mock_settings_cls.save_device_setting.assert_any_call(
-            'dev0', 'theme_name', 'Custom_MyTheme')
-        mock_settings_cls.save_device_setting.assert_any_call(
-            'dev0', 'theme_type', 'local')
+        # Theme browser is refreshed on success
+        lcd_handler._w['theme_local'].load_themes.assert_called_once()
 
     def test_export_config(self, lcd_handler, mock_lcd_device):
         lcd_handler.export_config(Path('/out/theme.tr'))
@@ -832,6 +833,10 @@ class TestRender:
         """_render_and_send calls render_and_send and updates preview."""
         img = MagicMock()
         mock_lcd_device.render_and_send.return_value = {'success': True, 'image': img}
+        # Multi-LCD gate: only the *active* handler is allowed to write to the
+        # shared preview widget (PR #120).  Tests must flip the flag explicitly,
+        # production sets it via apply_device_config / reactivate.
+        lcd_handler._ui_active = True
         lcd_handler._render_and_send()
         mock_lcd_device.render_and_send.assert_called()
         lcd_handler._w['preview'].set_image.assert_called_with(img)

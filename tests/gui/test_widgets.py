@@ -468,7 +468,9 @@ class TestAutostart(unittest.TestCase):
     def test_get_trcc_exec_fallback(self, mock_which):
         result = LinuxAutostartManager.get_exec()
         self.assertIn('python', result)
-        self.assertIn('trcc.ui.cli', result)
+        # Fallback uses `python -m trcc.cli` (the CLI entrypoint module);
+        # the older `trcc.ui.cli` name no longer exists.
+        self.assertIn('trcc.cli', result)
         self.assertIn('PYTHONPATH=', result)
 
     # --- _desktop_entry ---
@@ -540,12 +542,16 @@ class TestAutostart(unittest.TestCase):
     @patch('trcc.conf.save_config')
     @patch('trcc.conf.load_config', return_value={'autostart_configured': True})
     def test_ensure_autostart_refreshes_stale_path(self, mock_load, mock_save, mock_file):
+        # Refresh-on-subsequent-launch goes through LinuxAutostartManager.refresh().
+        # The GUI wrapper ``uc_about.ensure_autostart`` only calls
+        # ``platform.autostart_enable()`` (first launch) or
+        # ``platform.autostart_enabled()`` (subsequent) — neither path goes
+        # through refresh().  Drive refresh() directly here.
         mock_file.exists.return_value = True
         mock_file.read_text.return_value = '[Desktop Entry]\nExec=/old/path\n'
         with patch.object(LinuxAutostartManager, '_desktop_entry',
                           return_value='[Desktop Entry]\nExec=/new/path\n'):
-            result = ensure_autostart(self._platform())
-        self.assertTrue(result)
+            self._manager().refresh()
         mock_file.write_text.assert_called_once_with('[Desktop Entry]\nExec=/new/path\n')
 
     @patch(f'{_AUTOSTART_MOD}._AUTOSTART_FILE')
