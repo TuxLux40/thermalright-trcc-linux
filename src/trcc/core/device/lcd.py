@@ -123,6 +123,11 @@ class LCDDevice:
             self.initialize(settings.user_data_dir)
         else:
             self.log.warning("initialize_pipeline: skipped — resolution is %s", res)
+        # Issue #141 — seed overlay language from saved settings so a
+        # fresh app shows weekday abbreviations in the right language
+        # without waiting for a runtime language-change event.
+        if self._display_svc.overlay is not None:
+            self._display_svc.overlay.set_lang(getattr(settings, 'lang', 'en'))
 
     def notify_data_ready(self) -> None:
         """Data extraction completed — refresh theme dirs."""

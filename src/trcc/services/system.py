@@ -295,10 +295,15 @@ class SystemService:
 
     @staticmethod
     def format_metric(metric: str, value: float, time_format: int = 0,
-                      date_format: int = 0, temp_unit: int = 0) -> str:
-        """Format a metric value for display. Delegates to core.models."""
+                      date_format: int = 0, temp_unit: int = 0,
+                      lang: str | None = None) -> str:
+        """Format a metric value for display. Delegates to core.models.
+
+        ``lang`` propagates through for weekday localization (issue #141).
+        """
         return _format_metric(metric, value, time_format=time_format,
-                              date_format=date_format, temp_unit=temp_unit)
+                              date_format=date_format, temp_unit=temp_unit,
+                              lang=lang)
 
     # ── Utilities ─────────────────────────────────────────────────────
 

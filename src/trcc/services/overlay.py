@@ -67,6 +67,10 @@ class OverlayService:
         self.time_format: int = 0
         self.date_format: int = 0
         self.temp_unit: int = 0
+        # Issue #141 — weekday abbreviations follow Settings.lang.
+        # Set via ``set_lang()`` from the language signal-chain; default
+        # English so the legacy unset path keeps working.
+        self.lang: str = 'en'
 
         # Dynamic font/coordinate scaling
         self._config_resolution: tuple[int, int] = (width, height)
@@ -381,6 +385,13 @@ class OverlayService:
         self.temp_unit = unit
         self._invalidate_cache()
 
+    # ── Language (weekday abbreviations) ──────────────────────────────
+
+    def set_lang(self, lang: str) -> None:
+        """Set ISO 639-1 language code for weekday abbreviations (#141)."""
+        self.lang = lang or 'en'
+        self._invalidate_cache()
+
     # ── Metrics ──────────────────────────────────────────────────────
 
     def update_metrics(self, metrics: HardwareMetrics) -> None:
@@ -413,8 +424,8 @@ class OverlayService:
         if log.isEnabledFor(logging.DEBUG) and self._cache_key is not None:
             _CACHE_KEY_NAMES = (
                 'config', 'theme_mask', 'mask_visible', 'mask_position',
-                'time_format', 'date_format', 'temp_unit', 'flash_skip',
-                'scale_factor', 'metrics_hash',
+                'time_format', 'date_format', 'temp_unit', 'lang',
+                'flash_skip', 'scale_factor', 'metrics_hash',
             )
             changed = [
                 name for name, old, new in zip(
@@ -434,6 +445,7 @@ class OverlayService:
             self.time_format,
             self.date_format,
             self.temp_unit,
+            self.lang,
             self.flash_skip_index,
             self._get_scale_factor(),
             self._metrics_hash(metrics),
@@ -471,7 +483,8 @@ class OverlayService:
                         time_fmt = cfg.get('time_format', self.time_format)
                         date_fmt = cfg.get('date_format', self.date_format)
                         vals.append(SystemService.format_metric(
-                            metric_name, val, time_fmt, date_fmt, self.temp_unit))
+                            metric_name, val, time_fmt, date_fmt,
+                            self.temp_unit, lang=self.lang))
                     else:
                         vals.append(None)
         # Time/date use datetime.now() in render — include in hash
@@ -636,7 +649,7 @@ class OverlayService:
                     date_fmt = cfg.get('date_format', self.date_format)
                     text = SystemService.format_metric(
                         metric_name, value,
-                        time_fmt, date_fmt, self.temp_unit)
+                        time_fmt, date_fmt, self.temp_unit, lang=self.lang)
                 else:
                     text = "N/A"
             else:
@@ -669,6 +682,7 @@ class OverlayService:
             self.time_format,
             self.date_format,
             self.temp_unit,
+            self.lang,
             self.flash_skip_index,
             self._get_scale_factor(),
             self._metrics_hash(metrics),

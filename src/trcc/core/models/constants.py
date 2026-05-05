@@ -53,12 +53,28 @@ DATE_FORMATS: dict[int, str] = {
     4: "%d/%m",       # 30/01
 }
 
-# Weekday names matching Windows TRCC (English)
-# Python weekday(): Monday=0, Sunday=6
-WEEKDAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+# Weekday abbreviations per language — datetime.weekday() returns
+# Monday=0, Sunday=6.  Keyed by ISO 639-1 code (matches `settings.lang`).
+# Add a new language by pasting its 7-element list under its ISO code;
+# format_metric() falls back to English when a language isn't here.
+# Issue #141 — German users were getting English "Tue" instead of "DI".
+WEEKDAYS_BY_LANG: dict[str, list[str]] = {
+    'en':    ["MON",   "TUE",   "WED",   "THU",   "FRI",   "SAT",   "SUN"],
+    'de':    ["MO",    "DI",    "MI",    "DO",    "FR",    "SA",    "SO"],
+    'fr':    ["LUN",   "MAR",   "MER",   "JEU",   "VEN",   "SAM",   "DIM"],
+    'es':    ["LUN",   "MAR",   "MIÉ",   "JUE",   "VIE",   "SÁB",   "DOM"],
+    'pt':    ["SEG",   "TER",   "QUA",   "QUI",   "SEX",   "SÁB",   "DOM"],
+    'ru':    ["ПН",    "ВТ",    "СР",    "ЧТ",    "ПТ",    "СБ",    "ВС"],
+    'ja':    ["月",    "火",    "水",    "木",    "金",    "土",    "日"],
+    'ko':    ["월",    "화",    "수",    "목",    "금",    "토",    "일"],
+    'zh':    ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"],
+    'zh_TW': ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"],
+}
 
-# Chinese weekday names (for Language == 1)
-WEEKDAYS_CN = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+# Backwards-compat aliases — modules elsewhere still import these names.
+# Both reference the same list objects as the per-lang dict.
+WEEKDAYS = WEEKDAYS_BY_LANG['en']
+WEEKDAYS_CN = WEEKDAYS_BY_LANG['zh']
 
 # Legacy C# suffix → ISO 639-1 code migration map
 # Used by conf.py to migrate old config.json "lang" values
@@ -105,6 +121,7 @@ __all__ = [
     'LOCALE_TO_LANG',
     'TIME_FORMATS',
     'WEEKDAYS',
+    'WEEKDAYS_BY_LANG',
     'WEEKDAYS_CN',
     'celsius_to_fahrenheit',
     'parse_hex_color',

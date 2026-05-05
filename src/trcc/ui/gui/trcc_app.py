@@ -1789,6 +1789,13 @@ class TRCCApp(QMainWindow):
         # Persist via Trcc — same code path as CLI `trcc language` and
         # API `PUT /app/language`. GUI side effects follow.
         self._trcc.control_center.set_language(lang)
+        # Issue #141 — push to every LCD's overlay so weekday
+        # abbreviations (`MON`/`TUE`/... → `MO`/`DI`/... for German)
+        # update immediately, no restart.
+        for lcd in self._trcc.lcd_devices:
+            disp = getattr(lcd, '_display_svc', None)
+            if disp is not None and disp.overlay is not None:
+                disp.overlay.set_lang(lang)
         self._apply_settings_backgrounds()
         self.uc_about.sync_language()
         self.uc_led_control.apply_localized_background()

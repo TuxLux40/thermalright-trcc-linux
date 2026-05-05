@@ -8,6 +8,7 @@ from .constants import (
     DATE_FORMATS,
     TIME_FORMATS,
     WEEKDAYS,
+    WEEKDAYS_BY_LANG,
     celsius_to_fahrenheit,
 )
 
@@ -245,9 +246,25 @@ SENSOR_TO_OVERLAY: dict[str, tuple[int, int]] = {
 # =============================================================================
 
 
+def _weekday_names(lang: str | None) -> list[str]:
+    """Return the per-language weekday list, falling back to English."""
+    if lang is None:
+        return WEEKDAYS
+    # Allow region-tagged codes (zh_TW, en_US, …) to fall back to base.
+    return (WEEKDAYS_BY_LANG.get(lang)
+            or WEEKDAYS_BY_LANG.get(lang.split('_', 1)[0])
+            or WEEKDAYS)
+
+
 def format_metric(metric: str, value: float, time_format: int = 0,
-                  date_format: int = 0, temp_unit: int = 0) -> str:
-    """Format a metric value for display (matches Windows TRCC)."""
+                  date_format: int = 0, temp_unit: int = 0,
+                  lang: str | None = None) -> str:
+    """Format a metric value for display (matches Windows TRCC).
+
+    ``lang`` is an optional ISO 639-1 code (e.g. 'de', 'fr', 'zh') used for
+    weekday abbreviations.  When None, callers fall through to English —
+    backwards-compatible with every pre-issue-#141 caller.
+    """
     if metric == 'date':
         now = datetime.now()
         fmt = DATE_FORMATS.get(date_format, DATE_FORMATS[0])
@@ -263,9 +280,9 @@ def format_metric(metric: str, value: float, time_format: int = 0,
         return result
     elif metric == 'weekday':
         now = datetime.now()
-        return WEEKDAYS[now.weekday()]
+        return _weekday_names(lang)[now.weekday()]
     elif metric == 'day_of_week':
-        return WEEKDAYS[int(value)]
+        return _weekday_names(lang)[int(value)]
     elif metric.startswith(('time_', 'date_')):
         return f"{int(value):02d}"
     elif 'temp' in metric:
