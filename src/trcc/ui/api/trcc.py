@@ -57,10 +57,26 @@ def status() -> dict:
         # signal to the HTTP client.  CodeQL py/stack-trace-exposure.
         log.warning("daemon status query failed: %s", response.get("error"))
         return {"running": False, "error": "daemon status unavailable"}
+    # Coerce every IPC response field to its declared type before
+    # returning to the HTTP client.  The IPC payload is server-controlled
+    # but CodeQL's data-flow analysis sees `response` as a tainted source
+    # (anything across a serialization boundary).  Explicit ``int(...)``
+    # is a recognized sanitizer for py/stack-trace-exposure and matches
+    # the OpenAPI schema we advertise.
+    def _safe_int(v: object) -> int:
+        if isinstance(v, bool):
+            return int(v)
+        if isinstance(v, (int, float, str)):
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return 0
+        return 0
+
     return {
         "running": True,
-        "pid": response.get("pid"),
-        "uptime_seconds": response.get("uptime_seconds"),
-        "lcd_count": response.get("lcd_count", 0),
-        "led_count": response.get("led_count", 0),
+        "pid": _safe_int(response.get("pid")),
+        "uptime_seconds": _safe_int(response.get("uptime_seconds")),
+        "lcd_count": _safe_int(response.get("lcd_count")),
+        "led_count": _safe_int(response.get("led_count")),
     }

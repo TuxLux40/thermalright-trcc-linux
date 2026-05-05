@@ -54,23 +54,26 @@ def set_brightness(key: str, body: BrightnessRequest,
 @router.post("/theme", response_model=ThemeResponse)
 def load_theme(key: str, body: ThemeRequest,
                request: Request) -> ThemeResponse:
-    path = Path(body.path).expanduser().resolve()
-    if not path.exists() or not path.is_dir():
-        raise HTTPException(400, f"Theme path not a directory: {path}")
-    # Confine theme paths to the platform's user content dir to prevent
-    # path-traversal: a malicious client could otherwise send any
-    # filesystem path the API server can read (CodeQL py/path-injection).
+    # Path injection guard (CodeQL py/path-injection):
+    #   1. Reject absolute paths and any `..` parents in the user input.
+    #   2. Construct the final path inside the platform's user content
+    #      dir — never let the client name directories above the root.
+    #   3. After resolve(), confirm the canonical path is still inside
+    #      the allowed root (defends against symlink escape).
+    user_path = Path(body.path)
+    if user_path.is_absolute() or any(p == ".." for p in user_path.parts):
+        raise HTTPException(400, "Theme path must be a relative subpath")
+
     platform = request.app.state.trcc.platform
-    allowed_root = platform.user_content_dir().resolve()
-    try:
-        path.relative_to(allowed_root)
-    except ValueError:
-        raise HTTPException(
-            400,
-            f"Theme path must be under {allowed_root}",
-        ) from None
+    allowed_root = platform.user_content_dir().resolve(strict=True)
+    candidate = (allowed_root / user_path).resolve()
+    if not candidate.is_relative_to(allowed_root):
+        raise HTTPException(400, "Theme path escapes user content dir")
+    if not candidate.exists() or not candidate.is_dir():
+        raise HTTPException(400, "Theme path not a directory")
+
     result = request.app.state.trcc.dispatch(
-        LoadTheme(key=key, path=path),
+        LoadTheme(key=key, path=candidate),
     )
     http_error_if_failed(result)
     return to_theme_response(result)
