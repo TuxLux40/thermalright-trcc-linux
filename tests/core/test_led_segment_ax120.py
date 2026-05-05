@@ -929,7 +929,7 @@ class TestLEDServiceSegmentMode:
         sent = []
 
         class MockProtocol:
-            def send_led_data(self, colors, is_on, global_on, brightness):
+            def send_data(self, colors, is_on, global_on, brightness):
                 sent.append((colors, is_on))
                 return True
 
@@ -951,7 +951,7 @@ class TestLEDServiceSegmentMode:
         sent = []
 
         class MockProtocol:
-            def send_led_data(self, colors, is_on, global_on, brightness):
+            def send_data(self, colors, is_on, global_on, brightness):
                 sent.append(colors)
                 return True
 
