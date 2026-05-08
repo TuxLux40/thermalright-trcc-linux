@@ -2,7 +2,7 @@
   description = "TRCC Linux — Thermalright LCD/LED Control Center";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -33,10 +33,11 @@
             python-multipart
             prompt-toolkit
             sounddevice
+            certifi
           ];
 
           optional-dependencies = {
-            nvidia = [ python.pkgs.pynvml ];
+            nvidia = [ python.pkgs.nvidia-ml-py ];
           };
 
           nativeBuildInputs = [ pkgs.makeWrapper ];
@@ -89,7 +90,7 @@
             (python.withPackages (ps: with ps; [
               pyside6 numpy psutil pyusb click typer fastapi uvicorn
               python-multipart prompt-toolkit sounddevice
-              pytest pytest-cov ruff
+              pytest pytest-cov pytest-xdist httpx nvidia-ml-py ruff
             ]))
             pkgs.portaudio
             pkgs.libusb1
