@@ -1,5 +1,14 @@
 # Changelog
 
+## v9.5.4
+
+### User-facing fixes
+- **LCD panel sleeps cleanly on shutdown / app close** (#143 k1w3l, Elite Vision 360 SCSI). After the app exited, the panel stayed lit showing "USB communication lost" until VBUS dropped — Windows TRCC sleeps the panel, Linux didn't. Audit of the C# v2.1.4 source confirmed Windows sends nothing at shutdown; its USB stack just selective-suspends the device. Linux can't do the same because our udev rule pins `power/autosuspend=-1` to keep frames flowing. The fix: a new `trcc sleep` chokepoint that re-enables autosuspend (writes `auto` → `power/control`) and unconfigures each matching USB device (writes `0` → `bConfigurationValue`) so the firmware sees a clean detach and powers down the panel. Wired through the GUI's `aboutToQuit` (catches close-button), the systemd service's `ExecStop=` (catches reboot/shutdown), and exposed as `trcc sleep` / `POST /trcc/sleep` for any remaining flows.
+
+### Architecture
+- **`Platform.suspend_usb_device(vid, pid) -> bool`** — new capability port. Linux walks `/sys/bus/usb/devices`, matches on VID:PID (covers SCSI which has no `UsbAddress` and the multi-LCD case where two physical devices share VID:PID), writes the sysfs nodes, returns `True` on at least one success. Windows returns `True` no-op (USB stack handles it). macOS / BSD default to `False` until a reporter surfaces the need.
+- **`Trcc.suspend_all_devices() -> OpResult`** — single chokepoint for app shutdown. Collects unique `(vid, pid)` across LCD+LED registries, runs `cleanup()` and `DeviceProtocolFactory.close_all()` to release transports BEFORE writing `bConfigurationValue=0` (avoids EBUSY), then asks the platform to suspend each pair. Idempotent.
+
 ## v9.5.3
 
 ### User-facing fixes
