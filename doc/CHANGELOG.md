@@ -1,5 +1,18 @@
 # Changelog
 
+## v9.5.6
+
+### User-facing fixes
+- **`trcc setup-udev`, `trcc setup-selinux`, `trcc setup-polkit`, `trcc setup-winusb` now exist** (#139 Zombie-hive, Pop!_OS pipx). The doctor + factory + diagnostics messages told users to run these commands in 22 places combined, but only the internal sudo-reexec dispatch table knew about them — none were registered as Typer commands, so `trcc setup-udev` returned `Error: No such command 'setup-udev'`. Now wired:
+  - `setup-udev` — installs udev rules + usb-storage quirks (Linux); on Windows aliases to the WinUSB Zadig guide.
+  - `setup-winusb` — same call as `setup-udev`, OS-natural name for Windows.
+  - `setup-selinux` — installs the SELinux policy module (Fedora/RHEL/CentOS).
+  - `setup-polkit` — installs the polkit policy for password-prompted privileged ops.
+
+### Architecture
+- **Regression test for suggested-command drift** — `TestCLISuggestedCommandsExist` AST-walks `src/trcc/`, regex-extracts every `'trcc <hyphenated-cmd>'` from string literals, and asserts each is in `app.registered_commands`. Closes the gap that let `setup-udev` and 3 siblings live in user-facing messages without a Typer entry. Catches the same drift class for any future hyphenated command.
+- **Two stale-string drive-bys** spotted during the audit: a docstring in `core/trcc.py` referenced `trcc lcd test` (the actual command is `trcc test`); a print in `ui/cli/_display.py` told users to "use 'trcc led' commands" when the family is `led-*` (led-brightness, led-color, led-mode, …).
+
 ## v9.5.5
 
 PyPI + distro re-release of v9.5.4 — original v9.5.4 hit PyPI's per-project
