@@ -30,7 +30,6 @@ from trcc.ui.cli._system import (
     report,
     run_setup,
     show_info,
-    sleep_devices,
     uninstall,
 )
 
@@ -522,8 +521,15 @@ class TestSetupUdev:
         out = capsys.readouterr().out
         assert "udev rules" in out.lower() or "Would write" in out
 
-    def test_dry_run_includes_autosuspend_rule(self, completed_process, capsys):
-        """udev rules must disable USB autosuspend for all devices."""
+    def test_dry_run_sets_autosuspend_delay(self, completed_process, capsys):
+        """udev rules set autosuspend_delay_ms=10000 (not pin to -1).
+
+        v9.5.7 change: pinning autosuspend=-1 (v9.2.10's #98 fix) prevented
+        the kernel from suspending the device on app exit, which made the
+        firmware show "USB communication lost" indefinitely (#143). 10s
+        is 5x our 2s metrics tick (no spurious suspend during normal use),
+        finite so kernel autosuspend handles panel-sleep ~10s after exit.
+        """
         known = self._mock_known_devices()
         traits = self._mock_protocol_traits()
         with patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)), \
@@ -534,8 +540,11 @@ class TestSetupUdev:
              patch("trcc.core.models.PROTOCOL_TRAITS", traits):
             setup_udev(dry_run=True)
         out = capsys.readouterr().out
-        assert 'power/autosuspend' in out
-        assert '"-1"' in out
+        assert 'power/autosuspend_delay_ms' in out
+        assert '"10000"' in out
+        # Anti-regression: must NOT pin autosuspend=-1 (the v9.2.10 mistake
+        # that #143 surfaced).
+        assert '{power/autosuspend}="-1"' not in out
 
     def test_dry_run_does_not_write_files(self, completed_process, capsys):
         known = self._mock_known_devices()
@@ -1570,37 +1579,6 @@ class TestReport:
 
         out = capsys.readouterr().out
         assert "https://github.com/Lexonight1/thermalright-trcc-linux/issues/new" in out
-
-
-# ===========================================================================
-# TestSleepDevices
-# ===========================================================================
-
-class TestSleepDevices:
-    """sleep_devices — delegates to trcc().suspend_all_devices()."""
-
-    def test_returns_zero_on_success(self):
-        from trcc import _boot
-        from trcc.core.results import OpResult
-        mock_t = MagicMock()
-        mock_t.suspend_all_devices.return_value = OpResult(
-            success=True, message="Suspended 1/1 device(s)",
-        )
-        with patch.object(_boot, "_cached", mock_t):
-            rc = sleep_devices()
-        mock_t.suspend_all_devices.assert_called_once_with()
-        assert rc == 0
-
-    def test_prints_outcome(self, capsys):
-        from trcc import _boot
-        from trcc.core.results import OpResult
-        mock_t = MagicMock()
-        mock_t.suspend_all_devices.return_value = OpResult(
-            success=True, message="Suspended 2/2 device(s)",
-        )
-        with patch.object(_boot, "_cached", mock_t):
-            sleep_devices()
-        assert "Suspended 2/2 device(s)" in capsys.readouterr().out
 
 
 # ===========================================================================

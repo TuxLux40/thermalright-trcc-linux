@@ -74,7 +74,17 @@ def launch(verbosity: int = 0, decorated: bool = False,
     from trcc.ui.gui.assets import _PKG_ASSETS_DIR, set_assets_dir
     set_assets_dir(platform.resolve_assets_dir(_PKG_ASSETS_DIR))
 
-    os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.services=false")
+    # Silence two categories of Qt noise that aren't actionable for our users:
+    #   qt.qpa.services            — generic platform-services chatter
+    #   qt.qpa.theme.gnome         — xdg-desktop-portal startup failures on
+    #                                 systems where the portal isn't running
+    #                                 (KDE/Hyprland/sway sessions, missing
+    #                                 xdg-desktop-portal-gnome package, etc.)
+    # setdefault so a debugging user can still override with their own rules.
+    os.environ.setdefault(
+        "QT_LOGGING_RULES",
+        "qt.qpa.services=false;qt.qpa.theme.gnome=false",
+    )
     os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
     os.environ.pop("QT_QPA_PLATFORM", None)  # clear offscreen set by CLI
 
@@ -135,10 +145,11 @@ def launch(verbosity: int = 0, decorated: bool = False,
     # ── IPC raise + signals ───────────────────────────────────────────────
     signal.signal(signal.SIGINT, lambda *_: qapp.quit())
     platform.wire_ipc_raise(qapp, window)
-
-    # Issue #143: when the user closes the GUI, sleep the LCD chassis so
-    # the panel powers down instead of showing "USB communication lost".
-    qapp.aboutToQuit.connect(t.suspend_all_devices)
+    # Issue #143 ("USB communication lost" after GUI exit) is handled at
+    # the kernel level — udev rule sets power/autosuspend_delay_ms=30000
+    # so the kernel autosuspends the device ~30s after our frame stream
+    # stops, and the firmware sleeps the panel cleanly. No userspace
+    # shutdown hook needed.
 
     if not start_hidden:
         window.show()

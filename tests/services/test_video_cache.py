@@ -145,6 +145,46 @@ class TestTextOverlay:
         assert not cache.has_text
         assert cache.text_overlay is None
 
+    def test_clear_text_clears_both_raw_and_dimmed(self):
+        cache = _build(_make_frames(3), brightness=50)
+        text = make_test_surface(32, 32, (255, 255, 255, 255))
+        cache.update_text_overlay(text, ('key', 1))
+        assert cache._text_overlay_raw is text
+        assert cache.text_overlay is not None
+        cache.clear_text_overlay()
+        assert cache._text_overlay_raw is None
+        assert cache.text_overlay is None
+
+    def test_text_overlay_passthrough_at_brightness_100(self):
+        """At brightness >= 100, dimmed surface IS the raw — zero copy."""
+        cache = _build(_make_frames(3), brightness=100)
+        text = make_test_surface(32, 32, (255, 255, 255, 255))
+        cache.update_text_overlay(text, ('key', 1))
+        assert cache.text_overlay is text  # identity, not equality
+
+    def test_text_overlay_dimmed_to_match_brightness(self):
+        """At brightness < 100, cache stores a dimmed copy distinct from raw."""
+        cache = _build(_make_frames(3), brightness=50)
+        text = make_test_surface(32, 32, (255, 255, 255, 255))
+        cache.update_text_overlay(text, ('key', 1))
+        assert cache._text_overlay_raw is text
+        assert cache.text_overlay is not None
+        assert cache.text_overlay is not text  # different surface
+        # Pixel byte comparison — dimmed bytes should differ from full-bright.
+        assert bytes(cache.text_overlay.constBits()) != bytes(text.constBits())
+
+    def test_brightness_change_redims_existing_text(self):
+        """Setting text at full brightness then dimming should redim the cached text."""
+        cache = _build(_make_frames(3), brightness=100)
+        text = make_test_surface(32, 32, (255, 255, 255, 255))
+        cache.update_text_overlay(text, ('key', 1))
+        assert cache.text_overlay is text  # passthrough at 100
+
+        cache.rebuild_from_brightness(50)
+        assert cache._text_overlay_raw is text  # raw preserved
+        assert cache.text_overlay is not text   # dimmed surface now stored
+        assert bytes(cache.text_overlay.constBits()) != bytes(text.constBits())
+
 
 class TestRebuild:
     """Test partial cache rebuilds (brightness / rotation)."""

@@ -199,19 +199,20 @@ def uninstall(*, yes: bool = False):
     return 0
 
 
-def sleep_devices() -> int:
-    """Suspend every connected LCD/LED chassis. Mirrors Windows shutdown."""
-    from trcc._boot import trcc as _trcc
-    result = _trcc().suspend_all_devices()
-    print(result.format())
-    return result.exit_code
-
-
 def report(detect_fn=None):
     """Generate a full diagnostic report for bug reports."""
     log.debug("collecting diagnostic report")
+    from trcc.adapters.device.factory import DeviceProtocolFactory
     from trcc.adapters.infra.debug_report import DebugReport
     from trcc.adapters.infra.doctor import run_doctor
+    from trcc.adapters.system import make_platform
+
+    # Wire the SCSI transport factory before DebugReport.collect() runs
+    # its _handshake_scsi pass.  The report path skips ControllerBuilder
+    # (where this normally gets wired), so without this every SCSI
+    # device's handshake silently fails with "SCSI transport factory
+    # not injected" and the Handshakes section shows nothing useful.
+    DeviceProtocolFactory.set_scsi_transport(make_platform().create_scsi_transport)
 
     rpt = DebugReport(detect_fn=detect_fn)
     rpt.collect()

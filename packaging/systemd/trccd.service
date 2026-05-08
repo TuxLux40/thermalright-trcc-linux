@@ -18,12 +18,6 @@ PartOf=graphical-session.target
 [Service]
 Type=simple
 ExecStart=/usr/bin/trcc daemon
-# Issue #143 — sleep LCD panels cleanly on shutdown / service stop so
-# the firmware powers them down instead of showing "USB communication
-# lost". `trcc sleep` is a manifold call that re-enables autosuspend
-# and unconfigures each device's USB chassis.
-ExecStop=/usr/bin/trcc sleep
-TimeoutStopSec=3s
 Restart=on-failure
 RestartSec=5
 # QApplication needs at least an offscreen platform; trccd sets this

@@ -33,6 +33,8 @@ Usage:
 """
 
 import logging
+import os
+import tempfile
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -366,11 +368,21 @@ class CloudThemeDownloader:
                 # Create parent directory
                 dest.parent.mkdir(parents=True, exist_ok=True)
 
-                # Download to temp file first
-                temp_path = dest.with_suffix('.tmp')
+                # Download to a unique temp file so concurrent downloads of
+                # the same theme don't race on a shared `dest.with_suffix('.tmp')`
+                # path (the previous shape: thread A writes a009.tmp, B writes
+                # a009.tmp, B renames first → A's rename hits ENOENT).  mkstemp
+                # gives each call a guaranteed-unique name; os.replace is atomic
+                # so the last writer's content wins, no error.
+                fd, temp_str = tempfile.mkstemp(
+                    dir=str(dest.parent),
+                    prefix=f'.{dest.stem}.',
+                    suffix='.tmp',
+                )
+                temp_path = Path(temp_str)
 
                 try:
-                    with open(temp_path, 'wb') as f:
+                    with os.fdopen(fd, 'wb') as f:
                         downloaded = 0
                         block_size = 8192
 
@@ -390,15 +402,13 @@ class CloudThemeDownloader:
                                 percent = int((downloaded / total_size) * 100)
                                 on_progress(downloaded, total_size, percent)
 
-                    # Move temp to final destination
-                    temp_path.rename(dest)
+                    os.replace(temp_path, dest)
                     return str(dest)
 
                 except Exception:
                     # Cleanup-then-propagate — broad catch is intentional;
                     # the outer try classifies HTTPError/URLError/InterruptedError.
-                    if temp_path.exists():
-                        temp_path.unlink()
+                    temp_path.unlink(missing_ok=True)
                     raise
 
         except HTTPError as e:

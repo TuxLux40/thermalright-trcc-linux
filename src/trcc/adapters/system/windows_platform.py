@@ -494,11 +494,6 @@ class WindowsPlatform(Platform):
     def minimize_on_close(self) -> bool:
         return True
 
-    def suspend_usb_device(self, vid: int, pid: int) -> bool:
-        # Windows USB stack drives selective suspend on app exit; the
-        # firmware sleeps the panel without us writing anything (issue #143).
-        return True
-
     def configure_stdout(self) -> None:
         import io
         import sys as _sys

@@ -1,5 +1,20 @@
 # Changelog
 
+## v9.5.7
+
+### User-facing fixes
+- **GUI no longer crashes on launch** (regression from v9.5.4). The `aboutToQuit.connect(t.suspend_all_devices)` line introduced for #143 tried to weakref a bound method of `Trcc`, but `Trcc` has `__slots__` without `__weakref__`, so Qt failed with `TypeError: cannot create weak reference to 'Trcc' object`. Every user on v9.5.4 / 5 / 6 had a broken GUI. v9.5.7 deletes the entire mechanism (see below) and the broken connect line goes with it.
+- **#143 LCD-sleep-on-shutdown re-fixed properly.** v9.5.4 wrote sysfs power attributes from userspace, which silently failed for every unprivileged user (the actual install path for everyone) — the panel kept showing "USB communication lost" indefinitely until VBUS dropped, exactly the bug we claimed to fix. v9.5.7 reverts the userspace mechanism and replaces it with a one-line udev rule change: `power/autosuspend_delay_ms=10000` instead of `power/autosuspend=-1`. The kernel now autosuspends the device ~10s after our process exits — same end state as Windows selective suspend, fully kernel-native, no shutdown hook needed. Re-run `trcc setup-udev` (or fresh-install the .deb / .rpm / .pkg.tar.zst) to apply.
+- **Brightness now consistently dims overlay text on animated themes** (parity with static themes). The video-cache path composited the live text overlay on top of an already-dimmed bg+mask surface, leaving the metrics text at full brightness. Static themes baked the overlay first then dimmed everything together, so they always behaved correctly. v9.5.7 dims the cached text overlay alongside the L3 surface, so bg + mask + text all share the same brightness on every render path.
+- **`trcc report` now shows real SCSI handshake data.** The report path skipped `ControllerBuilder` (where `set_scsi_transport` is normally wired), so SCSI users got `SCSI transport factory not injected` instead of FBL / resolution / raw response bytes. v9.5.7 wires the transport in `report()` before `DebugReport.collect()` runs.
+- **Theme cloud downloads no longer race on the temp file.** Concurrent downloads of the same theme used to share a single `<theme>.tmp` path — first thread to rename won, second thread errored with `[Errno 2] No such file or directory`. v9.5.7 uses `mkstemp` so each download gets a unique temp; `os.replace` atomically commits the result. No more spurious download errors when multi-mirror retry kicks in.
+- **GUI no longer crashes mid-render on theme reload.** `update_video_cache_text` and four other display sites had a TOCTOU race on `self._cache`: line N checked `if self._cache and self._cache.active`, line N+1 called `self._cache.method(...)`, but a concurrent thread could null `self._cache` between the check and the call (Python attribute reads aren't atomic across two ops). v9.5.7 snapshots the cache reference into a local before each block. Affected the metrics tick, brightness change, rotation change, and video-tick render paths.
+
+### Architecture
+- **v9.5.4 #143 mechanism deleted.** `Platform.suspend_usb_device` ABC method, `LinuxPlatform.suspend_usb_device` (sysfs walker), `WindowsPlatform.suspend_usb_device`, `Trcc.suspend_all_devices`, the `trcc sleep` CLI command, the `POST /trcc/sleep` API endpoint, the `qapp.aboutToQuit.connect(...)` GUI hook, the `ExecStop=` in `trccd.service`, and the 5+2 associated tests — all gone. -122 net lines. The kernel handles panel-sleep via the udev rule change above; userspace doesn't need to know about USB suspend.
+- **Quieter Qt log output.** Extended `QT_LOGGING_RULES` to silence `qt.qpa.theme.gnome` warnings about `xdg-desktop-portal-gnome` failing to start — these were noise on every non-GNOME / portal-less session and weren't actionable for users. `setdefault` so anyone debugging can still override.
+- **Honest `Co-Authored-By` for JoshWrites's atomic-write pattern.** The v9.5.6 trailer was malformed (`Co-Authored-By: JoshWrites` without an email), so GitHub didn't link the contribution to his profile. Empty follow-up commit `e2d49b8c` re-emitted the trailer with the correct noreply email so the credit lands.
+
 ## v9.5.6
 
 ### User-facing fixes

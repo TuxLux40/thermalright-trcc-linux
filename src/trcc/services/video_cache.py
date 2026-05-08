@@ -41,7 +41,13 @@ class VideoFrameCache:
         # L2: video frames + mask composite (immutable after build)
         self._masked_frames: list[Any] = []
 
-        # Text overlay (rendered once per refresh interval by OverlayService)
+        # Text overlay — two slots mirror the L3 pattern:
+        #   _text_overlay_raw  : un-dimmed source from OverlayService
+        #   _text_overlay      : dimmed at current brightness, what we composite
+        # Symmetric with bg+mask handling (_masked_frames raw → _l3_surfaces
+        # dimmed). Both layers stay in sync so dimming is consistent across
+        # bg + mask + text — fixes static-vs-video brightness inconsistency.
+        self._text_overlay_raw: Any | None = None
         self._text_overlay: Any | None = None
         self._text_key: tuple | None = None
 
@@ -116,28 +122,55 @@ class VideoFrameCache:
         """Store a new text overlay surface. Returns True if text changed.
 
         Called at most once per metrics refresh interval — O(1), no frame loop.
-        The surface is the same for every frame; DisplayService composites it
-        onto the current frame at tick time.
+        The dimmed surface is composited by DisplayService at tick time, so
+        the text matches the brightness applied to bg+mask in L3.
         """
         if key == self._text_key:
             return False
-        self._text_overlay = surface
+        self._text_overlay_raw = surface
         self._text_key = key
+        self._refresh_dimmed_text()
         return True
 
     def clear_text_overlay(self) -> None:
         """Clear text overlay (overlay disabled)."""
+        self._text_overlay_raw = None
         self._text_overlay = None
         self._text_key = None
 
     # -- Partial rebuilds (brightness / rotation change) ------------------
 
     def rebuild_from_brightness(self, brightness: int) -> None:
-        """Update brightness. L3 slots refill naturally on next access."""
+        """Update brightness. L3 slots refill naturally on next access.
+
+        Also re-dims the cached text overlay so bg + mask + text all share
+        the same brightness (matches the static path's behaviour where
+        overlay is baked first and ``_apply_adjustments`` dims the union).
+        """
         if not self._masked_frames:
             return
         self._brightness = brightness
         self._reset_l3()
+        self._refresh_dimmed_text()
+
+    def _refresh_dimmed_text(self) -> None:
+        """Apply current brightness to raw text overlay → cached dimmed surface.
+
+        Called from ``update_text_overlay`` (text changed) and
+        ``rebuild_from_brightness`` (brightness changed). Single chokepoint
+        so the cached dimmed text and the L3 brightness can never drift.
+        Passes through (zero copy) at brightness >= 100 — the common case.
+        """
+        if self._text_overlay_raw is None:
+            self._text_overlay = None
+            return
+        if self._brightness >= 100:
+            self._text_overlay = self._text_overlay_raw
+            return
+        from .image import ImageService
+        r = ImageService.renderer()
+        surface = r.copy_surface(self._text_overlay_raw)
+        self._text_overlay = ImageService.apply_brightness(surface, self._brightness)
 
     def rebuild_from_rotation(self, _rotation: int) -> None:
         """No-op since rotation moved to encode boundary (Observer SSoT).

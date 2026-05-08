@@ -274,16 +274,16 @@ class DisplayService:
             self.overlay.set_resolution(cw, ch)
             self.media.set_target_size(cw, ch)
             self._cache = None
-        elif self._cache and self._cache.active:
-            self._cache.rebuild_from_rotation(self._image_rotation)
+        elif (cache := self._cache) and cache.active:
+            cache.rebuild_from_rotation(self._image_rotation)
 
         return self._render_and_process()
 
     def set_brightness(self, percent: int) -> Any | None:
         """Set display brightness. Returns rendered image or None."""
         self.brightness = max(0, min(100, percent))
-        if self._cache and self._cache.active:
-            self._cache.rebuild_from_brightness(self.brightness)
+        if (cache := self._cache) and cache.active:
+            cache.rebuild_from_brightness(self.brightness)
         return self._render_and_process()
 
     def set_split_mode(self, mode: int) -> Any | None:
@@ -606,20 +606,24 @@ class DisplayService:
 
         self.current_image = frame
 
-        # Cache path: get brightness surface, composite text, encode
-        if self._cache and self._cache.active:
+        # Cache path: get brightness surface, composite text, encode.
+        # Snapshot self._cache to a local — concurrent threads can null
+        # self._cache mid-method (theme reload, video unload), and Python
+        # attribute reads aren't atomic across multiple ops.
+        cache = self._cache
+        if cache and cache.active:
             cf = self.media.state.current_frame
             total = self.media.state.total_frames
             index = (cf - 1) % total if total > 0 else 0
-            surface = self._cache.get_surface(index)
+            surface = cache.get_surface(index)
             if surface is not None:
                 # Composite text overlay (same surface for all frames).
                 # Text is composited in source coord space — encode rotates
                 # the unified bg+mask+text together so they stay aligned.
-                if self._cache.has_text:
+                if cache.has_text:
                     r = ImageService.renderer()
                     surface = r.copy_surface(surface)
-                    surface = r.composite(surface, self._cache.text_overlay, (0, 0))
+                    surface = r.composite(surface, cache.text_overlay, (0, 0))
                 # Encode + rotate (sole rotator) — read encode_angle fresh
                 # from current state so rotation changes apply on next tick
                 # without rebuilding the cache.
@@ -704,14 +708,17 @@ class DisplayService:
 
         Renders text overlay O(1) and stores it. DisplayService.video_tick()
         composites it onto each frame at tick time — no 147-frame encode loop.
+        Snapshot self._cache to a local — concurrent thread can null
+        self._cache between the active-check and the call.
         """
-        if not (self._cache and self._cache.active):
+        cache = self._cache
+        if not (cache and cache.active):
             return
         if self.overlay.enabled:
             surface, key = self.overlay.render_text_only(metrics)
         else:
             surface, key = None, None
-        self._cache.update_text_overlay(surface, key)
+        cache.update_text_overlay(surface, key)
 
     # -- Blocking video loop (CLI / API) ------------------------------------
 
