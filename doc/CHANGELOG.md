@@ -1,5 +1,12 @@
 # Changelog
 
+## v9.5.5
+
+PyPI + distro re-release of v9.5.4 — original v9.5.4 hit PyPI's per-project
+10 GB storage cap mid-publish, which cascaded and skipped the RPM / DEB /
+Arch build jobs. Freed space on PyPI side and re-tagged. **Same content
+as v9.5.4** — no source changes. Use this version for every install path.
+
 ## v9.5.4
 
 ### User-facing fixes
