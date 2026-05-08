@@ -72,7 +72,8 @@ class SysInfoConfig:
             'version': 1,
             'panels': [asdict(p) for p in self.panels],
         }
-        self.CONFIG_PATH.write_text(json.dumps(data, indent=2))
+        from trcc.adapters.infra.atomic_io import atomic_write_json
+        atomic_write_json(self.CONFIG_PATH, data)
 
     @staticmethod
     def defaults() -> list[PanelConfig]:

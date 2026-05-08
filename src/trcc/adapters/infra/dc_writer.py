@@ -378,8 +378,6 @@ def write_json(theme_path: str,
                mask_settings: dict | None = None,
                video_file: str | None = None) -> None:
     """Write theme config as human-readable JSON alongside config1.dc."""
-    import json
-
     data = {
         'version': 1,
         'display': {
@@ -395,9 +393,9 @@ def write_json(theme_path: str,
         'elements': overlay_config or {},
     }
 
+    from .atomic_io import atomic_write_json
     json_path = os.path.join(theme_path, 'config.json')
-    with open(json_path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    atomic_write_json(json_path, data, ensure_ascii=False)
 
 
 # ── Export / Import (.tr) ────────────────────────────────────────────────

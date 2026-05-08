@@ -5,7 +5,6 @@ LCDDevice.ThemeOps delegates to this service.
 """
 from __future__ import annotations
 
-import json
 import logging
 import shutil
 import subprocess
@@ -520,8 +519,8 @@ class ThemeService:
             if mask_path_str and mask_position:
                 config_json['mask_position'] = list(mask_position)
 
-            with open(str(td.json), 'w') as f:
-                json.dump(config_json, f, indent=2)
+            from trcc.adapters.infra.atomic_io import atomic_write_json
+            atomic_write_json(td.json, config_json)
 
             return True, f"Saved: {safe_name}"
         except (OSError, ValueError, TypeError) as e:
