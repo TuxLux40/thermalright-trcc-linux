@@ -54,23 +54,22 @@ def set_brightness(key: str, body: BrightnessRequest,
 @router.post("/theme", response_model=ThemeResponse)
 def load_theme(key: str, body: ThemeRequest,
                request: Request) -> ThemeResponse:
-    # Path injection guard (CodeQL py/path-injection):
-    #   1. Reject absolute paths and any `..` parents in the user input.
-    #   2. Construct the final path inside the platform's user content
-    #      dir — never let the client name directories above the root.
-    #   3. After resolve(), confirm the canonical path is still inside
-    #      the allowed root (defends against symlink escape).
-    user_path = Path(body.path)
-    if user_path.is_absolute() or any(p == ".." for p in user_path.parts):
-        raise HTTPException(400, "Theme path must be a relative subpath")
-
+    # Whitelist by basename (CodeQL py/path-injection sanitizer barrier).
+    # Themes are flat dirs directly under ``user_content_dir`` (see
+    # ThemeService.list — only top-level subdirs with config.json /
+    # config1.dc count). We enumerate the trusted root once and look
+    # up by basename, so the Path passed to LoadTheme comes entirely
+    # from ``iterdir()`` — no user-controlled component flows into a
+    # filesystem call.
     platform = request.app.state.trcc.platform
     allowed_root = platform.user_content_dir().resolve(strict=True)
-    candidate = (allowed_root / user_path).resolve()
-    if not candidate.is_relative_to(allowed_root):
-        raise HTTPException(400, "Theme path escapes user content dir")
-    if not candidate.exists() or not candidate.is_dir():
-        raise HTTPException(400, "Theme path not a directory")
+    requested_name = Path(body.path).name
+    if not requested_name:
+        raise HTTPException(400, "Theme path required")
+    themes = {p.name: p for p in allowed_root.iterdir() if p.is_dir()}
+    candidate = themes.get(requested_name)
+    if candidate is None:
+        raise HTTPException(400, "Unknown theme")
 
     result = request.app.state.trcc.dispatch(
         LoadTheme(key=key, path=candidate),
