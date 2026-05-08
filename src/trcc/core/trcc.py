@@ -223,7 +223,7 @@ class Trcc:
 
         ``path`` constrains the result to a specific USB path; if no
         connected device matches we return a failed result so CLI
-        callers like ``trcc lcd test --device /dev/sg0`` surface the
+        callers like ``trcc test --device /dev/sg0`` surface the
         error cleanly without a separate post-scan check.
         """
         from .builder import ControllerBuilder

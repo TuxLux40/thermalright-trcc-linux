@@ -64,7 +64,8 @@ def test(device=None, loop=False, preview=False):
         lcd = _trcc().lcd_device
         assert lcd is not None
         if lcd.device_path and 'led' in lcd.device_path:
-            print("LED controller with segment display — use 'trcc led' commands.")
+            print("LED controller with segment display — use 'trcc led-*' "
+                  "commands (led-brightness, led-color, led-mode, ...).")
             return 0
         w, h = lcd.lcd_size
 

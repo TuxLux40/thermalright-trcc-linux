@@ -1291,6 +1291,50 @@ def _cmd_setup(
     return _system.setup(auto_yes=yes)
 
 
+@app.command("setup-udev", rich_help_panel="System")
+def _cmd_setup_udev() -> int:
+    """Install device access rules (udev on Linux, WinUSB guide on Windows).
+
+    Narrower than ``trcc setup`` — skips the full interactive wizard,
+    just installs / refreshes the udev rules + usb-storage quirks.
+    Suggested by the doctor and factory error messages when device
+    permissions are wrong.
+    """
+    from trcc._boot import trcc as _trcc
+    return _trcc().os.install_rules()
+
+
+@app.command("setup-winusb", rich_help_panel="System")
+def _cmd_setup_winusb() -> int:
+    """Print the Zadig-based WinUSB driver setup guide (Windows-natural name).
+
+    Aliases ``trcc setup-udev`` — same ``Platform.install_rules()`` call,
+    different name that matches what Windows users see in error messages.
+    """
+    from trcc._boot import trcc as _trcc
+    return _trcc().os.install_rules()
+
+
+@app.command("setup-selinux", rich_help_panel="System")
+def _cmd_setup_selinux() -> int:
+    """Install TRCC's SELinux policy module (Fedora/RHEL/CentOS only)."""
+    if sys.platform != "linux":
+        typer.echo("setup-selinux is Linux-only.", err=True)
+        return 1
+    from trcc.adapters.system.linux_platform import setup_selinux
+    return setup_selinux()
+
+
+@app.command("setup-polkit", rich_help_panel="System")
+def _cmd_setup_polkit() -> int:
+    """Install TRCC's polkit policy for password-prompted privileged ops."""
+    if sys.platform != "linux":
+        typer.echo("setup-polkit is Linux-only.", err=True)
+        return 1
+    from trcc.adapters.system.linux_platform import setup_polkit
+    return setup_polkit()
+
+
 @app.command("setup-gui", rich_help_panel="Interfaces")
 def _cmd_setup_gui() -> None:
     """Launch the setup wizard GUI."""

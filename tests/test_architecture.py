@@ -383,5 +383,44 @@ class TestSensorEnumeratorABC(unittest.TestCase):
         self.assertTrue(issubclass(SensorEnumerator, ABC))
 
 
+class TestCLISuggestedCommandsExist(unittest.TestCase):
+    """Every 'run trcc xxx' message must reference a registered Typer command.
+
+    Closes the gap that produced #139 — doctor / factory / error
+    messages suggested ``trcc setup-udev`` (and 3 other setup-*
+    commands) but only the sudo-reexec dispatch knew about them, so
+    users who tried them as documented hit ``No such command``.
+    """
+
+    def test_every_suggested_command_is_registered(self):
+        import ast
+        import re
+        from pathlib import Path
+
+        src = Path(__file__).resolve().parent.parent / "src" / "trcc"
+        # Hyphenated subcommand only — filters prose like "trcc imports
+        # numpy" while catching every setup-/lcd-/led-/lang- style name
+        # we genuinely tell users to type.
+        pattern = re.compile(r"\b(?:sudo )?trcc ([a-z]+(?:-[a-z]+)+)\b")
+
+        suggested: set[str] = set()
+        for py in src.rglob("*.py"):
+            if "next" in py.relative_to(src).parts:
+                continue  # next/ has its own Typer app, separate surface
+            tree = ast.parse(py.read_text())
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    suggested.update(pattern.findall(node.value))
+
+        from trcc.ui.cli import app
+        registered = {cmd.name for cmd in app.registered_commands}
+        missing = suggested - registered
+        self.assertFalse(
+            missing,
+            "User-facing messages reference these commands which aren't "
+            f"registered as Typer commands: {sorted(missing)}",
+        )
+
+
 if __name__ == '__main__':
     unittest.main()
