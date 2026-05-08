@@ -1318,6 +1318,19 @@ def _cmd_download(
         pack=pack, show_list=show_list, force=force, show_info=show_info)
 
 
+@app.command("sleep", rich_help_panel="Interfaces")
+def _cmd_sleep() -> int:
+    """Suspend connected USB devices so the LCD panel sleeps cleanly.
+
+    Reverses the autosuspend pin our udev rule sets on Linux, then
+    unconfigures each device so its firmware powers down the panel
+    instead of showing "USB communication lost" after our process
+    exits (issue #143). Wired to systemd ``ExecStop`` and the GUI's
+    ``aboutToQuit`` so it fires on every clean shutdown path.
+    """
+    return _system.sleep_devices()
+
+
 @app.command("kill", rich_help_panel="Interfaces")
 def _cmd_kill() -> int:
     """Stop the running TRCC daemon (no-op if none is running).

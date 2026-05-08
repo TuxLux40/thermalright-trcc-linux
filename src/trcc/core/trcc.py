@@ -38,7 +38,7 @@ from .device.registry import DeviceRegistry
 from .events import EventBus, Topic
 from .lcd_commands import LCDCommands
 from .led_commands import LEDCommands
-from .results import DiscoveryResult
+from .results import DiscoveryResult, OpResult
 
 if TYPE_CHECKING:
     from ..services.system import SystemService
@@ -604,6 +604,32 @@ class Trcc:
         self._lcd_devices.clear()
         self._led_devices.clear()
         self.events.clear()
+
+    def suspend_all_devices(self) -> OpResult:
+        """Tear down devices and put their USB chassis into low-power state.
+
+        Reverses the autosuspend pin our udev rule sets — without this, on
+        Linux the LCD shows "USB communication lost" after our process exits
+        until VBUS drops (issue #143). Idempotent; safe to call at app exit,
+        ``ExecStop=``, or ``QApplication.aboutToQuit``.
+        """
+        from trcc.adapters.device.factory import DeviceProtocolFactory
+        vid_pids = {
+            (info.vid, info.pid) for d in self
+            if (info := d.device_info) is not None and info.vid and info.pid
+        }
+        self.cleanup()
+        DeviceProtocolFactory.close_all()
+        suspended = sum(
+            1 for vid, pid in vid_pids
+            if self._platform.suspend_usb_device(vid, pid)
+        )
+        total = len(vid_pids)
+        log.info("suspend_all_devices: %d/%d device(s) suspended", suspended, total)
+        return OpResult(
+            success=True,
+            message=f"Suspended {suspended}/{total} device(s)",
+        )
 
     # ── Container protocol ───────────────────────────────────────────
     # Trcc IS the registry of connected devices — `for d in trcc` walks

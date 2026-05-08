@@ -34,6 +34,20 @@ def kill() -> dict:
     return {"success": kill_daemon()}
 
 
+@router.post("/sleep")
+def sleep() -> dict:
+    """Suspend connected USB devices so the LCD panel sleeps cleanly.
+
+    Reverses the autosuspend pin our udev rule sets on Linux, then
+    unconfigures each device so its firmware powers down the panel
+    instead of showing "USB communication lost" after our process
+    exits (issue #143). No-op on Windows (USB stack handles it).
+    """
+    from trcc._boot import trcc as _trcc
+    result = _trcc().suspend_all_devices()
+    return {"success": result.success, "message": result.message}
+
+
 @router.get("/status")
 def status() -> dict:
     """Snapshot of the running daemon: pid, uptime, device counts.

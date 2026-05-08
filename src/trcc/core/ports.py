@@ -555,6 +555,16 @@ class Platform(ABC):
         """System-level file paths installed by this platform."""
         return []
 
+    def suspend_usb_device(self, vid: int, pid: int) -> bool:
+        """Put every USB device matching VID:PID into low-power state.
+
+        Linux overrides: re-enable autosuspend + unconfigure the device so
+        the firmware sees a clean detach and sleeps the panel.
+        Windows: handled natively by the USB stack on app exit — no-op True.
+        macOS / BSD: not implemented yet — default False (capability query).
+        """
+        return False
+
     # ── Abstract (each OS must implement) ────────────────────────────
 
     @abstractmethod

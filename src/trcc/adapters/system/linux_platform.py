@@ -1168,6 +1168,10 @@ class SensorEnumerator(SensorEnumeratorBase):
 class LinuxPlatform(Platform):
     """Linux Platform — all OS logic inline, no intermediaries."""
 
+    # Root of the USB devices tree in sysfs. Subclasses (tests) override to
+    # point at a fake tree on disk; production reads from the real kernel.
+    _USB_DEVICES_ROOT = '/sys/bus/usb/devices'
+
     def __init__(self) -> None:
         super().__init__()
         self._autostart: LinuxAutostartManager | None = None
@@ -1193,6 +1197,48 @@ class LinuxPlatform(Platform):
                               vid: int = 0, pid: int = 0) -> Any:
         from trcc.adapters.device.linux.scsi import LinuxScsiTransport
         return LinuxScsiTransport(path)
+
+    # ── USB power management ──────────────────────────────────
+
+    def suspend_usb_device(self, vid: int, pid: int) -> bool:
+        """Re-enable autosuspend + unconfigure USB devices matching VID:PID.
+
+        Our udev rule pins ``power/autosuspend = -1`` to keep frames flowing.
+        At app exit we reverse that and write ``0`` to ``bConfigurationValue``
+        so the firmware sees a clean detach and sleeps the panel — matching
+        the implicit Windows behaviour (issue #143).
+        """
+        target_vid = f"{vid:04x}"
+        target_pid = f"{pid:04x}"
+        usb_root = Path(self._USB_DEVICES_ROOT)
+        if not usb_root.is_dir():
+            return False
+        suspended = 0
+        for dev_dir in usb_root.iterdir():
+            if ':' in dev_dir.name:  # interface dir, not a device
+                continue
+            id_vendor = dev_dir / 'idVendor'
+            id_product = dev_dir / 'idProduct'
+            if not (id_vendor.is_file() and id_product.is_file()):
+                continue
+            try:
+                if id_vendor.read_text().strip() != target_vid:
+                    continue
+                if id_product.read_text().strip() != target_pid:
+                    continue
+            except OSError as exc:
+                log.debug("suspend_usb_device: read %s failed: %s", dev_dir, exc)
+                continue
+            try:
+                (dev_dir / 'power' / 'control').write_text('auto')
+                (dev_dir / 'bConfigurationValue').write_text('0')
+                log.info("suspend_usb_device: suspended %s (%04x:%04x)",
+                         dev_dir.name, vid, pid)
+                suspended += 1
+            except OSError as exc:
+                log.warning("suspend_usb_device: %s write failed: %s",
+                            dev_dir.name, exc)
+        return suspended > 0
 
     # ── Autostart (XDG .desktop) ──────────────────────────────
 

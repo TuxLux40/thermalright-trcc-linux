@@ -136,6 +136,10 @@ def launch(verbosity: int = 0, decorated: bool = False,
     signal.signal(signal.SIGINT, lambda *_: qapp.quit())
     platform.wire_ipc_raise(qapp, window)
 
+    # Issue #143: when the user closes the GUI, sleep the LCD chassis so
+    # the panel powers down instead of showing "USB communication lost".
+    qapp.aboutToQuit.connect(t.suspend_all_devices)
+
     if not start_hidden:
         window.show()
 

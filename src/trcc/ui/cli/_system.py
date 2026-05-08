@@ -199,6 +199,14 @@ def uninstall(*, yes: bool = False):
     return 0
 
 
+def sleep_devices() -> int:
+    """Suspend every connected LCD/LED chassis. Mirrors Windows shutdown."""
+    from trcc._boot import trcc as _trcc
+    result = _trcc().suspend_all_devices()
+    print(result.format())
+    return result.exit_code
+
+
 def report(detect_fn=None):
     """Generate a full diagnostic report for bug reports."""
     log.debug("collecting diagnostic report")
