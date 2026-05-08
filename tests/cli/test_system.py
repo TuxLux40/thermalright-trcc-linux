@@ -1833,6 +1833,11 @@ class TestRunSetup:
         assert rc == 0
 
     def test_prints_distro_name(self, completed_process, _mock_builder, capsys):
+        # Patch distro_name to a synthetic value — the test asserts the
+        # wizard prints whatever distro_name returns, not that the test
+        # runner happens to be on Fedora. (Pre-skylar this hardcoded
+        # "Fedora", which broke on NixOS / Arch / Pop!_OS / etc. — see
+        # PR #123 reporter note.)
         from trcc.adapters.system.linux_platform import LinuxPlatform
         _mock_builder._platform = LinuxPlatform()
         patches = self._default_patches(completed_process)
@@ -1840,10 +1845,11 @@ class TestRunSetup:
             k.replace("trcc.adapters.infra.diagnostics.", ""): v
             for k, v in patches.items()
             if k.startswith("trcc.adapters.infra.diagnostics.")
-        }), patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)):
+        }), patch("trcc.adapters.system.linux_platform.subprocess.run", return_value=completed_process(0)), \
+             patch.object(LinuxPlatform, 'distro_name', return_value="TestDistro 99"):
             run_setup(auto_yes=True)
         out = capsys.readouterr().out
-        assert "Fedora" in out
+        assert "TestDistro 99" in out
 
     def test_prints_six_steps(self, completed_process, _mock_builder, capsys):
         from trcc.adapters.system.linux_platform import LinuxPlatform
