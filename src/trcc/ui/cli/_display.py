@@ -419,7 +419,7 @@ def import_config(path, *, lcd: int = 0):
     """Import a .tr archive from PATH and load its theme."""
     from pathlib import Path
 
-    from trcc.conf import settings as _settings
+    _settings = trcc().settings
     data_dir = Path(_settings.user_data_dir) if _settings else Path.home() / '.trcc'
     return _emit(trcc().lcd.import_config(lcd, Path(path), data_dir))
 

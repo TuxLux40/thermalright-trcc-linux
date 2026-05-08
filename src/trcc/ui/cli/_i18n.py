@@ -18,10 +18,10 @@ def get_languages():
 @_cli_handler
 def get_language():
     """Show current language."""
-    from trcc.conf import settings
+    from trcc._boot import trcc as _trcc
     from trcc.core.i18n import LANGUAGE_NAMES
 
-    code = settings.lang
+    code = _trcc().settings.lang
     name = LANGUAGE_NAMES.get(code, code)
     print(f"{code} ({name})")
     return 0

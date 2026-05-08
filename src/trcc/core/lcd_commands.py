@@ -44,9 +44,11 @@ class LCDCommands:
     performs its action.
     """
 
-    def __init__(self, devices: list[LCDDevice], events: EventBus) -> None:
+    def __init__(self, devices: list[LCDDevice], events: EventBus,
+                 settings: Any) -> None:
         self._devices = devices
         self._events = events
+        self._settings = settings
 
     # ── Internal helpers ─────────────────────────────────────────────
 
@@ -586,11 +588,10 @@ class LCDCommands:
             log.warning('Unknown mask source: %s', source)
             return []
 
-        from ..conf import settings as _settings
         from ..services.theme import ThemeService
         o = dev.orientation
         cloud = o.masks_dir
-        user = _settings.user_masks_dir() if _settings else None
+        user = self._settings.user_masks_dir() if self._settings else None
 
         cloud_arg = Path(cloud) if cloud and source != 'custom' else None
         user_arg = Path(user) if user and source != 'builtin' else None
@@ -604,10 +605,9 @@ class LCDCommands:
         dev = self._get(lcd)
         if dev is None:
             return []
-        from ..conf import settings as _settings
-        if _settings is None:
+        if self._settings is None:
             return []
-        bg_dir = Path(_settings.user_data_dir) / 'backgrounds'
+        bg_dir = Path(self._settings.user_data_dir) / 'backgrounds'
         if not bg_dir.exists():
             return []
         return [

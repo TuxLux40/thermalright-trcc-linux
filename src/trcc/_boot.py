@@ -166,7 +166,7 @@ def trcc(
         from trcc.services.system import set_instance
         builder = ControllerBuilder(platform).with_renderer(renderer)
         ImageService.set_renderer(renderer)
-        system_svc = builder.build_system()
+        system_svc = builder.build_system(settings=_settings)
         set_instance(system_svc)
         ensure_data_fn = builder.build_ensure_data_fn()
         download_pack_fn, list_available_fn = builder.build_download_fns()

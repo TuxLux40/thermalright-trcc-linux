@@ -123,13 +123,13 @@ async def render_overlay(dc_path: str, send: bool = True) -> dict:
     """Render overlay from DC config path and optionally send to device."""
     import os
 
-    from trcc.conf import settings
+    from trcc._boot import trcc as _trcc
 
     # Validate path is within the data directory — prevent traversal
 
     if '\0' in dc_path:
         raise HTTPException(status_code=400, detail="Invalid overlay path")
-    allowed_dir = os.path.realpath(str(settings.user_data_dir))
+    allowed_dir = os.path.realpath(str(_trcc().settings.user_data_dir))
     # Resolve to canonical path — handles both absolute and relative input
     safe_path = os.path.realpath(os.path.join(allowed_dir, dc_path))
     if not safe_path.startswith(allowed_dir + os.sep) and safe_path != allowed_dir:
@@ -272,7 +272,7 @@ async def upload_file(file: UploadFile) -> dict:
     Returns the server-side path to pass as ``background`` or ``mask`` in
     subsequent ``POST /display/create-theme`` calls.
     """
-    import trcc.conf as _conf
+    from trcc._boot import trcc as _trcc
 
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in _ALLOWED_UPLOAD_SUFFIXES:
@@ -281,7 +281,7 @@ async def upload_file(file: UploadFile) -> dict:
             detail=f"Unsupported file type '{suffix}'. Allowed: {sorted(_ALLOWED_UPLOAD_SUFFIXES)}",
         )
 
-    uploads_dir = _conf.settings.user_data_dir / "uploads"
+    uploads_dir = _trcc().settings.user_data_dir / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
 
     dest = uploads_dir / f"{uuid.uuid4().hex}{suffix}"
@@ -339,8 +339,8 @@ async def create_theme(
 
     ``overlay`` JSON format: ``{"elements": [{"key": "cpu_temp", "x": 10, "y": 20, ...}]}``
     """
-    import trcc.conf as _conf
     import trcc.ui.api as api
+    from trcc._boot import trcc as _trcc
     from trcc.core.models import build_overlay_config
     from trcc.services import ImageService
 
@@ -348,8 +348,9 @@ async def create_theme(
     api.stop_video_playback()
     api.stop_overlay_loop()
 
-    # Save uploads to ~/.trcc/uploads/
-    uploads_dir = _conf.settings.user_data_dir / "uploads"
+    # Save uploads to ~/.trcc/uploads/. Path() cast keeps types tight
+    # past the Trcc.settings → Any boundary.
+    uploads_dir = Path(_trcc().settings.user_data_dir) / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
 
     bg_suffix = Path(background.filename or "").suffix.lower() or ".jpg"

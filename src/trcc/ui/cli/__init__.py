@@ -1011,8 +1011,8 @@ def _cmd_gpu_list() -> int:
     if not gpu_list:
         print("No GPUs detected.")
         return 0
-    from trcc.conf import settings
-    current = settings.gpu_device
+    from trcc._boot import trcc as _trcc
+    current = _trcc().settings.gpu_device
     for gpu_key, name in gpu_list:
         marker = " *" if gpu_key == current else ""
         print(f"  {gpu_key}: {name}{marker}")
@@ -1028,14 +1028,13 @@ def _cmd_gpu_set(
 ) -> int:
     """Set the active GPU for metrics."""
     from trcc._boot import trcc as _trcc
-    from trcc.conf import settings
     from trcc.core.builder import ControllerBuilder
     svc = ControllerBuilder(_trcc().os).build_system()
     valid_keys = [k for k, _ in svc.enumerator.get_gpu_list()]
     if gpu_key not in valid_keys:
         print(f"Unknown GPU '{gpu_key}'. Available: {', '.join(valid_keys)}")
         return 1
-    settings.set_gpu_device(gpu_key)
+    _trcc().settings.set_gpu_device(gpu_key)
     svc.enumerator.set_preferred_gpu(gpu_key)
     print(f"GPU set to: {gpu_key}")
     return 0

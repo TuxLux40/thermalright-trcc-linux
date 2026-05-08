@@ -57,12 +57,17 @@ _SENTINEL = object()
 class SystemService:
     """Unified system monitoring: sensor discovery, metrics, panel config."""
 
-    def __init__(self, enumerator: SensorEnumerator) -> None:
+    def __init__(self, enumerator: SensorEnumerator,
+                 settings: Any = None) -> None:
         self._enumerator: SensorEnumerator = enumerator
         self._defaults: dict[str, str] | None = None
         self._fallback_cache: dict[str, float] | None = None
         self._fallback_lock = threading.Lock()
         self._mem_clock_cache: object | float | None = _SENTINEL
+        if settings is None:
+            from ..conf import settings as _global
+            settings = _global
+        self._settings = settings
         self._enumerator.discover()
 
     # ── Polling lifecycle ─────────────────────────────────────────────
@@ -255,8 +260,7 @@ class SystemService:
                         m._populated.add(attr_name)
 
         # Zero out disk metrics when HDD info is disabled (C# isHDD toggle)
-        from ..conf import settings
-        if not settings.hdd_enabled:
+        if not self._settings.hdd_enabled:
             m.disk_temp = 0.0
             m.disk_activity = 0.0
             m.disk_read = 0.0

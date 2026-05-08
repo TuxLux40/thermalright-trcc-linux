@@ -728,11 +728,12 @@ class TestI18nCommands(unittest.TestCase):
         self.assertIn("de", output)
         self.assertIn("Deutsch", output)
 
-    @patch('trcc.conf.settings')
-    def test_get_language_shows_current(self, mock_settings):
-        mock_settings.lang = 'ja'
+    def test_get_language_shows_current(self):
+        from trcc import _boot
+        mock_trcc = MagicMock()
+        mock_trcc.settings.lang = 'ja'
         buf = io.StringIO()
-        with redirect_stdout(buf):
+        with patch.object(_boot, "_cached", mock_trcc), redirect_stdout(buf):
             from trcc.ui.cli._i18n import get_language
             result = get_language()
         self.assertEqual(result, 0)

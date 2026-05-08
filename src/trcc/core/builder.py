@@ -182,10 +182,18 @@ class ControllerBuilder:
             device.initialize(self._data_dir)
         return device
 
-    def build_system(self) -> SystemService:
-        """Build and return a SystemService."""
+    def build_system(self, settings: Any = None) -> SystemService:
+        """Build and return a SystemService.
+
+        ``settings`` is optional — SystemService falls back to the global
+        ``conf.settings`` when None, which keeps free-standing builder use
+        (CLI / tests / dev/mock_gui without an explicit Settings) working.
+        """
         from ..services.system import SystemService
-        return SystemService(enumerator=self._os.create_sensor_enumerator())
+        return SystemService(
+            enumerator=self._os.create_sensor_enumerator(),
+            settings=settings,
+        )
 
     def build_ensure_data_fn(self):
         """Return DataManager.ensure_all — the data extraction callable."""

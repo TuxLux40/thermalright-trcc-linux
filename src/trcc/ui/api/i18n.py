@@ -21,10 +21,10 @@ def get_languages() -> dict:
 @router.get("/language")
 def get_language() -> dict:
     """Get the current language code."""
-    from trcc.conf import settings
+    from trcc._boot import trcc as _trcc
     from trcc.core.i18n import LANGUAGE_NAMES
 
-    code = settings.lang
+    code = _trcc().settings.lang
     return {"code": code, "name": LANGUAGE_NAMES.get(code, code)}
 
 

@@ -17,11 +17,10 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen, urlretrieve
 
-from .. import conf
 from ..conf import Settings
 from .models.sensor import SensorInfo
 from .results import AppSnapshot, OpResult, UpdateResult
@@ -52,9 +51,11 @@ def _parse_version(v: str) -> tuple[int, ...]:
 class ControlCenterCommands:
     """Command surface for app-level settings and updates."""
 
-    def __init__(self, platform: Platform, events: EventBus) -> None:
+    def __init__(self, platform: Platform, events: EventBus,
+                 settings: Any) -> None:
         self._platform = platform
         self._events = events
+        self._settings = settings
         self._sensor_enum = None   # lazy — discover on first GPU/sensor query
 
     # ── Settings ─────────────────────────────────────────────────────
@@ -85,17 +86,17 @@ class ControlCenterCommands:
                     success=False,
                     error=f"Invalid temp unit '{unit}' — must be 'C' or 'F'",
                 )
-        conf.settings.set_temp_unit(unit_int)
+        self._settings.set_temp_unit(unit_int)
         self._events.publish('control_center.temp_unit', unit.upper())
         return OpResult(success=True, message=f'Temperature unit: °{unit.upper()}')
 
     def set_language(self, lang: str) -> OpResult:
-        conf.settings.lang = lang
+        self._settings.lang = lang
         self._events.publish('control_center.language', lang)
         return OpResult(success=True, message=f'Language: {lang}')
 
     def set_hdd_enabled(self, enabled: bool) -> OpResult:
-        conf.settings.set_hdd_enabled(enabled)
+        self._settings.set_hdd_enabled(enabled)
         self._events.publish('control_center.hdd', enabled)
         return OpResult(
             success=True,
@@ -108,12 +109,12 @@ class ControlCenterCommands:
                 success=False,
                 error=f'Refresh must be 1-100 seconds, got {seconds}',
             )
-        conf.settings.set_refresh_interval(seconds)
+        self._settings.set_refresh_interval(seconds)
         self._events.publish('control_center.refresh', seconds)
         return OpResult(success=True, message=f'Refresh interval: {seconds}s')
 
     def set_gpu_device(self, gpu_key: str) -> OpResult:
-        conf.settings.set_gpu_device(gpu_key)
+        self._settings.set_gpu_device(gpu_key)
         self._events.publish('control_center.gpu', gpu_key)
         return OpResult(success=True, message=f'GPU: {gpu_key}')
 
@@ -259,7 +260,7 @@ class ControlCenterCommands:
 
     def snapshot(self) -> AppSnapshot:
         from ..__version__ import __version__
-        s = conf.settings
+        s = self._settings
         try:
             autostart = self._platform.autostart_enabled()
         except Exception as e:

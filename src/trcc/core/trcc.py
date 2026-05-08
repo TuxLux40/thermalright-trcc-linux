@@ -89,10 +89,16 @@ class Trcc:
         self._ensure_data_fn = ensure_data_fn
         self._download_pack_fn = download_pack_fn
         self._list_available_fn = list_available_fn
-        # Settings injection (Phase 10A.3 partial). When None, falls back to
-        # ``trcc.conf.settings`` global lazily — backwards compatible. The
-        # full Pure-DI version (every reader takes settings as ctor arg,
-        # global goes away) is its own focused session.
+        # Settings injection (Phase 10A.3). Bound once at construction —
+        # composition root (``_boot.trcc()`` and test fixtures) calls
+        # ``init_settings(platform)`` and passes the resulting instance.
+        # When ``settings`` isn't passed, we fall back to the global ONCE
+        # here (not on every property access) — keeps tests that build
+        # ``Trcc(platform)`` directly working without the late-binding
+        # cost on every consumer's settings lookup.
+        if settings is None:
+            from ..conf import settings as _global
+            settings = _global
         self._settings = settings
         self._current_metrics: Any = None
 
@@ -104,9 +110,10 @@ class Trcc:
         self._metrics_wake: threading.Event = threading.Event()
 
         self.events = EventBus()
-        self.lcd = LCDCommands(self._lcd_devices, self.events)
+        self.lcd = LCDCommands(self._lcd_devices, self.events, self._settings)
         self.led = LEDCommands(self._led_devices, self.events)
-        self.control_center = ControlCenterCommands(platform, self.events)
+        self.control_center = ControlCenterCommands(
+            platform, self.events, self._settings)
 
     # ── Lifecycle ────────────────────────────────────────────────────
     # No public ``bootstrap`` / ``with_renderer`` / factory classmethods —
@@ -120,17 +127,13 @@ class Trcc:
 
     @property
     def settings(self) -> Any:
-        """The injected `Settings` instance, falling back to the module global.
+        """The injected `Settings` instance.
 
-        Phase 10A.3 (partial) — Trcc holds settings explicitly via DI when
-        the composition root passes one. Older readers that haven't been
-        migrated yet still get the global via the fallback. Tests that want
-        isolation pass their own `settings` to `Trcc(settings=…)`.
+        Bound at construction (see ``__init__``). Consumers reach it via
+        ``trcc.settings`` rather than ``from trcc.conf import settings``,
+        so test isolation is one ctor arg away — no global patching.
         """
-        if self._settings is not None:
-            return self._settings
-        from ..conf import settings as _global
-        return _global
+        return self._settings
 
     # ── Convenience accessors — first-of-kind devices ───────────────────
 

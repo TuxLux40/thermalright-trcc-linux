@@ -381,14 +381,14 @@ def export_theme(theme_name: str, resolution: str | None = None) -> Response:
             detail="resolution required — no device connected and no resolution specified",
         )
 
-    from trcc.conf import settings as _settings
+    from trcc._boot import trcc as _trcc
     from trcc.core.paths import resolve_theme_dir
     from trcc.ui.api import _device_dispatcher
 
     o = _device_dispatcher.orientation if _device_dispatcher else None
     td = o.theme_dir if o else None
     theme_dir = td.path if td else Path(resolve_theme_dir(w, h))
-    ucd = getattr(_settings, 'user_content_dir', None)
+    ucd = getattr(_trcc().settings, 'user_content_dir', None)
     user_data_dir = ucd / 'data' if ucd else None
 
     themes = ThemeService.discover_local_merged(

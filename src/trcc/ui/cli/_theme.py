@@ -266,7 +266,7 @@ def export_theme(theme_name, output_path):
     """Export a theme as .tr file."""
     from pathlib import Path
 
-    from trcc.conf import settings
+    from trcc._boot import trcc as _trcc
     from trcc.services import ThemeService
 
     log.debug("export_theme name=%s output=%s", theme_name, output_path)
@@ -281,7 +281,7 @@ def export_theme(theme_name, output_path):
         return 1
 
     themes = ThemeService.discover_local_merged(
-        Path(theme_dir), settings.user_content_dir / 'data', (w, h))
+        Path(theme_dir), _trcc().settings.user_content_dir / 'data', (w, h))
     match = next((t for t in themes if t.name == theme_name), None)
     if not match:
         match = next(
@@ -314,7 +314,6 @@ def import_theme(file_path, *, device=None):
     from trcc.adapters.infra.dc_config import DcConfig
     from trcc.adapters.infra.dc_parser import load_config_json
     from trcc.adapters.infra.dc_writer import import_theme as _import_fn
-    from trcc.conf import settings as _settings
     from trcc.services import ThemeService
     from trcc.ui.cli._display import _connect_or_fail
 
@@ -326,7 +325,7 @@ def import_theme(file_path, *, device=None):
         print("Error: No LCD device connected.")
         return 1
     w, h = lcd.lcd_size
-    data_dir = _settings.user_data_dir
+    data_dir = _trcc().settings.user_data_dir
 
     theme_svc = ThemeService(
         import_theme_fn=_import_fn,
