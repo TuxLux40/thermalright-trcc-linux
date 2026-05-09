@@ -34,7 +34,7 @@ class PsutilCpu(CpuSource):
         self._warm = False
         try:
             self._name = psutil.cpu_info()[0].name  # type: ignore[attr-defined]
-        except Exception:
+        except (psutil.Error, AttributeError, OSError):
             self._name = "CPU"
 
     @property
@@ -55,7 +55,7 @@ class PsutilCpu(CpuSource):
         try:
             freq = psutil.cpu_freq()
             return float(freq.current) if freq else None
-        except Exception:
+        except (psutil.Error, AttributeError, OSError):
             return None
 
     def power(self) -> float | None:
@@ -68,25 +68,25 @@ class PsutilMemory(MemorySource):
     def used(self) -> float | None:
         try:
             return psutil.virtual_memory().used / (1024 * 1024)
-        except Exception:
+        except (psutil.Error, AttributeError, OSError):
             return None
 
     def available(self) -> float | None:
         try:
             return psutil.virtual_memory().available / (1024 * 1024)
-        except Exception:
+        except (psutil.Error, AttributeError, OSError):
             return None
 
     def total(self) -> float | None:
         try:
             return psutil.virtual_memory().total / (1024 * 1024)
-        except Exception:
+        except (psutil.Error, AttributeError, OSError):
             return None
 
     def percent(self) -> float | None:
         try:
             return float(psutil.virtual_memory().percent)
-        except Exception:
+        except (psutil.Error, AttributeError, OSError):
             return None
 
 
@@ -112,7 +112,7 @@ class ComputedIo:
     def _poll_disk(self, readings: dict[str, float], now: float) -> None:
         try:
             disk = psutil.disk_io_counters()
-        except Exception:
+        except (psutil.Error, AttributeError, OSError):
             return
         if disk is None:
             return
@@ -132,7 +132,7 @@ class ComputedIo:
     def _poll_net(self, readings: dict[str, float], now: float) -> None:
         try:
             net = psutil.net_io_counters()
-        except Exception:
+        except (psutil.Error, AttributeError, OSError):
             return
         if net is None:
             return
