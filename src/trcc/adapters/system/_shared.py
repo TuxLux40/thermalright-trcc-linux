@@ -89,3 +89,48 @@ def _posix_raise_existing_instance(config_dir: str) -> None:
         os.kill(pid, signal.SIGUSR1)
     except (FileNotFoundError, ValueError, ProcessLookupError, PermissionError):
         pass
+
+
+# ── SIGUSR1-driven raise-window glue (POSIX — Linux / macOS / BSD) ───────────
+
+def _posix_wire_ipc_raise(app: object, window: object) -> None:
+    """Install a SIGUSR1 handler that raises *window* in the Qt event loop.
+
+    Pure CPython signals can't safely call into Qt directly (they fire
+    asynchronously from the event loop's thread of control), so we marshal
+    the signal into a self-pipe (``socketpair``) that a ``QSocketNotifier``
+    drains in the main thread.
+
+    Identical implementation across Linux / macOS / BSD — extracted to
+    a shared helper rather than triplicated in each platform adapter.
+    Windows uses a different cross-process raise mechanism so it doesn't
+    consume this helper.
+    """
+    import signal
+    import socket
+
+    from PySide6.QtCore import QSocketNotifier
+
+    rsock, wsock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    rsock.setblocking(False)
+    wsock.setblocking(False)
+
+    def _on_sigusr1(signum: object, frame: object) -> None:
+        try:
+            wsock.send(b'\x01')
+        except OSError:
+            pass
+
+    signal.signal(signal.SIGUSR1, _on_sigusr1)
+    notifier = QSocketNotifier(rsock.fileno(), QSocketNotifier.Type.Read, app)
+
+    def _raise_window() -> None:
+        try:
+            rsock.recv(1)
+        except OSError:
+            pass
+        window.showNormal()  # type: ignore[attr-defined]
+        window.raise_()  # type: ignore[attr-defined]
+        window.activateWindow()  # type: ignore[attr-defined]
+
+    notifier.activated.connect(_raise_window)

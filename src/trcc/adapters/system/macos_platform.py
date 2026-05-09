@@ -20,6 +20,7 @@ from trcc.adapters.system._shared import (
     _copy_assets_to_user_dir,
     _posix_acquire_instance_lock,
     _posix_raise_existing_instance,
+    _posix_wire_ipc_raise,
     _print_summary,
 )
 from trcc.core.ports import (
@@ -437,34 +438,7 @@ class MacOSPlatform(Platform):
         return 'avfoundation'
 
     def wire_ipc_raise(self, app: Any, window: Any) -> None:
-        """Install SIGUSR1 handler via AF_UNIX socketpair + QSocketNotifier."""
-        import signal
-        import socket
-
-        from PySide6.QtCore import QSocketNotifier
-        rsock, wsock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
-        rsock.setblocking(False)
-        wsock.setblocking(False)
-
-        def _on_sigusr1(signum: Any, frame: Any) -> None:
-            try:
-                wsock.send(b'\x01')
-            except OSError:
-                pass
-
-        signal.signal(signal.SIGUSR1, _on_sigusr1)
-        notifier = QSocketNotifier(rsock.fileno(), QSocketNotifier.Type.Read, app)
-
-        def _raise_window() -> None:
-            try:
-                rsock.recv(1)
-            except OSError:
-                pass
-            window.showNormal()
-            window.raise_()
-            window.activateWindow()
-
-        notifier.activated.connect(_raise_window)
+        _posix_wire_ipc_raise(app, window)
 
     # ── Administration ────────────────────────────────────────
 
