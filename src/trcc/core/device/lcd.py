@@ -15,7 +15,6 @@ from typing import Any
 
 from .._logging import tagged_logger
 from ..models import DEFAULT_BRIGHTNESS_LEVEL, ThemeInfo, ThemeType
-from ..orientation import Orientation
 from ..paths import resolve_theme_dir
 
 log = logging.getLogger(__name__)
@@ -64,7 +63,6 @@ class LCDDevice:
         self._events = events  # EventBus, injected by ControllerBuilder
         self._info: Any = None  # DeviceInfo, set during connect()
         self.log: logging.Logger = log
-        self.orientation = Orientation(0, 0)
 
     # ══════════════════════════════════════════════════════════════════════
     # Shared lifecycle (DeviceInfo)
@@ -168,7 +166,6 @@ class LCDDevice:
         w, h = dev.resolution
         if w and h and self._display_svc:
             self._display_svc.set_resolution(w, h)
-            self.orientation = self._display_svc.orientation
             self._persist_dirs()
         return {
             "success": True,
@@ -311,6 +308,63 @@ class LCDDevice:
         return self._device_svc
 
     # ══════════════════════════════════════════════════════════════════════
+    # LCD — geometry delegates (replace dev.orientation.X)
+    # ══════════════════════════════════════════════════════════════════════
+
+    @property
+    def native_resolution(self) -> tuple[int, int]:
+        return self._display_svc.native_resolution if self._display_svc else (0, 0)
+
+    @property
+    def output_resolution(self) -> tuple[int, int]:
+        return self._display_svc.output_resolution if self._display_svc else (0, 0)
+
+    @property
+    def canvas_resolution(self) -> tuple[int, int]:
+        return self._display_svc.canvas_resolution if self._display_svc else (0, 0)
+
+    def is_rotated(self) -> bool:
+        return bool(self._display_svc and self._display_svc.is_rotated())
+
+    @property
+    def has_portrait_themes(self) -> bool:
+        return bool(self._display_svc and self._display_svc.has_portrait_themes)
+
+    def image_rotation_for(self, overlay_w: int, overlay_h: int) -> int:
+        if not self._display_svc:
+            return 0
+        return self._display_svc.image_rotation_for(overlay_w, overlay_h)
+
+    @property
+    def theme_dir(self) -> Any | None:
+        return self._display_svc.theme_dir if self._display_svc else None
+
+    @property
+    def local_dir(self) -> Path | None:
+        return self._display_svc.local_dir if self._display_svc else None
+
+    @property
+    def web_dir(self) -> Path | None:
+        return self._display_svc.web_dir if self._display_svc else None
+
+    @property
+    def masks_dir(self) -> Path | None:
+        return self._display_svc.masks_dir if self._display_svc else None
+
+    @property
+    def user_theme_dir(self) -> Path | None:
+        return self._display_svc.user_theme_dir if self._display_svc else None
+
+    @property
+    def user_masks_dir(self) -> Path | None:
+        return self._display_svc.user_masks_dir if self._display_svc else None
+
+    @property
+    def rotation(self) -> int:
+        """Current rotation degrees (0/90/180/270)."""
+        return self._display_svc.rotation if self._display_svc else 0
+
+    # ══════════════════════════════════════════════════════════════════════
     # LCD — connection helpers
     # ══════════════════════════════════════════════════════════════════════
 
@@ -390,32 +444,30 @@ class LCDDevice:
     def _persist_dirs(self) -> None:
         """Write the active per-orientation dirs to config.
 
-        Reads ``theme_dir`` / ``web_dir`` / ``masks_dir`` from
-        ``Orientation`` so non-square devices started rotated persist the
+        Reads ``theme_dir`` / ``web_dir`` / ``masks_dir`` from the device
+        delegates so non-square devices started rotated persist the
         portrait-variant paths the runtime is actually using.  Previously
-        this rebuilt names from ``o.native`` ignoring rotation, so a
+        this rebuilt names from native dims ignoring rotation, so a
         1280x480 device started at rotation=90 wrote landscape paths into
         config while the running app served portrait dirs — restart-from-
         config then loaded the wrong content.
         """
-        o = self.orientation
-        if not isinstance(o, Orientation) or not o.data_root:
+        if not self._display_svc:
             return
-        if not all(o.native):
+        td = self.theme_dir  # None when data_root unset
+        if td is None or not all(self.native_resolution):
             return
-        td = o.theme_dir
         self._persist('theme_dir',
-                      str(td.path) if td and td.path.exists() else None)
-        web = o.web_dir
+                      str(td.path) if td.path.exists() else None)
+        web = self.web_dir
         self._persist('web_dir', str(web) if web else None)
-        masks = o.masks_dir
+        masks = self.masks_dir
         self._persist('masks_dir', str(masks) if masks else None)
 
     def refresh_dirs(self) -> None:
         """Re-probe filesystem dirs and update config."""
         if self._display_svc:
             self._display_svc.refresh_dirs()
-            self.orientation = self._display_svc.orientation
         self._persist_dirs()
 
     def restore_device_settings(self) -> None:
@@ -470,7 +522,7 @@ class LCDDevice:
                      "unchanged — pixel-rotating only",
                      old_canvas, svc.canvas_size)
 
-        w, h = self.orientation.native
+        w, h = self.native_resolution
         if w != h and saved_mask_dir:
             is_zt_mask = saved_mask_dir.parent.name.startswith('zt')
             if is_zt_mask:
@@ -539,7 +591,7 @@ class LCDDevice:
             return None
 
         self.log.info("_reload_mask_for_rotation: %s → %s", old_mask_dir, new_mask_dir)
-        if self.orientation.is_rotated():
+        if self.is_rotated():
             ow, oh = svc.output_resolution
             svc.overlay.set_resolution(ow, oh)
             self.log.info("_reload_mask_for_rotation: portrait → overlay %dx%d", ow, oh)
@@ -643,12 +695,12 @@ class LCDDevice:
             return {"early_return": {**result, "overlay_config": None,
                                      "overlay_enabled": False, "is_animated": False}}
 
-        td = self.orientation.theme_dir
+        td = self.theme_dir
         if not td:
             return {"error": "No theme directory", "success": False}
         path = td.path / theme_name
         if not path.exists():
-            utd = self.orientation.user_theme_dir
+            utd = self.user_theme_dir
             if utd and (user_path := utd / theme_name).exists():
                 self.log.info("restore_last_theme: found in user content dir: %s", user_path)
                 path = user_path
@@ -666,8 +718,8 @@ class LCDDevice:
         overlay_enabled = False
 
         if mask_id:
-            base = (self.orientation.user_masks_dir if cfg.get("mask_custom", False)
-                    else self.orientation.masks_dir)
+            base = (self.user_masks_dir if cfg.get("mask_custom", False)
+                    else self.masks_dir)
             mask_dir = Path(base) / mask_id if base else None
             if mask_dir and mask_dir.exists():
                 svc = self._display_svc
@@ -718,9 +770,9 @@ class LCDDevice:
 
     def load_theme_by_name(self, name: str, width: int = 0, height: int = 0) -> dict:
         w, h = (width, height) if width and height else self.lcd_size
-        td = self.orientation.theme_dir
+        td = self.theme_dir
         theme_dir = td.path if td else Path(resolve_theme_dir(w, h))
-        utd = self.orientation.user_theme_dir
+        utd = self.user_theme_dir
         themes = self._theme_svc.discover_local_merged(
             theme_dir, utd, (w, h))
         match = next((t for t in themes if t.name == name), None)
@@ -839,7 +891,7 @@ class LCDDevice:
 
         result = self._display_svc.apply_standalone_mask(
             Path(mask_path), self._dc_config_cls,
-            is_rotated=self.orientation.is_rotated(),
+            is_rotated=self.is_rotated(),
         )
         if not result.get("success"):
             return result

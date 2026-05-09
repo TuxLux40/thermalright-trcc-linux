@@ -19,8 +19,13 @@ if TYPE_CHECKING:
 
 from ..core._logging import tagged_logger
 from ..core.models import SPLIT_MODE_RESOLUTIONS, SPLIT_OVERLAY_MAP
-from ..core.orientation import Orientation
-from ..core.paths import RESOURCES_DIR, has_themes, theme_dir_name
+from ..core.paths import (
+    RESOURCES_DIR,
+    has_themes,
+    masks_dir_name,
+    theme_dir_name,
+    web_dir_name,
+)
 from .device import DeviceService
 from .image import ImageService
 from .media import MediaService
@@ -86,8 +91,13 @@ class DisplayService:
         # Callback: fired when background data extraction finishes
         self.on_data_ready: Any | None = None
 
-        # Orientation — owns rotation state + content directory refs
-        self._orientation = Orientation(0, 0)
+        # Display geometry primitives (was the Orientation class).
+        # All directory + resolution derivations are @property below.
+        self._native: tuple[int, int] = (0, 0)
+        self._rotation: int = 0
+        self._data_root: Path | None = None
+        self._user_root: Path | None = None
+        self._has_portrait_themes: bool = False
 
         # Mask source tracking (for rotation reload)
         self._mask_source_dir: Path | None = None
@@ -107,42 +117,73 @@ class DisplayService:
         return (self._width, self._height)
 
     @property
-    def orientation(self) -> Orientation:
-        return self._orientation
+    def native_resolution(self) -> tuple[int, int]:
+        """Native (handshake) resolution. Doesn't change after connect."""
+        return self._native
 
     @property
     def rotation(self) -> int:
-        return self._orientation.rotation
+        return self._rotation
 
     @rotation.setter
     def rotation(self, value: int) -> None:
-        self._orientation.rotation = value
+        self._rotation = value
 
-    @property
-    def effective_resolution(self) -> tuple[int, int]:
-        """Canvas rendering resolution — only swaps when portrait dirs exist."""
-        return self._orientation.canvas_resolution
+    def is_rotated(self) -> bool:
+        """True when rotation is 90/270 on a non-square device."""
+        w, h = self._native
+        return w != h and self._rotation in (90, 270)
 
-    @property
-    def canvas_size(self) -> tuple[int, int]:
-        """Alias for effective_resolution."""
-        return self._orientation.canvas_resolution
+    def _rotated_resolution(self) -> tuple[int, int]:
+        """Native with w,h swapped if rotated."""
+        w, h = self._native
+        return (h, w) if self.is_rotated() else (w, h)
 
     @property
     def output_resolution(self) -> tuple[int, int]:
         """Physical device output — always swaps for non-square at 90/270."""
-        return self._orientation.output_resolution
+        return self._rotated_resolution()
+
+    @property
+    def canvas_resolution(self) -> tuple[int, int]:
+        """Internal rendering resolution — only swaps when portrait themes exist."""
+        if self._has_portrait_themes and self.is_rotated():
+            w, h = self._native
+            return (h, w)
+        return self._native
+
+    @property
+    def effective_resolution(self) -> tuple[int, int]:
+        """Canvas rendering resolution — only swaps when portrait dirs exist."""
+        return self.canvas_resolution
+
+    @property
+    def canvas_size(self) -> tuple[int, int]:
+        """Alias for effective_resolution."""
+        return self.canvas_resolution
+
+    @property
+    def has_portrait_themes(self) -> bool:
+        return self._has_portrait_themes
+
+    def image_rotation_for(self, overlay_w: int, overlay_h: int) -> int:
+        """Pixel rotation taking overlay aspect into account.
+
+        0 when portrait theme dirs handle orientation (content already
+        portrait), or when the overlay (mask + text composite) is itself
+        in portrait dimensions — the canvas already represents the rotated
+        frame so no further pixel rotation is needed at this layer.
+        """
+        if not self.is_rotated():
+            return self._rotation
+        if self._has_portrait_themes or overlay_h > overlay_w:
+            return 0
+        return self._rotation
 
     @property
     def _image_rotation(self) -> int:
-        """Pixel rotation angle. 0 when content is already portrait.
-
-        Delegates to ``Orientation.image_rotation_for`` — single SSoT
-        for the rotation predicate; see that method for the rules.
-        """
-        return self._orientation.image_rotation_for(
-            self.overlay.width, self.overlay.height,
-        )
+        """Pixel rotation angle. 0 when content is already portrait."""
+        return self.image_rotation_for(self.overlay.width, self.overlay.height)
 
     def _encode_angle(self) -> int:
         """Device encode rotation angle (C# RotateImg in ImageToJpg)."""
@@ -190,30 +231,29 @@ class DisplayService:
             self._setup_dirs(self._width, self._height)
 
     def _setup_dirs(self, width: int, height: int) -> None:
-        """Set Orientation roots and probe portrait theme availability.
+        """Set content roots and probe portrait theme availability.
 
         Dirs are derived from roots + resolution — no stored dir lists.
         Only non-derivable fact probed: do portrait themes exist on disk?
         """
-        o = self._orientation
         pr = self._path_resolver
 
         if pr:
-            o.data_root = Path(pr.data_dir())
-            o.user_root = Path(pr.user_content_dir()) / 'data'
+            self._data_root = Path(pr.data_dir())
+            self._user_root = Path(pr.user_content_dir()) / 'data'
         else:
             from ..core.paths import DATA_DIR
-            o.data_root = Path(DATA_DIR)
-            o.user_root = None
+            self._data_root = Path(DATA_DIR)
+            self._user_root = None
 
         # Probe portrait themes — the only non-derivable fact
         sw, sh = height, width
-        o.has_portrait_themes = (
+        self._has_portrait_themes = (
             width != height
-            and has_themes(str(o.data_root / theme_dir_name(sw, sh)))
+            and has_themes(str(self._data_root / theme_dir_name(sw, sh)))
         )
-        self.log.info("Orientation: data_root=%s user_root=%s has_portrait_themes=%s",
-                 o.data_root, o.user_root, o.has_portrait_themes)
+        self.log.info("Geometry: data_root=%s user_root=%s has_portrait_themes=%s",
+                 self._data_root, self._user_root, self._has_portrait_themes)
 
     def cleanup(self) -> None:
         """Clean up working directory on exit."""
@@ -231,9 +271,10 @@ class DisplayService:
                  self._width, self._height, width, height)
         self._width = width
         self._height = height
-        old_rot = self._orientation.rotation
-        self._orientation = Orientation(width, height)
-        self._orientation.rotation = old_rot
+        # _native re-pinned; rotation preserved across the resize.
+        # _has_portrait_themes will be re-probed below by _setup_dirs().
+        self._native = (width, height)
+        self._has_portrait_themes = False
 
         if width and height:
             self._setup_dirs(width, height)
@@ -257,7 +298,7 @@ class DisplayService:
     def set_rotation(self, degrees: int) -> Any | None:
         """Set display rotation. Returns rendered image or None.
 
-        Two behaviors based on Orientation:
+        Two behaviors:
         - has_portrait_themes=True: canvas re-inits at portrait dims, dirs swap
         - has_portrait_themes=False: canvas stays, composited output gets pixel-rotated
         """
@@ -267,7 +308,7 @@ class DisplayService:
 
         self.log.info("set_rotation: %d° canvas %s→%s portrait_themes=%s image_rotation=%d",
                  degrees, old_canvas, new_canvas,
-                 self._orientation.has_portrait_themes, self._image_rotation)
+                 self._has_portrait_themes, self._image_rotation)
 
         if old_canvas != new_canvas:
             cw, ch = new_canvas
@@ -993,21 +1034,54 @@ class DisplayService:
         return ok, result if isinstance(result, str) else "Import failed"
 
     # -- Directory properties ----------------------------------------------
+    # All derived from roots + resolution. Rotation swaps w,h in the name.
 
     @property
     def theme_dir(self) -> Any | None:
-        """Current ThemeDir — delegates to Orientation."""
-        return self._orientation.theme_dir
+        """Current ThemeDir. Swaps only when portrait themes exist."""
+        if not self._data_root:
+            return None
+        from ..core.models import ThemeDir
+        w, h = self.canvas_resolution
+        return ThemeDir(str(self._data_root / theme_dir_name(w, h)))
 
     @property
     def local_dir(self) -> Path | None:
-        td = self._orientation.theme_dir
+        td = self.theme_dir
         return td.path if td and td.path.exists() else None
 
     @property
     def web_dir(self) -> Path | None:
-        return self._orientation.web_dir
+        """Active cloud backgrounds dir. Swaps independently on rotation."""
+        if not self._data_root:
+            return None
+        w, h = self._rotated_resolution()
+        d = self._data_root / 'web' / web_dir_name(w, h)
+        return d if d.exists() else None
 
     @property
     def masks_dir(self) -> Path | None:
-        return self._orientation.masks_dir
+        """Active masks dir. Swaps independently on rotation."""
+        if not self._data_root:
+            return None
+        w, h = self._rotated_resolution()
+        d = self._data_root / 'web' / masks_dir_name(w, h)
+        return d if d.exists() else None
+
+    @property
+    def user_theme_dir(self) -> Path | None:
+        """User custom themes dir (~/.trcc-user/data/theme{W}{H})."""
+        if not self._user_root:
+            return None
+        w, h = self.canvas_resolution
+        d = self._user_root / theme_dir_name(w, h)
+        return d if d.exists() else None
+
+    @property
+    def user_masks_dir(self) -> Path | None:
+        """User custom masks dir (~/.trcc-user/data/web/zt{W}{H})."""
+        if not self._user_root:
+            return None
+        w, h = self._rotated_resolution()
+        d = self._user_root / 'web' / masks_dir_name(w, h)
+        return d if d.exists() else None

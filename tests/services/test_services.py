@@ -888,10 +888,9 @@ class TestSetupDirsFallback(unittest.TestCase):
             (native / 'Theme1').mkdir()
             (native / 'Theme1' / '00.png').write_bytes(b'fake')
 
-            o = svc.orientation
-            o.data_root = Path(td)
-            o.has_portrait_themes = False  # no portrait theme dir
+            svc._data_root = Path(td)
             svc.set_resolution(800, 480)
-            o.rotation = 90
+            svc._has_portrait_themes = False  # no portrait theme dir
+            svc.rotation = 90
         # Falls back to native since has_portrait_themes is False
         self.assertIn('800480', str(svc.theme_dir.path))

@@ -74,9 +74,25 @@ def mock_lcd_device():
     All method return values are pre-set so LCDHandler never raises when
     routing commands through the bus.
     """
+    from trcc.core.models import ALL_DEVICES, FBL_PROFILES
+    info = ALL_DEVICES[(0x0402, 0x3922)]
+    w, h = FBL_PROFILES[info.fbl].resolution
+
     lcd = MagicMock()
-    lcd.lcd_size = (320, 320)
-    lcd.resolution = (320, 320)
+    lcd.lcd_size = (w, h)
+    lcd.resolution = (w, h)
+    lcd.native_resolution = (w, h)
+    lcd.output_resolution = (w, h)
+    lcd.canvas_resolution = (w, h)
+    lcd.is_rotated.return_value = False
+    lcd.has_portrait_themes = False
+    lcd.rotation = 0
+    lcd.theme_dir = None
+    lcd.local_dir = None
+    lcd.web_dir = None
+    lcd.masks_dir = None
+    lcd.user_theme_dir = None
+    lcd.user_masks_dir = None
     lcd.connected = True
     lcd.auto_send = True
     lcd.current_theme_path = None
@@ -113,32 +129,36 @@ def mock_lcd_device():
     lcd.device_service = MagicMock()
     # DisplayService mock — tracks resolution so LCDHandler reads correct state
     display_svc = MagicMock()
-    display_svc.lcd_width = 320
-    display_svc.lcd_height = 320
-    display_svc.lcd_size = (320, 320)
-    display_svc.canvas_size = (320, 320)
-    display_svc.effective_resolution = (320, 320)
-    display_svc.output_resolution = (320, 320)
+    display_svc.lcd_width = w
+    display_svc.lcd_height = h
+    display_svc.lcd_size = (w, h)
+    display_svc.canvas_size = (w, h)
+    display_svc.effective_resolution = (w, h)
+    display_svc.output_resolution = (w, h)
+    display_svc.native_resolution = (w, h)
+    display_svc.canvas_resolution = (w, h)
     display_svc.rotation = 0
+    display_svc.is_rotated.return_value = False
+    display_svc.has_portrait_themes = False
     display_svc.theme_dir = None
     display_svc.local_dir = None
     display_svc.web_dir = None
     display_svc.masks_dir = None
+    display_svc.user_theme_dir = None
+    display_svc.user_masks_dir = None
 
-    def _track_resolution(w, h):
-        display_svc.lcd_width = w
-        display_svc.lcd_height = h
-        display_svc.lcd_size = (w, h)
-        display_svc.canvas_size = (w, h)
-        display_svc.effective_resolution = (w, h)
-        display_svc.output_resolution = (w, h)
+    def _track_resolution(width, height):
+        display_svc.lcd_width = width
+        display_svc.lcd_height = height
+        display_svc.lcd_size = (width, height)
+        display_svc.canvas_size = (width, height)
+        display_svc.effective_resolution = (width, height)
+        display_svc.output_resolution = (width, height)
+        display_svc.canvas_resolution = (width, height)
+        display_svc.native_resolution = (width, height)
     display_svc.set_resolution.side_effect = _track_resolution
 
     lcd._display_svc = display_svc
-
-    # Orientation mock — DI'd per device
-    from trcc.core.orientation import Orientation
-    lcd.orientation = Orientation(320, 320)
 
     return lcd
 

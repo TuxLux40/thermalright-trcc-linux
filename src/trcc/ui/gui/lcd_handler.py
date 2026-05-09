@@ -210,7 +210,7 @@ class LCDHandler(BaseHandler):
         self._w['rotation_combo'].blockSignals(True)
         self._w['rotation_combo'].setCurrentIndex(rotation_index)
         self._w['rotation_combo'].blockSignals(False)
-        ow, oh = self._lcd.orientation.output_resolution
+        ow, oh = self._lcd.output_resolution
         self._w['preview'].set_resolution(ow, oh)
         self._update_theme_directories()
 
@@ -420,7 +420,7 @@ class LCDHandler(BaseHandler):
             self._w['preview'].set_status(result.get('message', ''))
             success = result.get('success', False)
         if success:
-            td = self._lcd.orientation.theme_dir
+            td = self._lcd.theme_dir
             if td:
                 self._w['theme_local'].set_theme_directory(td.path)
             self._w['theme_local'].load_themes()
@@ -443,7 +443,7 @@ class LCDHandler(BaseHandler):
             self._w['preview'].set_status(result.get('message', ''))
             success = result.get('success', False)
         if success:
-            td = self._lcd.orientation.theme_dir
+            td = self._lcd.theme_dir
             if td:
                 self._w['theme_local'].set_theme_directory(td.path)
             self._w['theme_local'].load_themes()
@@ -660,22 +660,23 @@ class LCDHandler(BaseHandler):
         else:
             result = self._lcd.set_rotation(degrees)
             image = result.get('image')
-        o = self._lcd.orientation
-        ow, oh = o.output_resolution
-        self.log.info("set_rotation: orientation.rotation=%d output=%dx%d "
+        lcd = self._lcd
+        ow, oh = lcd.output_resolution
+        self.log.info("set_rotation: rotation=%d output=%dx%d "
                  "masks_dir=%s web_dir=%s rotated=%s",
-                 o.rotation, ow, oh, o.masks_dir, o.web_dir, o.is_rotated())
+                 lcd.rotation, ow, oh, lcd.masks_dir, lcd.web_dir, lcd.is_rotated())
         # Resolution BEFORE image — ImageLabel.set_image() scales to widget dims
         self._w['preview'].set_resolution(ow, oh)
         if image:
             self._w['preview'].set_image(image)
         self._update_theme_directories()
-        self._reload_cloud_theme_for_rotation(o)
+        self._reload_cloud_theme_for_rotation()
 
-    def _reload_cloud_theme_for_rotation(self, o: Any) -> None:
+    def _reload_cloud_theme_for_rotation(self) -> None:
         """If a cloud video is active on a non-square device, load the
         orientation-matched version. Downloads it if not already cached."""
-        w, h = o.native
+        lcd = self._lcd
+        w, h = lcd.native_resolution
         if w == h:
             self.log.debug("_reload_cloud_theme_for_rotation: square device — skipping")
             return
@@ -683,7 +684,7 @@ class LCDHandler(BaseHandler):
         if not current or not str(current).endswith('.mp4'):
             self.log.debug("_reload_cloud_theme_for_rotation: no active cloud theme (current=%s)", current)
             return
-        new_web = o.web_dir
+        new_web = lcd.web_dir
         if not new_web:
             self.log.debug("_reload_cloud_theme_for_rotation: no web_dir for new orientation")
             return
@@ -830,21 +831,21 @@ class LCDHandler(BaseHandler):
         Returns True if a first-install auto-load happened (caller should
         skip restore_last_theme to avoid a redundant double-load).
         """
-        o = self._lcd.orientation
-        ow, oh = o.output_resolution
+        lcd = self._lcd
+        ow, oh = lcd.output_resolution
         self.log.debug("_update_theme_directories: output=%dx%d theme_dir=%s "
                   "web_dir=%s masks_dir=%s rotated=%s",
                   ow, oh,
-                  o.theme_dir.path if o.theme_dir else None,
-                  o.web_dir, o.masks_dir, o.is_rotated())
-        td = o.theme_dir
+                  lcd.theme_dir.path if lcd.theme_dir else None,
+                  lcd.web_dir, lcd.masks_dir, lcd.is_rotated())
+        td = lcd.theme_dir
         if td and td.path.exists():
             self._w['theme_local'].set_theme_directory(td.path)
-        if o.web_dir:
-            self._w['theme_web'].set_web_directory(o.web_dir)
+        if lcd.web_dir:
+            self._w['theme_web'].set_web_directory(lcd.web_dir)
         self._w['theme_web'].set_resolution(f'{ow}x{oh}')
-        if o.masks_dir:
-            self._w['theme_mask'].set_mask_directory(o.masks_dir)
+        if lcd.masks_dir:
+            self._w['theme_mask'].set_mask_directory(lcd.masks_dir)
         self._w['theme_mask'].set_resolution(f'{ow}x{oh}')
         self._w['image_cut'].set_resolution(ow, oh)
         self._w['video_cut'].set_resolution(ow, oh)

@@ -8,17 +8,39 @@ import pytest
 from conftest import get_pixel, make_test_surface
 
 from trcc.core.device.lcd import LCDDevice as Device
-from trcc.core.orientation import Orientation
 from trcc.services.display import DisplayService
 from trcc.services.image import ImageService
 from trcc.services.overlay import OverlayService
+
+
+def _disp_mock_with_geometry(resolution=(0, 0)) -> MagicMock:
+    """Default DisplayService mock — geometry attributes set so unpacking works
+    and dir delegates return falsy by default.
+    """
+    disp = MagicMock()
+    disp.native_resolution = resolution
+    disp.output_resolution = resolution
+    disp.canvas_resolution = resolution
+    disp.canvas_size = resolution
+    disp.is_rotated.return_value = False
+    disp.has_portrait_themes = False
+    disp.rotation = 0
+    # Dir delegates default to None so production code's truthy checks
+    # behave like real filesystems (no auto-MagicMock everything).
+    disp.theme_dir = None
+    disp.local_dir = None
+    disp.web_dir = None
+    disp.masks_dir = None
+    disp.user_theme_dir = None
+    disp.user_masks_dir = None
+    return disp
 
 
 def _make_lcd(**overrides) -> Device:
     """Create Device with mock services."""
     defaults = {
         'device_svc': MagicMock(),
-        'display_svc': MagicMock(),
+        'display_svc': _disp_mock_with_geometry(),
         'theme_svc': MagicMock(),
         'renderer': MagicMock(),
         'dc_config_cls': MagicMock(),
@@ -42,13 +64,17 @@ def _make_real_lcd() -> tuple[Device, MagicMock]:
     Only DeviceService is mocked (USB boundary).
     Returns (lcd, mock_device_svc) so tests can verify send_frame calls.
     """
+    from trcc.core.models import ALL_DEVICES, FBL_PROFILES
+    vid_pid = (0x0402, 0x3922)
+    info = ALL_DEVICES[vid_pid]
+    w, h = FBL_PROFILES[info.fbl].resolution
+
     renderer = ImageService.renderer()
     device_svc = MagicMock()
     device_svc.selected = MagicMock()
-    device_svc.selected.encoding_params = ('scsi', (320, 320), None, False)
+    device_svc.selected.encoding_params = ('scsi', (w, h), None, False)
     device_svc.selected.path = '/dev/sg0'
-    device_svc.selected.vid = 0x0402
-    device_svc.selected.pid = 0x3922
+    device_svc.selected.vid, device_svc.selected.pid = vid_pid
     device_svc.selected.device_index = 0
     device_svc.send_frame.return_value = True
     device_svc.send_frame_async.return_value = None
@@ -60,16 +86,15 @@ def _make_real_lcd() -> tuple[Device, MagicMock]:
     mock_media.source_path = None
     mock_media.get_frame.return_value = None
     mock_media.frame_interval_ms = 33
-    overlay = OverlayService(320, 320, renderer=renderer)
+    overlay = OverlayService(w, h, renderer=renderer)
     display_svc = DisplayService(device_svc, overlay, mock_media)
-    display_svc.set_resolution(320, 320)
+    display_svc.set_resolution(w, h)
     lcd = Device(
         device_svc=device_svc,
         display_svc=display_svc,
         theme_svc=MagicMock(),
         renderer=renderer,
     )
-    lcd.orientation = display_svc.orientation
     return lcd, device_svc
 
 
@@ -371,8 +396,8 @@ class TestDeviceSettings(unittest.TestCase):
             new_mask = Path(td) / 'web' / 'zt4801280' / 'Mask01'
             new_mask.mkdir(parents=True)
             (new_mask / '01.png').write_bytes(b'fake')
-            lcd._display_svc.orientation.data_root = Path(td)
-            lcd._display_svc.orientation.rotation = 90
+            lcd._display_svc._data_root = Path(td)
+            lcd._display_svc.rotation = 90
 
             with patch.object(lcd, 'load_mask_standalone',
                               return_value={'success': True}) as mock_load:
@@ -394,8 +419,8 @@ class TestDeviceSettings(unittest.TestCase):
 
             new_masks = Path(td) / 'web' / 'zt4801280'
             new_masks.mkdir(parents=True)
-            lcd._display_svc.orientation.data_root = Path(td)
-            lcd._display_svc.orientation.rotation = 90
+            lcd._display_svc._data_root = Path(td)
+            lcd._display_svc.rotation = 90
 
             lcd._reload_mask_for_rotation(lcd._display_svc)
             self.assertIsNone(lcd._display_svc.overlay.theme_mask)
@@ -411,7 +436,6 @@ class TestDeviceSettings(unittest.TestCase):
         """
         lcd, _ = _make_real_lcd()
         lcd._display_svc.set_resolution(1280, 480)
-        lcd.orientation = lcd._display_svc.orientation
         # has_portrait_themes stays False (default) — no portrait theme dir
 
         with patch.object(lcd, '_reload_theme_for_rotation') as mock_reload:
@@ -428,12 +452,9 @@ class TestDeviceSettings(unittest.TestCase):
         from pathlib import Path
         lcd, _ = _make_real_lcd()
         lcd._display_svc.set_resolution(1280, 480)
-        lcd.orientation = lcd._display_svc.orientation
-        o = lcd.orientation
-
         with tempfile.TemporaryDirectory() as td:
-            o.has_portrait_themes = True
-            o.data_root = Path(td)
+            lcd._display_svc._has_portrait_themes = True
+            lcd._display_svc._data_root = Path(td)
             # Create portrait theme dir so theme_dir resolves
             (Path(td) / 'theme4801280').mkdir()
             lcd._display_svc.current_theme_path = Path('/fake/theme1280480/Theme1')
@@ -450,11 +471,8 @@ class TestDeviceSettings(unittest.TestCase):
         from pathlib import Path
         lcd, _ = _make_real_lcd()
         lcd._display_svc.set_resolution(1280, 480)
-        lcd.orientation = lcd._display_svc.orientation
-        o = lcd.orientation
-
         with tempfile.TemporaryDirectory() as td:
-            o.data_root = Path(td)
+            lcd._display_svc._data_root = Path(td)
             # Set up masks dirs under web/ for both orientations
             old_mask = Path(td) / 'web' / 'zt1280480' / 'Mask01'
             old_mask.mkdir(parents=True)
@@ -536,7 +554,7 @@ class TestRestoreDeviceSettings(unittest.TestCase):
     def test_restores_brightness_and_rotation(self):
         dev = MagicMock(device_index=0, vid=0x0402, pid=0x3922)
         svc = MagicMock(selected=dev)
-        disp = MagicMock()
+        disp = _disp_mock_with_geometry()
         lcd = _make_lcd(device_svc=svc, display_svc=disp)
         with patch('trcc.conf.Settings.device_config_key',
                    return_value="0"), \
@@ -575,9 +593,9 @@ class TestLoadLastTheme(unittest.TestCase):
         import tempfile
         from pathlib import Path
         with tempfile.TemporaryDirectory() as td:
-            # theme_dir derives as data_root / 'theme00' for Orientation(0,0)
-            (Path(td) / 'theme00').mkdir()
-            lcd.orientation.data_root = Path(td)
+            theme_root = Path(td) / 'theme00'
+            theme_root.mkdir()
+            lcd._display_svc.theme_dir = MagicMock(path=theme_root)
             result = lcd.restore_last_theme()
         self.assertFalse(result['success'])
         self.assertIn("not found", result['error'])
@@ -627,7 +645,7 @@ class TestLoadLastTheme(unittest.TestCase):
                     'theme_name': 'Theme1', 'theme_type': 'local',
                 }, 'normalize_legacy_theme.side_effect': lambda _c: _c}),
             )
-            lcd.orientation.data_root = Path(td)
+            lcd._display_svc._data_root = Path(td)
             result = lcd.restore_last_theme()
             self.assertTrue(result['success'])
 
@@ -659,7 +677,7 @@ class TestLoadLastTheme(unittest.TestCase):
                     'theme_name': 'Theme1', 'theme_type': 'local',
                 }, 'normalize_legacy_theme.side_effect': lambda _c: _c}),
             )
-            lcd.orientation.data_root = Path(td)
+            lcd._display_svc._data_root = Path(td)
             result = lcd.restore_last_theme()
             self.assertTrue(result['success'])
             disp.render_overlay.assert_called_once()
@@ -694,7 +712,7 @@ class TestLoadLastTheme(unittest.TestCase):
                     'overlay': {'enabled': True, 'config': {'elements': []}},
                 }, 'normalize_legacy_theme.side_effect': lambda _c: _c}),
             )
-            lcd.orientation.data_root = Path(td)
+            lcd._display_svc._data_root = Path(td)
             result = lcd.restore_last_theme()
             self.assertTrue(result['success'])
             self.assertTrue(result['overlay_enabled'])
@@ -726,7 +744,7 @@ class TestLoadLastTheme(unittest.TestCase):
                     'theme_name': 'Theme1', 'theme_type': 'local',
                 }, 'normalize_legacy_theme.side_effect': lambda _c: _c}),
             )
-            lcd.orientation.data_root = Path(td)
+            lcd._display_svc._data_root = Path(td)
             result = lcd.restore_last_theme()
             self.assertTrue(result['success'])
             self.assertTrue(result['is_animated'])
@@ -779,8 +797,9 @@ class TestLoadLastTheme(unittest.TestCase):
                     'overlay': {'enabled': True, 'config': saved_overlay},
                 }, 'normalize_legacy_theme.side_effect': lambda _c: _c}),
             )
-            lcd.orientation.data_root = Path(td)
-            lcd.orientation.native = (320, 320)
+            lcd._display_svc._native = (320, 320)
+            lcd._display_svc.theme_dir = MagicMock(path=theme_base)
+            lcd._display_svc.masks_dir = masks_base
             result = lcd.restore_last_theme()
             self.assertTrue(result['success'], result.get('error'))
             # Mask DC overlay should be used, not the saved overlay
@@ -795,23 +814,36 @@ class TestLoadLastTheme(unittest.TestCase):
 
 @pytest.fixture
 def lcd_with_mocks():
-    """Device with mock services, 320x320 resolution."""
+    """Device with mock services. Geometry pulled from the device registry."""
+    from trcc.core.models import ALL_DEVICES, FBL_PROFILES
+    vid_pid = (0x0402, 0x3922)
+    info = ALL_DEVICES[vid_pid]
+    w, h = FBL_PROFILES[info.fbl].resolution
+
     svc = MagicMock()
     svc.selected = MagicMock(
-        resolution=(320, 320), device_index=0, vid=0x0402, pid=0x3922,
+        resolution=(w, h), device_index=0, vid=vid_pid[0], pid=vid_pid[1],
     )
     disp = MagicMock()
-    disp.lcd_width = 320
-    disp.lcd_height = 320
+    disp.lcd_width = w
+    disp.lcd_height = h
+    disp.lcd_size = (w, h)
+    disp.native_resolution = (w, h)
+    disp.output_resolution = (w, h)
+    disp.canvas_resolution = (w, h)
+    disp.is_rotated.return_value = False
+    disp.has_portrait_themes = False
+    disp.rotation = 0
+    disp.theme_dir = MagicMock(path=Path(f'/tmp/theme{w}{h}'))
+    disp.user_theme_dir = None
+    disp.web_dir = None
+    disp.masks_dir = None
+    disp.user_masks_dir = None
     disp.load_local_theme.return_value = {
         "image": MagicMock(), "is_animated": False,
     }
     disp.get_video_interval.return_value = 0
-    theme = MagicMock()
-    lcd = _make_lcd(device_svc=svc, display_svc=disp, theme_svc=theme)
-    lcd.orientation = Orientation(320, 320)
-    lcd.orientation.data_root = Path('/tmp')
-    return lcd
+    return _make_lcd(device_svc=svc, display_svc=disp, theme_svc=MagicMock())
 
 
 class TestLoadThemeByName:

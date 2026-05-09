@@ -62,6 +62,13 @@ def masks_dir_name(width: int, height: int) -> str:
     return f'zt{width}{height}'
 
 
+def output_resolution(w: int, h: int, rotation: int) -> tuple[int, int]:
+    """Physical output shape — always swaps for non-square at 90/270."""
+    if w != h and rotation in (90, 270):
+        return (h, w)
+    return (w, h)
+
+
 def resolve_theme_dir(width: int, height: int) -> str:
     """Resolve the best theme directory path for a resolution.
 

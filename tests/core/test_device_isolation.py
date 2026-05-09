@@ -23,7 +23,6 @@ from trcc.core.models import (
     get_button_image,
     pm_to_fbl,
 )
-from trcc.core.orientation import Orientation
 from trcc.core.paths import has_themes
 
 DEV_DIR = Path(__file__).resolve().parents[2] / 'dev'
@@ -215,28 +214,7 @@ class TestButtonIdentity:
 # 3. ORIENTATION ISOLATION
 # =========================================================================
 
-class TestOrientationIsolation:
-
-    def test_independent_rotation(self):
-        a = Orientation(320, 320)
-        b = Orientation(1280, 480)
-        a.rotation = 90
-        assert b.rotation == 0
-
-    def test_rotation_switches_active_dir(self):
-        o = Orientation(1280, 480)
-        o.data_root = Path('/')
-        o.has_portrait_themes = True
-        o.rotation = 0
-        assert 'theme1280480' in str(o.theme_dir.path)
-        o.rotation = 90
-        assert 'theme4801280' in str(o.theme_dir.path)
-
-    def test_square_never_swaps(self):
-        o = Orientation(320, 320)
-        o.data_root = Path('/')
-        o.rotation = 90
-        assert 'theme320320' in str(o.theme_dir.path)
+# Geometry isolation moved to tests/core/test_geometry.py (post-Orientation).
 
 
 # =========================================================================

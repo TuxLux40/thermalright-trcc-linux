@@ -310,14 +310,13 @@ def delete_theme(name: str, lcd: int = 0) -> dict:
 
     from trcc._boot import trcc
 
-    # Resolve name → path from the orientation's theme_dir
+    # Resolve name → path from the device's theme_dir
     t = trcc()
     # pylint: disable=protected-access
     if not (0 <= lcd < len(t._lcd_devices)):
         raise HTTPException(status_code=404, detail=f"LCD {lcd} not found")
     dev = t._lcd_devices[lcd]
-    o = dev.orientation
-    td = o.theme_dir
+    td = dev.theme_dir
     if not td:
         raise HTTPException(status_code=404, detail="No theme directory")
     path = td.path / name
@@ -385,8 +384,7 @@ def export_theme(theme_name: str, resolution: str | None = None) -> Response:
     from trcc.core.paths import resolve_theme_dir
     from trcc.ui.api import _device_dispatcher
 
-    o = _device_dispatcher.orientation if _device_dispatcher else None
-    td = o.theme_dir if o else None
+    td = _device_dispatcher.theme_dir if _device_dispatcher else None
     theme_dir = td.path if td else Path(resolve_theme_dir(w, h))
     ucd = getattr(_trcc().settings, 'user_content_dir', None)
     user_data_dir = ucd / 'data' if ucd else None
@@ -450,7 +448,7 @@ async def import_theme(file: UploadFile) -> dict:
             raise HTTPException(status_code=409, detail="No device connected")
         lcd = _device_dispatcher
         w, h = lcd.resolution  # type: ignore[union-attr]
-        td = lcd.orientation.theme_dir
+        td = lcd.theme_dir
         data_dir = td.path if td else Path(resolve_theme_dir(w, h))
         from trcc.adapters.infra.dc_config import DcConfig
         from trcc.adapters.infra.dc_parser import load_config_json

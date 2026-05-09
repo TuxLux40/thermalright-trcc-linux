@@ -220,8 +220,8 @@ class LCDCommands:
         if (dev := self._get(lcd)) is None:
             return FrameResult(success=False, error=f'LCD {lcd} not found')
         # Caller-side: GUI/CLI/API crops to bytes; we write to user masks dir
-        # and apply. Location resolved from the device orientation.
-        user_masks = getattr(dev.orientation, 'user_masks_dir', None)
+        # and apply. Location resolved from the device's geometry delegates.
+        user_masks = getattr(dev, 'user_masks_dir', None)
         if not user_masks:
             return FrameResult(success=False, error='No user masks directory')
         import uuid
@@ -555,19 +555,18 @@ class LCDCommands:
             return []
 
         from ..services.theme import ThemeService
-        o = dev.orientation
         w, h = dev.lcd_size
 
         if source == 'cloud':
-            web_dir = getattr(o, 'web_dir', None)
+            web_dir = getattr(dev, 'web_dir', None)
             if not web_dir:
                 return []
             return ThemeService.discover_cloud(Path(web_dir))
 
-        td = o.theme_dir
+        td = dev.theme_dir
         if not td or not td.path.exists():
             return []
-        user_dir = getattr(o, 'user_theme_dir', None)
+        user_dir = getattr(dev, 'user_theme_dir', None)
         filter_mode = {'local': 'default', 'user': 'user', 'all': 'all'}[source]
         return ThemeService.discover_local_merged(
             td.path,
@@ -589,8 +588,7 @@ class LCDCommands:
             return []
 
         from ..services.theme import ThemeService
-        o = dev.orientation
-        cloud = o.masks_dir
+        cloud = dev.masks_dir
         user = self._settings.user_masks_dir() if self._settings else None
 
         cloud_arg = Path(cloud) if cloud and source != 'custom' else None
@@ -627,7 +625,6 @@ class LCDCommands:
                 split_mode=0, fit_mode='', resolution=(0, 0),
                 current_theme=None,
             )
-        o = dev.orientation
         theme = dev.current_theme_path
         return LCDSnapshot(
             connected=dev.connected,
@@ -635,7 +632,7 @@ class LCDCommands:
             auto_send=dev.auto_send,
             overlay_enabled=dev.enabled,
             brightness=getattr(dev, 'brightness_level', 0),
-            rotation=getattr(o, 'rotation', 0),
+            rotation=getattr(dev, 'rotation', 0),
             split_mode=getattr(dev, 'split_mode', 0),
             fit_mode=getattr(dev, 'fit_mode', ''),
             resolution=dev.lcd_size,
