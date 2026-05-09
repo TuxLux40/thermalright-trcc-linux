@@ -9,64 +9,14 @@ log = logging.getLogger(__name__)
 
 
 def _probe(dev):
-    """Try to resolve device details via HID handshake/cache.
+    """Resolve device details via Trcc's protocol-aware probe.
 
-    Returns a dict with resolved fields, or empty dict if no probe available.
+    Thin wrapper kept for the existing CLI call sites — the actual
+    HID / Bulk / LED handshake logic lives on ``Trcc.probe`` so UIs
+    don't import ``DeviceProtocolFactory`` directly.
     """
-    result = {}
-    log.debug("probing device %04x:%04x impl=%s", dev.vid, dev.pid, dev.implementation)
-
-    # LED devices: probe via led_device cache/handshake
-    if dev.implementation == 'hid_led':
-        try:
-            from trcc.adapters.device.led import probe_led_model
-            info = probe_led_model(dev.vid, dev.pid, usb_path=dev.usb_path)
-            if info and info.model_name:
-                result['model'] = info.model_name
-                result['pm'] = info.pm
-                result['style'] = info.style
-                log.debug("LED probe result: model=%s pm=%s", info.model_name, info.pm)
-        except Exception:
-            log.debug("LED probe failed for %04x:%04x", dev.vid, dev.pid)
-
-    # HID LCD devices: probe via hid_device handshake
-    elif dev.implementation in ('hid_type2', 'hid_type3'):
-        try:
-            from trcc.adapters.device.factory import DeviceProtocolFactory
-            from trcc.adapters.device.hid import HidHandshakeInfo
-            device_info = {
-                'vid': dev.vid, 'pid': dev.pid,
-                'protocol': dev.protocol, 'device_type': dev.device_type,
-                'implementation': dev.implementation,
-                'path': f"hid:{dev.vid:04x}:{dev.pid:04x}",
-            }
-            protocol = DeviceProtocolFactory.get_protocol(device_info)
-            raw_info = protocol.handshake()
-            if isinstance(raw_info, HidHandshakeInfo):
-                result['pm'] = raw_info.mode_byte_1
-                result['resolution'] = raw_info.resolution
-                if raw_info.serial:
-                    result['serial'] = raw_info.serial
-                log.debug("HID probe result: pm=%s resolution=%s",
-                          raw_info.mode_byte_1, raw_info.resolution)
-        except Exception:
-            log.debug("HID probe failed for %04x:%04x", dev.vid, dev.pid)
-
-    # Bulk USB devices: probe via factory
-    elif dev.implementation == 'bulk_usblcdnew':
-        try:
-            from trcc.adapters.device.factory import DeviceProtocolFactory
-            bp = DeviceProtocolFactory.create_protocol(dev)
-            hs = bp.handshake()
-            if hs and hs.resolution:
-                result['resolution'] = hs.resolution
-                result['pm'] = hs.model_id
-                log.debug("bulk probe result: resolution=%s pm=%s", hs.resolution, hs.model_id)
-            bp.close()
-        except Exception:
-            log.debug("bulk probe failed for %04x:%04x", dev.vid, dev.pid)
-
-    return result
+    from trcc._boot import trcc as _trcc
+    return _trcc().probe(dev)
 
 
 def _format(dev, probe=False):

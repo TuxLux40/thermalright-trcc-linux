@@ -1223,20 +1223,8 @@ class TRCCApp(QMainWindow):
 
         import threading
         def worker() -> None:
-            try:
-                from ...adapters.device.factory import DeviceProtocolFactory
-                protocol = DeviceProtocolFactory.get_protocol(device)
-                if (result := protocol.handshake()):
-                    resolution = getattr(result, 'resolution', None)
-                    fbl = getattr(result, 'fbl', None) or getattr(result, 'model_id', None)
-                    pm = getattr(result, 'pm_byte', 0)
-                    sub = getattr(result, 'sub_byte', 0)
-                    self._hs_notifier.done.emit(device, (resolution, fbl, pm, sub))
-                else:
-                    self._hs_notifier.done.emit(device, None)
-            except Exception as e:
-                log.warning("Handshake failed: %s", e)
-                self._hs_notifier.done.emit(device, None)
+            data = self._trcc.handshake(device)
+            self._hs_notifier.done.emit(device, data)
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_handshake_done(self, device: DeviceInfo, data: tuple | None) -> None:
@@ -1907,8 +1895,7 @@ class TRCCApp(QMainWindow):
         self.uc_activity_sidebar.stop_updates()
         if self._ipc_server:
             self._ipc_server.shutdown()
-        from ...adapters.device.factory import DeviceProtocolFactory
-        DeviceProtocolFactory.close_all()
+        self._trcc.cleanup()
         TRCCApp._instance = None
         event.accept()
         if (app := QApplication.instance()):

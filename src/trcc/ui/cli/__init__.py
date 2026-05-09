@@ -1254,17 +1254,16 @@ def _cmd_perf(
     """Run CPU + memory performance benchmarks."""
 
     if device:
-        from trcc.adapters.device.detector import DeviceDetector
-        from trcc.adapters.device.factory import DeviceProtocolFactory
-        from trcc.adapters.device.led import probe_led_model
+        from trcc._boot import trcc as _trcc
         from trcc.services.perf import run_device_benchmarks
 
         print("Running device I/O benchmarks (this takes ~10s)...")
+        t = _trcc()
         report = run_device_benchmarks(
-            detect_fn=DeviceDetector.detect,
-            get_protocol=DeviceProtocolFactory.get_protocol,
-            get_protocol_info=DeviceProtocolFactory.get_protocol_info,
-            probe_led_fn=probe_led_model,
+            detect_fn=t.detect,
+            get_protocol=t.protocol_for,
+            get_protocol_info=t.protocol_info_for,
+            probe_led_fn=t.probe_led,
         )
         if not report.has_data:
             print("No devices found. Connect a device and try again.")

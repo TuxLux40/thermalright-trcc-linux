@@ -202,17 +202,15 @@ def uninstall(*, yes: bool = False):
 def report(detect_fn=None):
     """Generate a full diagnostic report for bug reports."""
     log.debug("collecting diagnostic report")
-    from trcc.adapters.device.factory import DeviceProtocolFactory
+    from trcc._boot import trcc as _trcc
     from trcc.adapters.infra.debug_report import DebugReport
     from trcc.adapters.infra.doctor import run_doctor
-    from trcc.adapters.system import make_platform
 
-    # Wire the SCSI transport factory before DebugReport.collect() runs
-    # its _handshake_scsi pass.  The report path skips ControllerBuilder
-    # (where this normally gets wired), so without this every SCSI
-    # device's handshake silently fails with "SCSI transport factory
-    # not injected" and the Handshakes section shows nothing useful.
-    DeviceProtocolFactory.set_scsi_transport(make_platform().create_scsi_transport)
+    # Boot the singleton Trcc — wires the SCSI transport factory (and
+    # everything else) as a side effect, so DebugReport.collect()'s
+    # _handshake_scsi pass can succeed.  Replaces the previous
+    # `DeviceProtocolFactory.set_scsi_transport(...)` direct wire.
+    _trcc()
 
     rpt = DebugReport(detect_fn=detect_fn)
     rpt.collect()

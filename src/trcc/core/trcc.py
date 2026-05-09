@@ -631,7 +631,12 @@ class Trcc:
         return 1
 
     def cleanup(self) -> None:
-        """Stop the metrics loop, release every device, drop subscribers."""
+        """Stop the metrics loop, release every device, drop subscribers.
+
+        Also clears the protocol factory cache — UIs call this on app
+        close instead of reaching into ``DeviceProtocolFactory.close_all``.
+        """
+        from ..adapters.device.factory import DeviceProtocolFactory
         self.stop_metrics_loop()
         for dev in self:
             try:
@@ -640,7 +645,139 @@ class Trcc:
                 log.exception('cleanup failed for %s', dev)
         self._lcd_devices.clear()
         self._led_devices.clear()
+        DeviceProtocolFactory.close_all()
         self.events.clear()
+
+    # ── Probe / handshake — UI-facing wrappers around the factory ──────────
+    # UIs (cli/_device.py probe listing, gui/trcc_app.py handshake worker)
+    # used to import DeviceProtocolFactory directly.  These two methods are
+    # the single Trcc-side entry points so the UI layer never imports
+    # anything from `adapters.device`.
+
+    def probe(self, detected: DetectedDevice) -> dict[str, Any]:
+        """Handshake a detected device and extract resolved metadata.
+
+        Returns model / pm / resolution / serial / style as available
+        for the device's protocol.  Empty dict when no probe runs or
+        the handshake fails — callers degrade gracefully.
+
+        Used by ``trcc devices --probe`` and by tools that need
+        per-device details before a full discover/connect cycle.
+        """
+        from ..adapters.device.factory import DeviceProtocolFactory
+
+        impl = detected.implementation
+        result: dict[str, Any] = {}
+        log.debug('Trcc.probe: %04x:%04x impl=%s', detected.vid, detected.pid, impl)
+
+        if impl == 'hid_led':
+            from ..adapters.device.led import probe_led_model
+            try:
+                info = probe_led_model(
+                    detected.vid, detected.pid, usb_path=detected.usb_path)
+            except Exception:
+                log.debug('probe: LED handshake failed for %04x:%04x',
+                          detected.vid, detected.pid, exc_info=True)
+                return {}
+            if info and info.model_name:
+                result['model'] = info.model_name
+                result['pm'] = info.pm
+                result['style'] = info.style
+            return result
+
+        if impl in ('hid_type2', 'hid_type3'):
+            from ..adapters.device.hid import HidHandshakeInfo
+            device_info = {
+                'vid': detected.vid, 'pid': detected.pid,
+                'protocol': detected.protocol,
+                'device_type': detected.device_type,
+                'implementation': detected.implementation,
+                'path': f'hid:{detected.vid:04x}:{detected.pid:04x}',
+            }
+            try:
+                protocol = DeviceProtocolFactory.get_protocol(device_info)
+                raw = protocol.handshake()
+            except Exception:
+                log.debug('probe: HID handshake failed for %04x:%04x',
+                          detected.vid, detected.pid, exc_info=True)
+                return {}
+            if isinstance(raw, HidHandshakeInfo):
+                result['pm'] = raw.mode_byte_1
+                result['resolution'] = raw.resolution
+                if raw.serial:
+                    result['serial'] = raw.serial
+            return result
+
+        if impl == 'bulk_usblcdnew':
+            try:
+                protocol = DeviceProtocolFactory.create_protocol(detected)
+                hs = protocol.handshake()
+                protocol.close()
+            except Exception:
+                log.debug('probe: bulk handshake failed for %04x:%04x',
+                          detected.vid, detected.pid, exc_info=True)
+                return {}
+            if hs and hs.resolution:
+                result['resolution'] = hs.resolution
+                result['pm'] = hs.model_id
+            return result
+
+        return result
+
+    # ── Factory delegates — for benchmarks / diagnostics that need raw access ──
+    # These keep the UI layer free of `adapters.device.factory` imports while
+    # still letting tooling (perf bench, debug report) reach the cached
+    # protocol map.
+
+    def detect(self) -> list[DetectedDevice]:
+        """Run the platform's USB enumeration and return detected devices.
+
+        Re-runs detection on demand — independent of the cached
+        ``_lcd_devices`` / ``_led_devices`` populated by ``discover()``.
+        Used by perf benchmarks and debug-report tooling.
+        """
+        return list(self._platform.create_detect_fn()())
+
+    def protocol_for(self, device_info: Any) -> Any:
+        """Get-or-create the cached DeviceProtocol for this device info."""
+        from ..adapters.device.factory import DeviceProtocolFactory
+        return DeviceProtocolFactory.get_protocol(device_info)
+
+    def protocol_info_for(self, device_info: Any = None) -> Any:
+        """ProtocolInfo describing backend availability for this device."""
+        from ..adapters.device.factory import DeviceProtocolFactory
+        return DeviceProtocolFactory.get_protocol_info(device_info)
+
+    def probe_led(self, vid: int, pid: int, *, usb_path: str = '') -> Any:
+        """LED-specific probe — model name + PM via cached handshake."""
+        from ..adapters.device.led import probe_led_model
+        return probe_led_model(vid, pid, usb_path=usb_path)
+
+    def handshake(self, info: DeviceInfo) -> tuple | None:
+        """One-shot handshake of a known device.
+
+        Returns ``(resolution, fbl, pm, sub)`` on success, ``None`` on
+        any failure.  Used by the GUI's reactivation flow to discover
+        the resolution of a hot-plugged or re-selected device without
+        going through full discovery.
+        """
+        from ..adapters.device.factory import DeviceProtocolFactory
+        try:
+            protocol = DeviceProtocolFactory.get_protocol(info)
+            result = protocol.handshake()
+        except Exception:
+            log.warning('handshake failed for %s',
+                        getattr(info, 'path', info), exc_info=True)
+            return None
+        if not result:
+            return None
+        return (
+            getattr(result, 'resolution', None),
+            (getattr(result, 'fbl', None)
+             or getattr(result, 'model_id', None)),
+            getattr(result, 'pm_byte', 0),
+            getattr(result, 'sub_byte', 0),
+        )
 
     # ── Container protocol ───────────────────────────────────────────
     # Trcc IS the registry of connected devices — `for d in trcc` walks

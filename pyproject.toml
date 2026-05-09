@@ -155,6 +155,7 @@ select = [
     "RUF",   # ruff-native rules
     "FA",    # flake8-future-annotations (require `from __future__ import annotations`)
     "PTH",   # flake8-use-pathlib (prefer pathlib over os.path)
+    "TID251", # flake8-tidy-imports banned-api — UI cannot import past the Trcc seam (TID252 left off — relative imports are fine in this codebase)
 ]
 ignore = [
     "E501",   # line length — wrapping not always clearer
@@ -176,15 +177,17 @@ ignore = [
 # legacy subtree by name and skip top-level files (no PTH violations there).
 [tool.ruff.lint.per-file-ignores]
 # Legacy subtrees — PTH/SIM117/SIM115 retrofits would be discarded at Phase E cutover.
-"src/trcc/adapters/**/*.py" = ["PTH", "SIM115", "SIM117"]
-"src/trcc/core/**/*.py" = ["PTH", "SIM115", "SIM117"]
-"src/trcc/install/**/*.py" = ["PTH", "SIM115", "SIM117"]
-"src/trcc/services/**/*.py" = ["PTH", "SIM115", "SIM117"]
-"src/trcc/ui/**/*.py" = ["PTH", "SIM115", "SIM117"]
+# TID251 (banned-api: trcc.adapters.device) is UI-only — exempt non-UI src trees that
+# legitimately compose adapters.
+"src/trcc/adapters/**/*.py" = ["PTH", "SIM115", "SIM117", "TID251"]
+"src/trcc/core/**/*.py" = ["PTH", "SIM115", "SIM117", "TID251"]
+"src/trcc/install/**/*.py" = ["PTH", "SIM115", "SIM117", "TID251"]
+"src/trcc/services/**/*.py" = ["PTH", "SIM115", "SIM117", "TID251"]
+"src/trcc/ui/**/*.py" = ["PTH", "SIM115", "SIM117"]   # ← TID251 ENFORCED here
 # Legacy top-level files
-"src/trcc/__init__.py" = ["PTH", "SIM115", "SIM117"]
-"src/trcc/__main__.py" = ["PTH", "SIM115", "SIM117"]
-"src/trcc/__version__.py" = ["PTH", "SIM115", "SIM117"]
+"src/trcc/__init__.py" = ["PTH", "SIM115", "SIM117", "TID251"]
+"src/trcc/__main__.py" = ["PTH", "SIM115", "SIM117", "TID251"]
+"src/trcc/__version__.py" = ["PTH", "SIM115", "SIM117", "TID251"]
 # Tests — same rationale as legacy src; the d4e1b287 ruff expansion
 # (UP/B/SIM/PIE/RUF/FA/PTH) and 8ef3264c PEP 585/604 sweep didn't touch
 # tests/.  Soft-gate covers the families that fire there:
@@ -199,6 +202,7 @@ ignore = [
     "PIE807", "PIE808",
     "RUF013", "RUF015", "RUF043", "RUF059",
     "B007", "B018", "B023",
+    "TID251",   # tests legitimately exercise adapters.device directly
 ]
 # CI helper scripts (.github/scripts/) — tooling that runs in workflows,
 # not production code.  Same legacy rationale as tests/ — keeping them
@@ -207,6 +211,13 @@ ignore = [
 "src/trcc/_entry.py" = ["PTH", "SIM115", "SIM117"]
 "src/trcc/conf.py" = ["PTH", "SIM115", "SIM117"]
 "src/trcc/ipc.py" = ["PTH", "SIM115", "SIM117"]
+
+# UI layer cannot reach past the Trcc seam — every device action goes
+# through trcc.lcd / trcc.led / trcc.control_center / trcc.probe / etc.
+# Layers that legitimately compose adapters (core, services, install,
+# top-level _boot/_entry/__init__) get TID251 disabled below.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"trcc.adapters.device".msg = "UI must talk to Trcc — use trcc.lcd / trcc.led / trcc.probe / trcc.handshake / trcc.cleanup. See trcc/core/trcc.py."
 
 [tool.coverage.run]
 source = ["trcc"]
