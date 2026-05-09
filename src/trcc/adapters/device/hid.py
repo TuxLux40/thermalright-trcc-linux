@@ -28,6 +28,7 @@ import usb.core
 import usb.util
 
 from trcc.core.models import (
+    HANDSHAKE_TIMEOUT_HID_MS,
     HandshakeResult,  # noqa: F401 — re-export
     HidHandshakeInfo,
     UsbAddress,
@@ -103,7 +104,9 @@ def _frame_timeout_ms(packet_size: int) -> int:
 # Handshake timeout (ms) — much longer than frame-send.
 # Windows uses async HID API with no explicit timeout; our synchronous read
 # needs a generous window.  UCDevice.cs retries at 200ms then 3s intervals.
-HANDSHAKE_TIMEOUT_MS = 5000
+# The exact value lives in core/models/protocol.py — see the comment block
+# there for the per-transport calibration rationale.
+HANDSHAKE_TIMEOUT_MS = HANDSHAKE_TIMEOUT_HID_MS
 
 # Handshake retry settings (UCDevice.cs Timer_event: 3 scans with increasing delay)
 HANDSHAKE_MAX_RETRIES = 3

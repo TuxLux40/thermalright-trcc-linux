@@ -357,6 +357,31 @@ SPLIT_MODE_RESOLUTIONS: set[tuple[int, int]] = {(1600, 720)}
 
 
 # =============================================================================
+# USB transport timeouts — calibrated per transport, NOT a typo.
+# =============================================================================
+# Handshake values look inconsistent at first read (1000 vs 5000) — they are
+# calibrated for the latency profile of each transport stack:
+#
+#   Bulk + LY: raw pyusb endpoint read/write straight to the device.
+#              Handshake payload is tiny (a few bytes), round-trip is ~10ms
+#              typical.  1000ms is generous; longer just delays handshake
+#              failures.
+#
+#   HID:       kernel HID layer mediates each packet (HID report parsing,
+#              boot-protocol negotiation on some chipsets).  Some HID Type 2
+#              firmwares take 1-2s to respond on first poll after replug.
+#              5000ms gives margin without making failure cases hang.
+#
+# Frame-write timeout is uniform — sized for the largest possible payload
+# (full 1280×480 RGB565 + JPEG headers ≈ 200KB), which dominates over
+# transport differences.
+HANDSHAKE_TIMEOUT_BULK_MS = 1000
+HANDSHAKE_TIMEOUT_LY_MS = 1000   # by-design twin of Bulk
+HANDSHAKE_TIMEOUT_HID_MS = 5000
+FRAME_WRITE_TIMEOUT_MS = 5000
+
+
+# =============================================================================
 # Panel Asset Dims — scaled dimensions for crop/video panel backgrounds
 # =============================================================================
 # C# buttonSelectBackgroundImage() maps each device resolution to scaled dims
@@ -562,6 +587,10 @@ __all__ = [
     'DEVICE_TYPE_NAMES',
     'FBL_PROFILES',
     'FBL_TO_RESOLUTION',
+    'FRAME_WRITE_TIMEOUT_MS',
+    'HANDSHAKE_TIMEOUT_BULK_MS',
+    'HANDSHAKE_TIMEOUT_HID_MS',
+    'HANDSHAKE_TIMEOUT_LY_MS',
     'JPEG_MODE_FBLS',
     'LED_DEVICE_TYPE_NAME',
     'PANEL_ASSET_DIMS',

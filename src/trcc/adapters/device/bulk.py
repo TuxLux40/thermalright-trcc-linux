@@ -18,7 +18,13 @@ from __future__ import annotations
 import logging
 import struct
 
-from trcc.core.models import HandshakeResult, fbl_to_resolution, pm_to_fbl
+from trcc.core.models import (
+    FRAME_WRITE_TIMEOUT_MS,
+    HANDSHAKE_TIMEOUT_BULK_MS,
+    HandshakeResult,
+    fbl_to_resolution,
+    pm_to_fbl,
+)
 
 from ._usb_helpers import BulkFrameDevice
 from .frame import FrameDevice
@@ -60,8 +66,10 @@ def _bulk_resolution(pm: int, sub: int = 0) -> tuple[int, int]:
 
 
 _HANDSHAKE_READ_SIZE = 1024
-_HANDSHAKE_TIMEOUT_MS = 1000
-_WRITE_TIMEOUT_MS = 5000
+# Handshake + frame-write timeouts live in core/models/protocol.py — see
+# the comment block there for the per-transport calibration rationale.
+_HANDSHAKE_TIMEOUT_MS = HANDSHAKE_TIMEOUT_BULK_MS
+_WRITE_TIMEOUT_MS = FRAME_WRITE_TIMEOUT_MS
 _FRAME_HEADER_SIZE = 64
 _WRITE_CHUNK_SIZE = 16 * 1024  # 16 KiB per USB bulk write
 

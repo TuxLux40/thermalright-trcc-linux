@@ -22,7 +22,13 @@ import logging
 import struct
 from typing import TYPE_CHECKING
 
-from trcc.core.models import HandshakeResult, fbl_to_resolution, pm_to_fbl
+from trcc.core.models import (
+    FRAME_WRITE_TIMEOUT_MS,
+    HANDSHAKE_TIMEOUT_LY_MS,
+    HandshakeResult,
+    fbl_to_resolution,
+    pm_to_fbl,
+)
 
 from ._usb_helpers import BulkFrameDevice
 from .frame import FrameDevice
@@ -45,9 +51,11 @@ _HANDSHAKE_HEADER = bytes([
 _HANDSHAKE_PAYLOAD = _HANDSHAKE_HEADER + bytes(2032)
 
 _HANDSHAKE_READ_SIZE = 512
-_HANDSHAKE_TIMEOUT_MS = 1000
-_WRITE_TIMEOUT_MS = 5000
-_READ_TIMEOUT_MS = 1000
+# Handshake + frame-write timeouts live in core/models/protocol.py — see
+# the comment block there for the per-transport calibration rationale.
+_HANDSHAKE_TIMEOUT_MS = HANDSHAKE_TIMEOUT_LY_MS
+_WRITE_TIMEOUT_MS = FRAME_WRITE_TIMEOUT_MS
+_READ_TIMEOUT_MS = HANDSHAKE_TIMEOUT_LY_MS  # same calibration as handshake
 
 _CHUNK_SIZE = 512       # Total bytes per chunk (header + data)
 _CHUNK_HEADER_SIZE = 16
