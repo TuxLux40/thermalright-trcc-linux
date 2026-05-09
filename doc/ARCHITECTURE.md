@@ -1,203 +1,236 @@
 # Architecture
 
-## Hexagonal (Ports & Adapters)
-
-The project follows hexagonal architecture. The **services layer** is the core hexagon containing all business logic (pure Python, no framework deps). Four driving adapters consume the services via **Device ABCs** (`LCDDevice` / `LEDDevice`):
-
-- **CLI** (`cli/` package) — Typer, 58 commands across 8 submodules, 7 help panels. Thin presentation wrappers over `LCDDevice`/`LEDDevice` — connect, call device method, print result.
-- **GUI** (`gui/`) — PySide6, `TRCCApp` (thin shell) + `LCDHandler` (one per LCD device)
-- **API** (`api/` package) — FastAPI REST adapter, 61 endpoints across 7 submodules
-- **IPC** (`ipc.py`) — Unix socket daemon for GUI-as-server single-device-owner safety
-- **Setup GUI** (`install/gui.py`) — Standalone PySide6 setup wizard
-
-## Project Layout
+## Big picture
 
 ```
-src/trcc/
-├── cli/                         # Typer CLI adapter package (8 submodules)
-├── api/                         # FastAPI REST adapter package (7 submodules)
-│   ├── __init__.py              # App factory, middleware, CORS
-│   ├── devices.py               # Device endpoints (detect, select, info)
-│   ├── display.py               # Display endpoints (send, color, brightness, rotation)
-│   ├── led.py                   # LED endpoints (color, mode, brightness, sensor)
-│   ├── themes.py                # Theme endpoints (list, load, save, export, import)
-│   ├── system.py                # System endpoints (info, metrics, screencast)
-│   └── models.py                # Pydantic request/response models + require_connected()
-├── ipc.py                       # Unix socket IPC daemon (GUI-as-server)
-├── conf.py                      # Settings singleton + persistence helpers
-├── __version__.py               # Version info
-├── adapters/
-│   ├── device/                       # USB device protocol handlers (GoF-named)
-│   │   ├── template_method_device.py # UsbDevice / FrameDevice / LedDevice ABCs
-│   │   ├── template_method_hid.py    # HID USB transport (PyUSB)
-│   │   ├── _template_method_bulk.py  # Bulk-like USB base class
-│   │   ├── abstract_factory.py       # Protocol factory + LCDMixin/LEDMixin ABCs
-│   │   ├── adapter_scsi.py           # SCSI protocol (sg_raw)
-│   │   ├── adapter_bulk.py           # Raw USB bulk protocol
-│   │   ├── adapter_ly.py             # LY USB bulk protocol (0416:5408/5409)
-│   │   ├── adapter_led.py            # LED RGB protocol (effects, HID sender)
-│   │   ├── adapter_led_kvm.py        # KVM LED backend
-│   │   ├── adapter_hr10.py           # HR10 LED backend
-│   │   ├── strategy_segment.py       # Segment display renderer (10 styles)
-│   │   ├── facade_lcd.py             # SCSI RGB565 frame send
-│   │   └── registry_detector.py      # USB device scan + registries
-│   ├── render/                  # Rendering backends (Strategy pattern)
-│   │   └── qt.py                # QtRenderer — primary (QImage/QPainter)
-│   ├── system/                  # System integration
-│   │   ├── sensors.py           # Hardware sensor discovery + collection
-│   │   ├── hardware.py          # Hardware info (CPU, GPU, RAM, disk)
-│   │   ├── info.py              # Dashboard panel config
-│   │   └── config.py            # Dashboard config persistence
-│   └── infra/                   # Infrastructure (I/O, files, network)
-│       ├── data_repository.py   # XDG paths, on-demand download
-│       ├── binary_reader.py     # Binary data reader
-│       ├── dc_parser.py         # Parse config1.dc overlay configs
-│       ├── dc_writer.py         # Write config1.dc files
-│       ├── dc_config.py         # DcConfig class
-│       ├── font_resolver.py     # Cross-distro font discovery
-│       ├── media_player.py      # FFmpeg video frame extraction
-│       ├── theme_cloud.py       # Cloud theme HTTP fetch
-│       ├── theme_downloader.py  # Theme pack download manager
-│       ├── debug_report.py      # Diagnostic report tool
-│       └── doctor.py            # Dependency health check + structured checks
-├── install/                     # Standalone setup wizard (works without trcc installed)
-│   ├── __init__.py
-│   └── gui.py                   # PySide6 setup wizard GUI
-├── services/                    # Core hexagon — pure Python, no framework deps
-│   ├── __init__.py              # Re-exports service classes
-│   ├── device.py                # DeviceService — detect, select, send_pil, send_rgb565
-│   ├── image.py                 # ImageService — thin facade over Renderer
-│   ├── display.py               # DisplayService — high-level display orchestration
-│   ├── led.py                   # LEDService — LED RGB control via LedProtocol
-│   ├── led_config.py            # LED config persistence (Memento pattern)
-│   ├── led_effects.py           # LEDEffectEngine — strategy pattern for LED effects
-│   ├── media.py                 # MediaService — GIF/video frame extraction
-│   ├── overlay.py               # OverlayService — overlay rendering
-│   ├── renderer.py              # Renderer ABC — Strategy port for compositing backends
-│   ├── system.py                # SystemService — system sensor access and monitoring
-│   ├── theme.py                 # ThemeService — theme orchestration
-│   ├── theme_loader.py          # Theme loading logic
-│   ├── theme_persistence.py     # Theme save/export/import
-│   └── video_cache.py           # Video frame caching
-├── core/
-│   ├── models.py                # Domain constants, dataclasses, enums, resolution pipeline
-│   ├── ports.py                 # Device ABC (4 methods), Renderer ABC
-│   ├── lcd_device.py            # LCDDevice(Device) — direct methods, delegates to services
-│   ├── led_device.py            # LEDDevice(Device) — set_color, set_mode, tick, zone/segment ops
-│   ├── builder.py               # ControllerBuilder — fluent builder, full DI wiring
-│   └── encoding.py              # Encoding utilities
-└── gui/               # PySide6 GUI adapter
-    ├── trcc_app.py              # TRCCApp — thin QMainWindow shell (C# Form1 equivalent)
-    ├── lcd_handler.py           # LCDHandler — one per LCD device (C# FormCZTV equivalent)
-    ├── base.py                  # BasePanel, BaseThemeBrowser, pil_to_pixmap
-    ├── constants.py             # Layout coords, sizes, colors, styles
-    ├── assets.py                # Asset loader with lru_cache
-    ├── metrics_mediator.py      # MetricsMediator — sensor data routing
-    ├── eyedropper.py            # Fullscreen color picker
-    ├── screen_capture.py        # X11/Wayland screen grab
-    ├── pipewire_capture.py      # PipeWire/Portal Wayland capture
-    ├── uc_device.py             # Device sidebar
-    ├── uc_preview.py            # Live preview frame
-    ├── uc_theme_local.py        # Local theme browser
-    ├── uc_theme_web.py          # Cloud theme browser
-    ├── uc_theme_mask.py         # Mask browser
-    ├── uc_theme_setting.py      # Overlay editor / display mode panels
-    ├── uc_image_cut.py          # Image cropper
-    ├── uc_video_cut.py          # Video trimmer
-    ├── uc_system_info.py        # Sensor dashboard
-    ├── uc_sensor_picker.py      # Sensor selection dialog
-    ├── uc_info_module.py        # Live system info display
-    ├── uc_led_control.py        # LED RGB control panel (LED styles 1-12)
-    ├── uc_screen_led.py         # LED segment visualization (colored circles)
-    ├── uc_color_wheel.py        # HSV color wheel for LED hue selection
-    ├── uc_activity_sidebar.py   # Sensor element picker
-    └── uc_about.py              # Settings / about panel
+                   ┌──────────────────────────────────┐
+                   │  Composition root (_boot.trcc)   │
+                   │  Builds either:                  │
+                   │     Trcc          (in-process)   │
+                   │     TrccProxy     (daemon mode)  │
+                   └────────────────┬─────────────────┘
+                                    │
+              ┌─────────────────────┼─────────────────────┐
+              │                     │                     │
+              ▼                     ▼                     ▼
+       ┌────────────┐        ┌────────────┐        ┌────────────┐
+       │ ui/cli/    │        │ ui/gui/    │        │ ui/api/    │
+       │ Typer cmds │        │ TRCCApp    │        │ FastAPI    │
+       └─────┬──────┘        └─────┬──────┘        └─────┬──────┘
+             │                     │                     │
+             └─────────────────────┼─────────────────────┘
+                                   ▼
+                         ┌────────────────────┐
+                         │ Trcc (or proxy)    │
+                         │   .lcd             │  ← LCDCommands
+                         │   .led             │  ← LEDCommands
+                         │   .control_center  │  ← ControlCenterCommands
+                         │   .events          │  ← EventBus
+                         │   .lcd_devices     │  ← DeviceRegistry
+                         │   .led_devices     │
+                         │   .renderer        │
+                         └─────────┬──────────┘
+                                   │
+                  ┌────────────────┼────────────────┐
+                  ▼                ▼                ▼
+            services/        core/device/      adapters/
+            (pure logic)     (LCDDevice +      (USB transports,
+                              workflows)        renderer, system)
 ```
 
-## Design Patterns
+UIs depend only on the `Trcc` shape.  In daemon mode `_boot.trcc()`
+returns a `TrccProxy` instead — same surface, every call serialized to
+the daemon over a Unix socket and back.
 
-### Hexagonal / Device ABCs
+## Layers (hexagonal: ports & adapters)
 
-`LCDDevice` and `LEDDevice` in `core/` are the single entry point for all adapters. `LCDDevice` has direct methods (capabilities inlined in v8.0.0) that delegate to services. `LEDDevice` has direct methods. CLI, GUI, and API all import from `core/` — never adapter→adapter. Law of Demeter: Adapter→Device→Services only.
+| Layer | What lives here | Hard rules |
+|---|---|---|
+| `core/models/` | Domain dataclasses, enums, registries.  No I/O, no framework deps. | Pure Python.  No imports from anywhere outside `core/`. |
+| `core/ports.py` | Abstract ports — `Renderer`, `Platform`, `OSConfig`. | The contracts adapters implement. |
+| `core/device/` | `LCDDevice` + `LEDDevice` facades + composed helpers (persistence, theme workflow). | Holds USB-state-aware logic, but never opens USB itself — that's the protocol's job. |
+| `core/lcd_commands.py`, `led_commands.py`, `control_center_commands.py` | Command bus surface (`Trcc.lcd.X(idx, ...)`). | Each method is `@command`-decorated; routes through index → `DeviceRegistry` lookup → device delegate. |
+| `core/trcc.py` | The single `Trcc` class every UI holds. | Pure DI: every dep injected at ctor.  No global mutation. |
+| `core/trcc_proxy.py` | `TrccProxy` — drop-in replacement that routes calls over IPC. | Structurally typed against `Trcc`; UIs never branch on which they got. |
+| `core/events.py` | `EventBus` + `Topic` strings for state-change notifications. | Subscribers are loosely coupled; publishers don't know who's listening. |
+| `services/` | Stateful coordination — `DeviceService`, `DisplayService`, `OverlayService`, `LEDService`, `ThemeService`, `MediaService`, `SystemService`. | No Qt, no PySide6, no FastAPI imports.  Pure Python with the rendering port. |
+| `adapters/device/` | USB transports — SCSI sg_io, HID, Bulk, LY, LED.  Plus `factory.py` which routes (vid, pid) → protocol via self-registering `@register()`. | Implements transport ABCs from `template_method_device.py`. |
+| `adapters/render/qt.py` | `QtRenderer` — implements the `Renderer` port via QImage/QPainter. | Single concrete implementation today; the port lets us swap. |
+| `adapters/system/` | Per-OS platform implementations + sensor enumeration. | One `Platform` ABC, four subclasses (Linux/Windows/macOS/BSD). |
+| `adapters/infra/` | I/O — config, logs, downloads, fonts, archive extraction, cloud themes. | Stateful but framework-agnostic. |
+| `ipc.py` | Unix socket server bound to a `Trcc`.  Manifold dispatch + long-lived event subscriptions. | Daemon-side; transport only. |
+| `daemon.py` | `trccd` entry point — builds Trcc, wires IPCServer, runs Qt loop. | The other side of `_boot.trcc()`'s `TrccProxy` branch. |
+| `_boot.py` | The single composition root: `trcc()` returns the cached process-local handle. | Picks `Trcc` vs `TrccProxy` based on `TRCC_DAEMON`. |
+| `ui/cli/` | Typer CLI commands. | Calls `trcc().lcd.X(...)` etc.  Never imports from adapters directly. |
+| `ui/api/` | FastAPI app + endpoints. | Same. |
+| `ui/gui/` | PySide6 `TRCCApp` + per-device handlers. | Same. |
+| `install/` | Standalone setup wizard. | Runs without `trcc` installed (used during distro setup). |
 
-Key `LCDDevice` methods for adapter parity:
-- `send(image)` — async send (non-blocking, latest-frame-wins queue)
-- `send_frame(image)` — sync send (blocks until USB write completes, used by frame pump loops)
-- `save(name)` — saves to `~/.trcc-user/` via `DisplayService.save_theme()`
-- `load_theme_by_name(name)` — discovers from both stock + user dirs, loads overlay for static and animated
-- `set_mask_from_path(path)` — handles both file and directory mask paths
-- `load_overlay_config_from_dir(path)` — reads DC/config.json overlay config
+## The composition root
 
-Key `ThemeService` static methods:
-- `discover_local_merged(primary_dir, user_content_dir)` — scans both dirs, deduplicates, sorts
-- `discover_masks(cloud_dir, user_dir)` — merges cloud + user masks, user first
+Every UI does the same thing:
 
-### Strict Dependency Injection (v8.1.0)
+```python
+from trcc._boot import trcc
+result = trcc().lcd.set_brightness(0, 75)
+```
 
-All service constructors are strict — `RuntimeError` if required adapter dependencies are not provided. Services never import from adapters. Adapter wiring happens exclusively in **composition roots**:
+`_boot.trcc()` is cached per-process.  Behaviour:
 
-- **`core/builder.py`** — `ControllerBuilder.build_lcd()` / `build_led()` — full DI for GUI path
-- **`core/lcd_device.py:_build_services()`** — called from `connect()`, mirrors builder wiring for CLI/API
-- **`cli/` functions** — each CLI command imports and injects concrete adapters
-- **`api/__init__.py`** — module-level adapter wiring for REST API
+- **`TRCC_DAEMON` unset** (default): builds an in-process `Trcc` once.  Wires platform, renderer, services, then runs `Trcc.discover()` so the first command sees devices.
+- **`TRCC_DAEMON=1`**: returns a `TrccProxy` connected to a running daemon.  Auto-spawns the daemon via `daemon.ensure_daemon()` on first call.
+- **Windows < build 17063**: `AF_UNIX` unavailable → silent fallback to in-process.  The flag is safe to set on any OS.
 
-One accepted exception: `SystemService._get_instance()` acts as a mini composition root for the convenience singleton (used by GUI widgets via `get_all_metrics()`).
+Tests + GUI launch can override the platform / renderer:
 
-### Metrics Observer
+```python
+trcc(MockPlatform(specs))                # tests
+trcc(platform, renderer=QtRenderer(),    # GUI: windowed renderer + deferred discover
+     discover_now=False)
+```
 
-`UCLedControl.update_metrics(metrics)` is the single entry point for hardware metrics. The panel dispatches internally based on `style_id`:
+## In-process vs. daemon mode
 
-- Styles 1-3, 5-8, 11-12: `update_sensor_metrics()` (CPU/GPU temp, load, fan)
-- Style 4: `update_memory_metrics()` (RAM/VRAM usage)
-- Style 10: `update_lf11_disk_metrics()` (disk usage, SMART)
-- Style 9: `_update_clock()` (LC2 date/time — reads own timer state, no external args)
+| | In-process (`TRCC_DAEMON` unset) | Daemon (`TRCC_DAEMON=1`) |
+|---|---|---|
+| `_boot.trcc()` returns | `Trcc` | `TrccProxy` |
+| USB ownership | the calling process | the daemon process |
+| `Trcc.lcd.set_brightness(0, 75)` | direct method call | manifold IPC request → daemon dispatches → response back |
+| `Trcc.events.subscribe(Topic.FRAME, cb)` | in-process pub/sub | long-lived socket per subscription, JSON event lines |
+| `Topic.FRAME` payload | native `QImage` | encoded as `{"__surface__": "<base64 PNG>"}` envelope at the wire boundary; decoded back to `QImage` in the proxy's reader thread |
 
-Callers (`lcd_handler._poll_sensors()`, test harnesses) just pass metrics — zero routing knowledge needed. This is the Observer pattern: provider emits, subscriber dispatches.
+The proxy is a structural drop-in for `Trcc` — `.lcd`, `.led`, `.control_center`, `.events` all match by shape.  GUI / CLI / API call sites never have to branch.
 
-### Per-Device Configuration
+## Manifold IPC
 
-Each connected LCD is identified by `"{index}:{vid:04x}_{pid:04x}"` (e.g. `"0:87cd_70db"`). Settings are stored in `~/.trcc/config.json` under a `"devices"` key. Each device independently persists:
+Every dispatched call serializes as:
 
-- **Theme** — last selected local/cloud theme path
-- **Brightness** — 3-level brightness (25%, 50%, 100%)
-- **Rotation** — 0°/90°/180°/270°
-- **Carousel** — enabled, interval, and theme list
-- **Overlay** — element config and enabled state
+```json
+{"role": "lcd", "method": "set_brightness", "args": [0, 75], "kwargs": {}}
+```
 
-### Asset System
+Response: `{"success": bool, "message": str, "error": str | null, ...extras}`.
 
-726 GUI assets extracted from the Windows application, applied via QPalette (not stylesheets) to match the original dark theme exactly.
+Special wire shapes:
+- `{"kill": true}` — graceful daemon shutdown.
+- `{"subscribe": "<topic>"}` — open a long-lived event subscription.
+- `{"role": "_meta", "method": "lcd_descriptors", ...}` — non-facade Trcc methods.
 
-### Cross-Distro Compatibility
+Path / bytes args are sanitized at the proxy boundary (`Path → str`, `bytes → {"__bytes__": "<base64>"}`) and reconstructed server-side.  `Topic.FRAME` event payloads use the same envelope pattern for `QImage` (`core/wire.py`).
 
-Platform-specific helpers are centralized in `adapters/infra/`:
+## Device descriptors
 
-- **`doctor.py`** — dependency health check with structured results, distro-to-PM mapping (25+ distros), PM native "provides" search fallback
-- **`data_repository.py`** — XDG paths, on-demand download, theme/web archive management
-- **`font_resolver.py`** — 20+ font directories covering Fedora, Debian/Ubuntu, Arch, Void, Alpine, openSUSE, NixOS, Guix, and more
+`Trcc.lcd_descriptors()` and `Trcc.led_descriptors()` return `list[DeviceInfo]` — JSON-safe identity descriptors.  `TrccProxy.lcd_descriptors()` mirrors it: same return type, fetched over IPC via `_meta.lcd_descriptors`.
 
-### Device Protocol Routing
+`DeviceInfo.to_wire_dict()` / `from_wire_dict()` handle the `UsbAddress` nested dataclass and the JSON `tuple → list` quirk for resolution.  The GUI sidebar today still iterates the live `lcd_devices` registry, so daemon-mode GUI launches with an empty sidebar — descriptor-driven handler construction is the next refactor (10C.6 in the migration log).
 
-The `DeviceProtocolFactory` in `abstract_factory.py` routes devices to the correct protocol via self-registering `@register()` decorators (OCP):
+## Command bus
 
-- **SCSI devices** → `ScsiProtocol` (sg_raw) — LCD displays
-- **HID LCD devices** → `HidProtocol` (PyUSB/HIDAPI) — LCD displays via HID
-- **Bulk USB devices** → `BulkProtocol` (PyUSB) — LCD displays via raw USB bulk
-- **LY Bulk devices** → `LyProtocol` (PyUSB) — LCD displays via chunked bulk (0416:5408/5409)
-- **HID LED devices** → `LedProtocol` (PyUSB/HIDAPI) — RGB LED controllers
+`LCDCommands`, `LEDCommands`, `ControlCenterCommands` are the public method surface.  Each method:
 
-The GUI auto-routes LED devices to `UCLedControl` (LED panel) instead of the LCD form. `LEDDevice` manages LED effects with a 150ms animation timer, matching Windows FormLED. The unified LED panel handles all device styles (1-12).
+```python
+@command(result_cls=FrameResult, topic=Topic.LCD_BRIGHTNESS, include_frame=True)
+def set_brightness(self, lcd: int, percent: int):
+    if (dev := self._get(lcd)) is None:
+        return FrameResult(success=False, error=f'LCD {lcd} not found')
+    return dev.set_brightness(percent)
+```
 
-### Rendering Pipeline
+`@command` does the boilerplate: catches exceptions → `OpResult`, optionally publishes a topic on success, optionally bundles the result frame for IPC.
 
-`QtRenderer` (QImage/QPainter) is the primary renderer — compositing, text, rotation, brightness, RGB565/JPEG encoding, font resolution. Zero PIL in the hot path. `PilRenderer` is a fallback. `ImageService` is a thin facade delegating to the active renderer.
+Indexes (`lcd: int`) are how UIs address devices.  The `DeviceRegistry` lets you also look up by path or `(vid, pid)`, but the wire format is always integer index — that's the manifold's contract with the proxy.
 
-### Shared UI Base Classes
+## Events
 
-`base.py` provides `BaseThemeBrowser` — the common superclass for local, cloud, and mask theme browsers. It handles grid layout, thumbnail creation, selection state (`_select_item()`), filter buttons, and scrolling. Subclasses override `_on_item_clicked()` for download-vs-select behavior while reusing the visual selection logic.
+`Trcc.events` is an `EventBus`.  Topics in `core/events.py`:
 
-`UCLedControl` uses a `_create_info_panel()` factory for building labeled metric displays (memory, disk), and module-level stylesheet constants (`_STYLE_INFO_BG`, `_STYLE_INFO_NAME`, etc.) shared across all info panels and buttons.
+- `DEVICE_LIST`, `DEVICE_CONNECTED`, `DEVICE_DISCONNECTED` — device lifecycle.
+- `FRAME`, `PROGRESS` — streaming.  Payloads can carry surfaces; the IPC forwarder envelopes them.
+- `METRICS` — sensor data (1 Hz tick).
+- `LCD_*`, `LED_*`, `CONTROL_CENTER_*` — state-change announcements after each successful command.
+- `BOOTSTRAP_PROGRESS`, `DATA_READY` — first-run extraction signal.
 
-### Theme Archives
+Every command that mutates state publishes its topic.  Subscribers (GUI handlers, CLI watchers, API SSE) react.  Daemon mode: events flow daemon → client only via long-lived subscription sockets.
 
-Starter themes and mask overlays ship as `.7z` archives, extracted on first use to `~/.trcc/data/`. This keeps the git repo and package size small.
+## Devices (`core/device/`)
+
+`LCDDevice` and `LEDDevice` are the device-level facades.  `LCDDevice` was split in 10B:
+
+```
+LCDDevice                 (core/device/lcd.py — the facade)
+├── LCDPersistence        (core/device/lcd_persistence.py)
+│       SRP: per-device config writes, restore_device_settings reads
+└── LCDThemeWorkflow      (core/device/lcd_theme_workflow.py)
+        SRP: multi-step theme load / restore / rotation reload /
+             save / import / export
+```
+
+`LCDDevice` composes the helpers in its ctor and exposes the public API as one-line delegates.  External callers see no change.
+
+## Display pipeline (`services/display.py`)
+
+`DisplayService` is the orchestrator.  Its rendering subgraph and CLI/API blocking loops were split in 10B:
+
+```
+DisplayService            (services/display.py — orchestrator + state)
+├── RenderPipeline        (services/display_pipeline.py)
+│       SRP: pure rendering — composite, brightness, split overlay,
+│            preview rotation.  Owns the split-overlay asset cache.
+├── display_loops         (services/display_loops.py — module-level fns)
+│       SRP: blocking video / static keepalive loops for CLI + API
+└── ThemePersistence      (services/theme_persistence.py)
+        SRP: theme save/import/export
+```
+
+Geometry primitives (`native_resolution`, `_rotation`, `_data_root`, `_user_root`, `_has_portrait_themes`) live on `DisplayService` directly — they used to be a separate `Orientation` class which 10B.0a deleted.  Per-rotation derivations (`output_resolution`, `canvas_resolution`, `theme_dir`, `web_dir`, `masks_dir`, `user_theme_dir`, `user_masks_dir`) are properties on `DisplayService`; `LCDDevice` exposes them as delegates.  `LCDHandler` reads `lcd.theme_dir` and the device proxies the lookup.
+
+## GUI shell
+
+`ui/gui/trcc_app.py::TRCCApp` is a thin `QMainWindow` shell.  It holds a `Trcc` handle, builds widget panels (`uc_*.py`), and creates one `LCDHandler` or `LEDHandler` per detected device.
+
+Per-device `LCDHandler` (`ui/gui/lcd_handler.py`) now routes every write through `self._app.lcd.X(self._lcd_idx, ...)` (10C.2) — the command bus.  In daemon mode that same code path serializes the call to the daemon.  Reads still go through `self._lcd.X` (the live device); decoupling those is the 10C.6 follow-up.
+
+Multi-LCD keep-alive (issue #120) lives entirely in handler-local state (`_ui_active` flag).  Inactive handlers stop writing to shared widgets but keep their animation timer running so the LCD's panel doesn't go dark when the user switches devices in the GUI.
+
+## Settings
+
+`Settings` (`conf.py`) is a singleton-ish handle.  Phase 10A.3 + Tier E moved every consumer onto pure DI:
+
+- `Trcc` takes `settings` at ctor.
+- `LCDCommands`, `LEDCommands`, `ControlCenterCommands` take `settings` at ctor.
+- `SystemService` takes `settings` at ctor.
+- CLI / API / GUI read settings via `_trcc().settings` (the cached factory) — no direct `from trcc.conf import settings` imports anywhere in the call chain.
+
+Static path-resolution leaves (`data_repository.py`, `theme_downloader.py`) intentionally use the global — they're stable utilities that read paths once after `init_settings(platform)` runs at boot.
+
+## Verification
+
+Three layers, not interchangeable:
+
+| Layer | Files | Catches |
+|---|---|---|
+| Unit tests | `tests/` (5668 today) | logic bugs, contract violations, regressions in pure-Python paths |
+| Programmatic GUI smoke | `dev/smoke_rotation_mask.py` (19 assertions) | end-to-end rotation / portrait / mask flow on a non-square mock device — the path the unit tests can't reach because Qt signals + theme reload + persistence interact |
+| Daemon-mode smoke | `dev/smoke_daemon_gui.py` (13 assertions) | descriptors + command-bus dispatch + FRAME event envelope round-trip over a real Unix socket — proves the proxy is a true substitute for Trcc |
+
+Both smokes use `MockPlatform` — no real USB, no reporter feedback loop.  Run before claiming any refactor is "verified".
+
+`PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 dev/smoke_rotation_mask.py`
+`PYTHONPATH=src QT_QPA_PLATFORM=offscreen python3 dev/smoke_daemon_gui.py`
+
+## Conventions
+
+- **Pure DI**: every collaborator is injected at construction.  No setters, no module mutation, no `import` from a deeper layer.
+- **Composition over inheritance**: `LCDDevice` composes `LCDPersistence` + `LCDThemeWorkflow` rather than subclassing.
+- **One-way dependencies**: `core/` → nowhere; `services/` → `core/`; `adapters/` → `services/` + `core/`; `ui/` → `core/` only via `_boot.trcc()`.
+- **Public API stays stable across refactors**: when 10B split god classes, every existing `lcd.set_brightness(...)` / `display_svc.run_video_loop(...)` kept the same signature.  Internal extraction never breaks call sites.
+- **JSON-safe wire formats**: any value crossing the IPC boundary has a `to_wire_dict` / `from_wire_dict` pair (`DeviceInfo`) or an envelope helper (`core/wire.py` for native surfaces).
+- **No singleton patches in tests**: tests construct real (or mock) collaborators and inject them.  `tmp_config` fixture for path isolation.
+- **No `# type: ignore`** without a comment explaining the runtime quirk.  Acceptable cases: PySide6 stub vs. runtime mismatch; `# type: ignore[union-attr]` after we've already null-checked.
+
+## Reference
+
+- `doc/HISTORY_PROJECT.md` — release timeline, milestones.
+- `doc/HISTORY_ARCHITECTURE.md` — refactor history, why each layer exists.
+- `doc/CHANGELOG.md` — user-facing changes per release.
+- `CLAUDE.md` — the project's conventions for Claude Code sessions.
