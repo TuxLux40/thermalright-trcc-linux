@@ -64,38 +64,6 @@ _ERR_EBUSY = (
 )
 
 
-def _disable_autosuspend(dev: Any) -> None:
-    """Disable USB autosuspend for this device so the kernel doesn't reset it.
-
-    Linux USB autosuspend can reset idle devices after ~30 seconds,
-    causing the LCD to drop to its splash screen.  Writes -1 to the
-    sysfs power/autosuspend attribute to keep the device always on.
-    """
-    from pathlib import Path
-
-    try:
-        bus = dev.bus
-        addr = dev.address
-        sysfs = Path(f"/sys/bus/usb/devices/{bus}-{addr}/power/autosuspend")
-        if not sysfs.exists():
-            # Try alternate path format
-            for p in Path("/sys/bus/usb/devices/").glob("*/power/autosuspend"):
-                devnum = p.parent.parent / "devnum"
-                busnum = p.parent.parent / "busnum"
-                if (devnum.exists() and busnum.exists()
-                        and int(busnum.read_text().strip()) == bus
-                        and int(devnum.read_text().strip()) == addr):
-                    sysfs = p
-                    break
-        if sysfs.exists():
-            sysfs.write_text("-1")
-            log.debug("USB autosuspend disabled: %s", sysfs)
-        else:
-            log.debug("sysfs autosuspend path not found for bus=%d addr=%d", bus, addr)
-    except (OSError, ValueError) as e:
-        log.debug("Could not disable USB autosuspend: %s", e)
-
-
 def _find_vendor_interface(cfg: Any) -> Any:
     """Prefer vendor-specific interface (bInterfaceClass=255), fallback to (0,0)."""
     for candidate in cfg:
@@ -283,7 +251,12 @@ class BulkFrameDevice:
                  type(self).__name__, self.vid, self.pid,
                  self._ep_out.bEndpointAddress,  # type: ignore[union-attr]
                  self._ep_in.bEndpointAddress)  # type: ignore[union-attr]
-        _disable_autosuspend(dev)
+        # Autosuspend is managed by the udev rule
+        # (``power/autosuspend_delay_ms=10000``) — that's the kernel-native
+        # path the v9.5.7 #143 fix landed on.  We used to override it from
+        # userspace here by writing ``-1`` to ``power/autosuspend``, which
+        # silently undid the udev tuning for Bulk/LY devices and meant
+        # those panels never slept on shutdown.
 
     def close(self) -> None:
         """Release USB device."""

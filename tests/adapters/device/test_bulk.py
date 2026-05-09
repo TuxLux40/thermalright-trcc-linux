@@ -135,34 +135,10 @@ class TestBulkDeviceOpen(unittest.TestCase):
         self.assertEqual(bd._ep_out, ep_out)
         self.assertEqual(bd._ep_in, ep_in)
 
-    @patch.dict("sys.modules", {"usb": MagicMock(), "usb.core": MagicMock(), "usb.util": MagicMock()})
-    @patch("trcc.adapters.device._usb_helpers._disable_autosuspend")
-    def test_open_disables_autosuspend(self, mock_autosuspend):
-        """_open() must disable USB autosuspend to prevent kernel device resets."""
-        import usb.core
-        import usb.util
-
-        mock_dev = MagicMock()
-        usb.core.find.return_value = mock_dev
-        mock_cfg = MagicMock()
-        mock_dev.get_active_configuration.return_value = mock_cfg
-        mock_dev.is_kernel_driver_active.return_value = False
-        mock_intf = MagicMock()
-        mock_cfg.__getitem__ = MagicMock(return_value=mock_intf)
-
-        ep_out = MagicMock()
-        ep_out.bEndpointAddress = 0x01
-        ep_in = MagicMock()
-        ep_in.bEndpointAddress = 0x81
-        usb.util.find_descriptor.side_effect = [ep_out, ep_in]
-        usb.util.endpoint_direction.side_effect = lambda addr: addr & 0x80
-        usb.util.ENDPOINT_OUT = 0x00
-        usb.util.ENDPOINT_IN = 0x80
-
-        bd = BulkDevice(0x87AD, 0x70DB)
-        bd._open()
-
-        mock_autosuspend.assert_called_once_with(mock_dev)
+    # The pre-10E ``test_open_disables_autosuspend`` was deleted with the
+    # ``_disable_autosuspend`` runtime override.  Autosuspend is now tuned
+    # by the udev rule (``power/autosuspend_delay_ms=10000``) — see the
+    # tests in tests/adapters/system/linux/test_platform.py for that path.
 
     @patch.dict("sys.modules", {"usb": MagicMock(), "usb.core": MagicMock(), "usb.util": MagicMock()})
     def test_open_device_not_found(self):
@@ -255,57 +231,6 @@ class TestBulkDeviceOpen(unittest.TestCase):
         # No reset — that would cause a logo flash (issue #82)
         mock_dev.reset.assert_not_called()
         self.assertIn("in use by another process", str(ctx.exception))
-
-
-class TestDisableAutosuspend(unittest.TestCase):
-    """_disable_autosuspend writes -1 to sysfs to prevent kernel USB resets."""
-
-    def test_writes_minus_one_to_sysfs(self, tmp_path=None):
-        from trcc.adapters.device._usb_helpers import _disable_autosuspend
-
-        mock_dev = MagicMock()
-        mock_dev.bus = 3
-        mock_dev.address = 6
-
-        sysfs_path = MagicMock()
-        sysfs_path.exists.return_value = True
-
-        with patch("pathlib.Path") as MockPath:
-            MockPath.return_value = sysfs_path
-            _disable_autosuspend(mock_dev)
-            sysfs_path.write_text.assert_called_once_with("-1")
-
-    def test_no_crash_on_permission_error(self):
-        """Autosuspend disable must not crash if sysfs is read-only."""
-        from trcc.adapters.device._usb_helpers import _disable_autosuspend
-
-        mock_dev = MagicMock()
-        mock_dev.bus = 3
-        mock_dev.address = 6
-
-        sysfs_path = MagicMock()
-        sysfs_path.exists.return_value = True
-        sysfs_path.write_text.side_effect = PermissionError("read-only")
-
-        with patch("pathlib.Path") as MockPath:
-            MockPath.return_value = sysfs_path
-            _disable_autosuspend(mock_dev)  # Should not raise
-
-    def test_no_crash_when_sysfs_missing(self):
-        """Autosuspend disable must not crash if sysfs path doesn't exist."""
-        from trcc.adapters.device._usb_helpers import _disable_autosuspend
-
-        mock_dev = MagicMock()
-        mock_dev.bus = 3
-        mock_dev.address = 6
-
-        sysfs_path = MagicMock()
-        sysfs_path.exists.return_value = False
-        sysfs_path.glob.return_value = []
-
-        with patch("pathlib.Path") as MockPath:
-            MockPath.return_value = sysfs_path
-            _disable_autosuspend(mock_dev)  # Should not raise
 
 
 class TestBulkDeviceHandshake(unittest.TestCase):
