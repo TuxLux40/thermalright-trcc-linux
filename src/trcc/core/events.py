@@ -85,6 +85,10 @@ class Topic:
     BOOTSTRAP_PROGRESS: Final = 'bootstrap.progress'    # payload: str message
     DATA_READY: Final = 'data.ready'                    # payload: None
 
+    # System power events (Trcc publishes from Platform.subscribe_power callback)
+    SYSTEM_SUSPENDED: Final = 'system.suspended'        # payload: None — fires before device cleanup
+    SYSTEM_RESUMED: Final = 'system.resumed'            # payload: None — fires after rediscover
+
     # LCD state changes (LCDCommands publishes after each successful mutation)
     LCD_BRIGHTNESS: Final = 'lcd.brightness'
     LCD_ROTATION: Final = 'lcd.rotation'

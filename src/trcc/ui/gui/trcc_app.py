@@ -350,6 +350,10 @@ class TRCCApp(QMainWindow):
                       lambda path, image: self._frame_signal.emit({'path': path, 'image': image}))
         bus.subscribe(Topic.METRICS,
                       lambda metrics: self._metrics_signal.emit(metrics))
+        # System suspend — stop the screen capture pipeline before the
+        # device list goes empty.  Trcc handles device cleanup itself;
+        # this hook is just for UI-level resources.
+        bus.subscribe(Topic.SYSTEM_SUSPENDED, lambda: self._screencast.stop())
 
         # Handshake signal
         self._handshake_done = Signal(object, object)  # type: ignore[assignment]

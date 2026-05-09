@@ -265,6 +265,25 @@ class MockPlatform(Platform):
     def autostart_enabled(self) -> bool:
         return False
 
+    # ── Power events — captured for tests to fire manually ───────────
+    # Trcc.__init__ calls platform.subscribe_power(on_suspend, on_resume).
+    # We stash the callbacks so a sleep-cycle smoke test can invoke them
+    # without a real OS suspend.  Real Platform subclasses hook into
+    # systemd-logind / WM_POWERBROADCAST / NSWorkspace.
+    def subscribe_power(self, on_suspend, on_resume) -> None:
+        self._on_suspend_cb = on_suspend
+        self._on_resume_cb = on_resume
+
+    def fire_suspend(self) -> None:
+        """Test helper: simulate the OS firing its suspend event."""
+        if (cb := getattr(self, '_on_suspend_cb', None)):
+            cb()
+
+    def fire_resume(self) -> None:
+        """Test helper: simulate the OS firing its resume event."""
+        if (cb := getattr(self, '_on_resume_cb', None)):
+            cb()
+
     # ── Noop protocol registration ───────────────────────────────────
 
     def _register_noop_protocols(self) -> None:

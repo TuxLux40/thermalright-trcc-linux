@@ -644,8 +644,14 @@ class Trcc:
     # may differ, the firmware may need a re-handshake.
 
     def _on_suspend(self) -> None:
-        """Drop every device + protocol cache so wake reopens cleanly."""
+        """Drop every device + protocol cache so wake reopens cleanly.
+
+        Publishes SYSTEM_SUSPENDED first so subscribers (GUI screencast,
+        long-running streaming services) can stop their own resources
+        before the device list goes empty.
+        """
         from ..adapters.device.factory import DeviceProtocolFactory
+        self.events.publish(Topic.SYSTEM_SUSPENDED)
         for dev in self:
             try:
                 dev.cleanup()
@@ -654,14 +660,19 @@ class Trcc:
         self._lcd_devices.clear()
         self._led_devices.clear()
         DeviceProtocolFactory.close_all()
-        self.events.publish(Topic.DEVICE_LIST, [])
+        self.events.publish(Topic.DEVICE_LIST, ())
 
     def _on_resume(self) -> None:
-        """Rediscover after wake — USB may have re-enumerated."""
+        """Rediscover after wake — USB may have re-enumerated.
+
+        Publishes SYSTEM_RESUMED after discover() repopulates devices,
+        so subscribers know the system is back online.
+        """
         try:
             self.discover()
         except Exception:
             log.exception('on_resume: discover failed')
+        self.events.publish(Topic.SYSTEM_RESUMED)
 
     def cleanup(self) -> None:
         """Stop the metrics loop, release every device, drop subscribers.
