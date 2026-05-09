@@ -466,15 +466,16 @@ class TRCCApp(QMainWindow):
                 1 for h in self._handlers.values()
                 if isinstance(h, LCDHandler)
             )
-            # Handler goes direct to device — no Trcc.lcd command layer for the
-            # GUI.  Every `self._app.lcd.X` call in lcd_handler.py already has
-            # an `if self._app is None` fallback that uses `self._lcd.Y`
-            # directly; passing app=None activates those fallbacks everywhere,
-            # cutting the indirection that caused silent no-op bugs.
+            # Route handler through Trcc.lcd (10C.2): every write goes via
+            # the command bus so the dispatch path is identical whether the
+            # handler is talking to a real Trcc or a TrccProxy.  The Phase 9
+            # boot unification put GUI + CLI + API on the same Trcc registry,
+            # so the silent no-op bug class that prompted the c7e14b69 revert
+            # (handlers + commands looking at different registries) is gone.
             lcd_handler = LCDHandler(
                 device, widgets, self._make_timer, self._data_dir,
                 is_visible_fn=self.is_app_visible,
-                app=None, lcd_idx=lcd_idx)
+                app=self._trcc, lcd_idx=lcd_idx)
             self._handlers[path] = lcd_handler
             log.info("LCD handler added: %s", path)
             added = True
