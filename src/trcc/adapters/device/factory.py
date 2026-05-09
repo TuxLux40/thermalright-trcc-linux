@@ -22,7 +22,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from trcc.core.models import (
     DEVICE_TYPE_NAMES,
@@ -237,39 +237,44 @@ class DeviceProtocol(ABC):
 
 
 # =========================================================================
-# UsbProtocol — shared USB transport lifecycle for HID + LED
+# LazyTransportProtocol — shared lazy-open + close lifecycle
 # =========================================================================
 
-class UsbProtocol(DeviceProtocol):
-    """Base for USB-transport protocols (HID LCD, LED).
+class LazyTransportProtocol(DeviceProtocol):
+    """Intermediate base for protocols that lazily open a transport.
 
-    Manages lazy transport lifecycle: open on first use, close on cleanup.
-    Subclasses implement protocol-specific handshake, send, and info.
+    Owns the structural pattern that's identical across SCSI / HID / LED /
+    Bulk / LY: open the transport on first use, fire ``transport_open``
+    observers, close on shutdown.  Subclasses provide the transport
+    factory in ``_open_transport``; everything else rides on this base.
+
+    Audit finding 2026-05-09: SCSI and USB protocols had two parallel
+    copies of this lifecycle — same flow, slightly different log lines.
     """
 
-    def __init__(
-        self, vid: int, pid: int,
-        *, addr: UsbAddress | None = None,
-    ):
+    def __init__(self) -> None:
         super().__init__()
-        self._vid = vid
-        self._pid = pid
-        self._addr = addr  # bus+address from detector — disambiguates dual same-VID/PID coolers
         self._transport = None
 
+    @abstractmethod
+    def _open_transport(self) -> Any:
+        """Open and return the underlying transport.
+
+        Called once on first ``_ensure_transport``.  Returning ``None``
+        is allowed (e.g. SCSI when the transport factory wasn't injected) —
+        callers should bail gracefully when ``self._transport is None``
+        post-call.
+        """
+
     def _ensure_transport(self) -> None:
-        """Lazily open USB transport on first use."""
+        """Lazily open the transport on first use."""
         if self._transport is None:
-            log.debug("Opening %s transport: %04X:%04X%s",
-                      self.protocol_name, self._vid, self._pid,
-                      f" @ {self._addr}" if self._addr else "")
-            self._transport = DeviceProtocolFactory.create_usb_transport(
-                self._vid, self._pid, addr=self._addr)
-            self._transport.open()
-            self._notify_state_changed("transport_open", True)
+            self._transport = self._open_transport()
+            if self._transport is not None:
+                self._notify_state_changed("transport_open", True)
 
     def _close_transport(self) -> None:
-        """Close USB transport and notify observers."""
+        """Close the transport and notify observers.  Idempotent."""
         if self._transport is not None:
             try:
                 self._transport.close()
@@ -280,6 +285,36 @@ class UsbProtocol(DeviceProtocol):
 
     def close(self) -> None:
         self._close_transport()
+
+
+# =========================================================================
+# UsbProtocol — shared USB transport lifecycle for HID + LED
+# =========================================================================
+
+class UsbProtocol(LazyTransportProtocol):
+    """Base for USB-transport protocols (HID LCD, LED).
+
+    Subclasses implement protocol-specific handshake, send, and info;
+    transport lifecycle is inherited from ``LazyTransportProtocol``.
+    """
+
+    def __init__(
+        self, vid: int, pid: int,
+        *, addr: UsbAddress | None = None,
+    ):
+        super().__init__()
+        self._vid = vid
+        self._pid = pid
+        self._addr = addr  # bus+address from detector — disambiguates dual same-VID/PID coolers
+
+    def _open_transport(self) -> Any:
+        log.debug("Opening %s transport: %04X:%04X%s",
+                  self.protocol_name, self._vid, self._pid,
+                  f" @ {self._addr}" if self._addr else "")
+        transport = DeviceProtocolFactory.create_usb_transport(
+            self._vid, self._pid, addr=self._addr)
+        transport.open()
+        return transport
 
     @property
     def _handshake_label(self) -> str:
