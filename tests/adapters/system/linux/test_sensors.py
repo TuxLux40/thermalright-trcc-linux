@@ -13,14 +13,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from trcc.adapters.infra.data_repository import SysUtils
-from trcc.adapters.system.linux_platform import (
+from trcc.adapters.system.linux_sensors import (
     _HWMON_DIVISORS,
     _HWMON_TYPES,
     SensorEnumerator,
-    SensorInfo,
 )
+from trcc.core.models import SensorInfo
 
-MODULE = 'trcc.adapters.system.linux_platform'
+MODULE = 'trcc.adapters.system.linux_sensors'
 
 
 # ── Sysfs mock helpers ───────────────────────────────────────────────
