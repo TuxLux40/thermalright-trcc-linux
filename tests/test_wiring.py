@@ -188,7 +188,7 @@ class TestHidWiring:
         else:
             resp = build_hid_type2_response(pm, sub)
 
-        def _noop_factory(vid, pid):
+        def _noop_factory(vid, pid, **_ignore):
             return NoopUsbTransport(resp)
         DeviceProtocolFactory.create_usb_transport = staticmethod(_noop_factory)
 
@@ -221,7 +221,7 @@ class TestLedWiring:
         """Inject a noop USB transport that returns canned LED response."""
         resp = build_led_response(pm, sub)
 
-        def _noop_factory(vid, pid):
+        def _noop_factory(vid, pid, **_ignore):
             return NoopUsbTransport(resp)
         DeviceProtocolFactory.create_usb_transport = staticmethod(_noop_factory)
 

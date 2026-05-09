@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import shutil
 from pathlib import Path
+from typing import Any
 
 # ── Interactive prompt ────────────────────────────────────────────────────────
 
@@ -93,7 +94,7 @@ def _posix_raise_existing_instance(config_dir: str) -> None:
 
 # ── SIGUSR1-driven raise-window glue (POSIX — Linux / macOS / BSD) ───────────
 
-def _posix_wire_ipc_raise(app: object, window: object) -> None:
+def _posix_wire_ipc_raise(app: Any, window: Any) -> None:
     """Install a SIGUSR1 handler that raises *window* in the Qt event loop.
 
     Pure CPython signals can't safely call into Qt directly (they fire
@@ -105,6 +106,10 @@ def _posix_wire_ipc_raise(app: object, window: object) -> None:
     a shared helper rather than triplicated in each platform adapter.
     Windows uses a different cross-process raise mechanism so it doesn't
     consume this helper.
+
+    `app` and `window` are typed ``Any`` because PySide6 is imported
+    lazily inside the function — keeping the module-level signature
+    framework-free.
     """
     import signal
     import socket
@@ -129,8 +134,8 @@ def _posix_wire_ipc_raise(app: object, window: object) -> None:
             rsock.recv(1)
         except OSError:
             pass
-        window.showNormal()  # type: ignore[attr-defined]
-        window.raise_()  # type: ignore[attr-defined]
-        window.activateWindow()  # type: ignore[attr-defined]
+        window.showNormal()
+        window.raise_()
+        window.activateWindow()
 
     notifier.activated.connect(_raise_window)
