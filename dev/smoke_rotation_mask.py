@@ -29,7 +29,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # headless run
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _mock_bootstrap import bootstrap
 
-
 _FAILURES: list[str] = []
 
 
@@ -81,6 +80,7 @@ def main() -> int:
     window = _TRCCApp(platform=cast(Any, platform), decorated=False)
 
     from itertools import chain
+
     from trcc.core.events import Topic
     t.events.publish(
         Topic.DEVICE_LIST, tuple(chain(t.lcd_devices, t.led_devices)),

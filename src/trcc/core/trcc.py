@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     from ..services.system import SystemService
     from .device.lcd import LCDDevice
     from .device.led import LEDDevice
-    from .models import DetectedDevice
+    from .models import DetectedDevice, DeviceInfo
     from .ports import EnsureDataFn, Platform, Renderer
 
 log = logging.getLogger(__name__)
@@ -168,6 +168,31 @@ class Trcc:
     def led_devices(self) -> DeviceRegistry[LEDDevice]:
         """All connected LED devices, in detection order. See :attr:`lcd_devices`."""
         return self._led_devices
+
+    # ── Descriptors — wire-safe identity slices for clients ───────────────────
+    # Pure DeviceInfo lists (no LCDDevice / LEDDevice references).  Stable
+    # across the IPC boundary: TrccProxy uses the same shape via its own
+    # implementation that fetches these over the wire.  GUI / CLI / API
+    # callers that only need device identity (sidebar buttons, list views)
+    # consume these instead of the live device registries.
+
+    def lcd_descriptors(self) -> list[DeviceInfo]:
+        """JSON-safe identity descriptors for every connected LCD device.
+
+        Returns the device's own `DeviceInfo` (already a dataclass that
+        round-trips through ``to_wire_dict``/``from_wire_dict``).
+        """
+        return [
+            d.device_info for d in self._lcd_devices
+            if d.device_info is not None
+        ]
+
+    def led_descriptors(self) -> list[DeviceInfo]:
+        """JSON-safe identity descriptors for every connected LED device."""
+        return [
+            d.device_info for d in self._led_devices
+            if d.device_info is not None
+        ]
 
     @property
     def has_lcd(self) -> bool:

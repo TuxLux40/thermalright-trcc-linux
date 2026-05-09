@@ -122,6 +122,86 @@ class TestDeviceInfo(unittest.TestCase):
         self.assertEqual(d.button_image, 'A1FROZEN WARFRAME PRO')
 
 
+class TestDeviceInfoWireRoundTrip(unittest.TestCase):
+    """DeviceInfo.to_wire_dict / from_wire_dict — JSON-safe IPC payload."""
+
+    def _equal(self, a: DeviceInfo, b: DeviceInfo) -> None:
+        # All identity + state fields preserved through the round-trip.
+        for field in (
+            'name', 'path', 'resolution', 'vendor', 'product', 'model',
+            'vid', 'pid', 'addr', 'device_index', 'fbl_code', 'protocol',
+            'device_type', 'implementation', 'button_image', 'pm_byte',
+            'sub_byte', 'led_style_id', 'led_style_sub',
+            'connected', 'brightness', 'rotation',
+        ):
+            self.assertEqual(getattr(a, field), getattr(b, field),
+                             f"field mismatch: {field}")
+
+    def test_minimal_round_trip(self):
+        from trcc.core.models.device import DeviceInfo
+        original = DeviceInfo(name='LCD', path='/dev/sg0')
+        restored = DeviceInfo.from_wire_dict(original.to_wire_dict())
+        self._equal(original, restored)
+
+    def test_full_scsi_device_round_trip(self):
+        """SCSI device — addr=None, all identity fields populated."""
+        from trcc.core.models.device import DeviceInfo
+        original = DeviceInfo(
+            name='Frozen Warframe Pro',
+            path='/dev/sg5',
+            resolution=(320, 320),
+            vendor='ALi Corp',
+            product='Xsail',
+            model='FROZEN_WARFRAME',
+            vid=0x0402, pid=0x3922,
+            addr=None,
+            device_index=0,
+            fbl_code=100,
+            protocol='scsi',
+            device_type=1,
+            implementation='ali_corp_lcd_v1',
+            button_image='A1FROZEN WARFRAME PRO',
+            pm_byte=32, sub_byte=1,
+            connected=True, brightness=65, rotation=0,
+        )
+        restored = DeviceInfo.from_wire_dict(original.to_wire_dict())
+        self._equal(original, restored)
+
+    def test_hid_device_with_usb_address(self):
+        """HID/Bulk/LY devices carry a UsbAddress — must round-trip."""
+        from trcc.core.models.device import DeviceInfo, UsbAddress
+        original = DeviceInfo(
+            name='Trofeo Vision 1280x480',
+            path='usb:5:2',
+            resolution=(1280, 480),
+            vid=0x0418, pid=0x5303,
+            addr=UsbAddress(bus=5, address=2),
+            device_index=1,
+            fbl_code=128,
+            protocol='hid',
+            device_type=3,
+            pm_byte=6, sub_byte=1,
+        )
+        restored = DeviceInfo.from_wire_dict(original.to_wire_dict())
+        self._equal(original, restored)
+        # Specifically verify UsbAddress is fully reconstructed (not a dict).
+        assert restored.addr is not None
+        self.assertEqual(restored.addr.bus, 5)
+        self.assertEqual(restored.addr.address, 2)
+
+    def test_resolution_tuple_survives_json_listification(self):
+        """JSON has no tuple type; from_wire_dict must coerce list → tuple."""
+        from trcc.core.models.device import DeviceInfo
+        original = DeviceInfo(name='LCD', path='/dev/sg0', resolution=(800, 480))
+        wire = original.to_wire_dict()
+        # Simulate a JSON round trip — every tuple becomes a list.
+        import json
+        roundtripped = json.loads(json.dumps(wire))
+        restored = DeviceInfo.from_wire_dict(roundtripped)
+        self.assertEqual(restored.resolution, (800, 480))
+        self.assertIsInstance(restored.resolution, tuple)
+
+
 class TestDeviceInfoFromDetected(unittest.TestCase):
     """DeviceInfo.from_detected() factory classmethod."""
 

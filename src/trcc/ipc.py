@@ -448,6 +448,24 @@ class IPCServer:
             return _result_to_dict(result)
         if method == "status":
             return self._meta_status()
+        if method == "lcd_descriptors":
+            try:
+                infos = self._trcc.lcd_descriptors()
+            except Exception as e:
+                log.exception("_meta.lcd_descriptors failed")
+                return {"success": False,
+                        "error": f"{type(e).__name__}: {e}"}
+            return {"success": True,
+                    "descriptors": [info.to_wire_dict() for info in infos]}
+        if method == "led_descriptors":
+            try:
+                infos = self._trcc.led_descriptors()
+            except Exception as e:
+                log.exception("_meta.led_descriptors failed")
+                return {"success": False,
+                        "error": f"{type(e).__name__}: {e}"}
+            return {"success": True,
+                    "descriptors": [info.to_wire_dict() for info in infos]}
         return {"success": False,
                 "error": f"Unknown _meta method: {method}"}
 

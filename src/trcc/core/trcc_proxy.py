@@ -318,9 +318,9 @@ class TrccProxy:
 
         Mirrors ``Trcc.discover()``'s contract: the daemon does the
         actual USB enumeration; we return a `DiscoveryResult`-shaped
-        OpResult. Subclass extras (lcd_devices, led_devices) come back
-        empty for now since `DeviceInfo` isn't JSON-serializable on the
-        wire — extend if/when a caller needs the device descriptors.
+        OpResult.  For the device-list payload itself, see
+        ``lcd_descriptors`` / ``led_descriptors`` — they round-trip
+        ``DeviceInfo`` over the wire via ``to_wire_dict``.
         """
         from ..ipc import send_manifold_request
         from .results import DiscoveryResult
@@ -333,6 +333,41 @@ class TrccProxy:
             message=str(response.get("message", "")),
             error=response.get("error"),
         )
+
+    def lcd_descriptors(self) -> list[Any]:
+        """Mirror of ``Trcc.lcd_descriptors`` — fetched over IPC.
+
+        Returns a list of ``DeviceInfo`` instances reconstructed from the
+        daemon's wire payload.  GUI / CLI / API clients use these to
+        build per-device handlers without holding a real LCDDevice.
+        """
+        from ..ipc import send_manifold_request
+        from .models import DeviceInfo
+        response = send_manifold_request(
+            "_meta", "lcd_descriptors", (), {},
+            socket_path=self._socket_path, timeout=self._timeout,
+        )
+        if not response.get("success"):
+            return []
+        return [
+            DeviceInfo.from_wire_dict(d)
+            for d in response.get("descriptors", [])
+        ]
+
+    def led_descriptors(self) -> list[Any]:
+        """Mirror of ``Trcc.led_descriptors`` — fetched over IPC."""
+        from ..ipc import send_manifold_request
+        from .models import DeviceInfo
+        response = send_manifold_request(
+            "_meta", "led_descriptors", (), {},
+            socket_path=self._socket_path, timeout=self._timeout,
+        )
+        if not response.get("success"):
+            return []
+        return [
+            DeviceInfo.from_wire_dict(d)
+            for d in response.get("descriptors", [])
+        ]
 
     def cleanup(self) -> None:
         """Release proxy-local resources.

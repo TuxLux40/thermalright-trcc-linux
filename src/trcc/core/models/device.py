@@ -204,6 +204,51 @@ class DeviceInfo:
             led_style_sub=d.get('led_style_sub', 0),
         )
 
+    def to_wire_dict(self) -> dict:
+        """Serialize for IPC transport.
+
+        ``dataclasses.asdict`` recursively dictifies nested dataclasses
+        (notably ``addr: UsbAddress``), and tuples become lists — both
+        round-trip cleanly through JSON.  Pair with ``from_wire_dict``.
+        """
+        import dataclasses
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_wire_dict(cls, d: dict) -> DeviceInfo:
+        """Reconstruct from a ``to_wire_dict`` payload.
+
+        Restores the nested ``UsbAddress`` dataclass and converts the
+        ``resolution`` list back to a tuple — JSON has no tuple type.
+        """
+        addr_dict = d.get('addr')
+        addr = UsbAddress(**addr_dict) if addr_dict else None
+        res = d.get('resolution', (0, 0))
+        return cls(
+            name=d.get('name', ''),
+            path=d.get('path', ''),
+            resolution=(res[0], res[1]) if isinstance(res, list | tuple) else (0, 0),
+            vendor=d.get('vendor'),
+            product=d.get('product'),
+            model=d.get('model'),
+            vid=d.get('vid', 0),
+            pid=d.get('pid', 0),
+            addr=addr,
+            device_index=d.get('device_index', 0),
+            fbl_code=d.get('fbl_code'),
+            protocol=d.get('protocol', 'scsi'),
+            device_type=d.get('device_type', 1),
+            implementation=d.get('implementation', 'generic'),
+            button_image=d.get('button_image', LCD_DEFAULT_BUTTON),
+            pm_byte=d.get('pm_byte', 0),
+            sub_byte=d.get('sub_byte', 0),
+            led_style_id=d.get('led_style_id'),
+            led_style_sub=d.get('led_style_sub', 0),
+            connected=d.get('connected', True),
+            brightness=d.get('brightness', 65),
+            rotation=d.get('rotation', 0),
+        )
+
     @classmethod
     def from_detected(cls, d: DetectedDevice, device_index: int = 0) -> DeviceInfo:
         """Create DeviceInfo from a DetectedDevice."""
