@@ -314,16 +314,9 @@ class LCDDevice:
     # ══════════════════════════════════════════════════════════════════════
 
     @property
-    def native_resolution(self) -> tuple[int, int]:
-        return self._display_svc.native_resolution if self._display_svc else (0, 0)
-
-    @property
-    def output_resolution(self) -> tuple[int, int]:
-        return self._display_svc.output_resolution if self._display_svc else (0, 0)
-
-    @property
-    def canvas_resolution(self) -> tuple[int, int]:
-        return self._display_svc.canvas_resolution if self._display_svc else (0, 0)
+    def canvas_size(self) -> tuple[int, int]:
+        """Render-target size — native, swapped on 90°/270°."""
+        return self._display_svc.canvas_size if self._display_svc else (0, 0)
 
     def is_rotated(self) -> bool:
         return bool(self._display_svc and self._display_svc.is_rotated())
@@ -444,7 +437,7 @@ class LCDDevice:
             theme_dir=self.theme_dir,
             web_dir=self.web_dir,
             masks_dir=self.masks_dir,
-            native_resolution=self.native_resolution,
+            native_resolution=self.lcd_size,
         )
 
     def refresh_dirs(self) -> None:
@@ -504,7 +497,7 @@ class LCDDevice:
                      "unchanged — pixel-rotating only",
                      old_canvas, svc.canvas_size)
 
-        w, h = self.native_resolution
+        w, h = self.lcd_size
         if w != h and saved_mask_dir:
             is_zt_mask = saved_mask_dir.parent.name.startswith('zt')
             if is_zt_mask:

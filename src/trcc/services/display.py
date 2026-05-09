@@ -119,11 +119,6 @@ class DisplayService:
         return (self._width, self._height)
 
     @property
-    def native_resolution(self) -> tuple[int, int]:
-        """Native (handshake) resolution. Doesn't change after connect."""
-        return self._native
-
-    @property
     def rotation(self) -> int:
         return self._rotation
 
@@ -136,37 +131,17 @@ class DisplayService:
         w, h = self._native
         return w != h and self._rotation in (90, 270)
 
-    def _rotated_resolution(self) -> tuple[int, int]:
-        """Native with w,h swapped if rotated."""
-        w, h = self._native
-        return (h, w) if self.is_rotated() else (w, h)
-
-    @property
-    def output_resolution(self) -> tuple[int, int]:
-        """Physical device output — always swaps for non-square at 90/270."""
-        return self._rotated_resolution()
-
-    @property
-    def canvas_resolution(self) -> tuple[int, int]:
-        """Internal rendering resolution — always swaps for non-square at 90/270.
-
-        Collapsed with output_resolution post-10B.0b: one resolution, like
-        C# does it.  has_portrait_themes still affects which theme dir we
-        pull content from (and whether pixel rotation fires) but no longer
-        gates the canvas/output split — that split caused every rotation
-        bug we hit (#137 et al, see April 2026 rotation refactor memo).
-        """
-        return self._rotated_resolution()
-
-    @property
-    def effective_resolution(self) -> tuple[int, int]:
-        """Alias for canvas_resolution."""
-        return self.canvas_resolution
-
     @property
     def canvas_size(self) -> tuple[int, int]:
-        """Alias for canvas_resolution."""
-        return self.canvas_resolution
+        """Render-target dimensions — native, swapped on 90°/270° rotation.
+
+        Single source of truth for the rotated canvas.  Was four aliases
+        (canvas_resolution / output_resolution / effective_resolution /
+        canvas_size) — collapsed into one in Phase 8 because alias drift
+        is what caused every rotation bug since #137.
+        """
+        w, h = self._native
+        return (h, w) if self.is_rotated() else (w, h)
 
     @property
     def has_portrait_themes(self) -> bool:
@@ -289,7 +264,7 @@ class DisplayService:
         self.media.set_target_size(cw, ch)
         self.overlay.set_resolution(cw, ch)
         self.log.info("set_resolution: canvas=%s output=%s image_rotation=%d",
-                 self.canvas_size, self.output_resolution, self._image_rotation)
+                 self.canvas_size, self.canvas_size, self._image_rotation)
 
     def refresh_dirs(self) -> None:
         """Re-probe filesystem for current resolution.
@@ -455,7 +430,7 @@ class DisplayService:
         mask_dir = mask_path if mask_path.is_dir() else mask_path.parent
         is_zt = mask_dir.parent.name.startswith('zt')
         if is_zt and is_rotated:
-            w, h = self.output_resolution
+            w, h = self.canvas_size
             self.overlay.set_resolution(w, h)
             self.log.info("apply_standalone_mask: portrait zt mask → overlay %dx%d", w, h)
         else:
@@ -810,7 +785,7 @@ class DisplayService:
         data is on disk — else stays native so we don't construct a path
         that doesn't exist."""
         if self._has_portrait_themes and self.is_rotated():
-            return self._rotated_resolution()
+            return self.canvas_size
         return self._native
 
     @property
@@ -832,7 +807,7 @@ class DisplayService:
         """Active cloud backgrounds dir. Swaps independently on rotation."""
         if not self._data_root:
             return None
-        w, h = self._rotated_resolution()
+        w, h = self.canvas_size
         d = self._data_root / 'web' / web_dir_name(w, h)
         return d if d.exists() else None
 
@@ -841,7 +816,7 @@ class DisplayService:
         """Active masks dir. Swaps independently on rotation."""
         if not self._data_root:
             return None
-        w, h = self._rotated_resolution()
+        w, h = self.canvas_size
         d = self._data_root / 'web' / masks_dir_name(w, h)
         return d if d.exists() else None
 
@@ -864,6 +839,6 @@ class DisplayService:
         """User custom masks dir (~/.trcc-user/data/web/zt{W}{H})."""
         if not self._user_root:
             return None
-        w, h = self._rotated_resolution()
+        w, h = self.canvas_size
         d = self._user_root / 'web' / masks_dir_name(w, h)
         return d if d.exists() else None

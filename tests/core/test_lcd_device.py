@@ -19,8 +19,8 @@ def _disp_mock_with_geometry(resolution=(0, 0)) -> MagicMock:
     """
     disp = MagicMock()
     disp.native_resolution = resolution
-    disp.output_resolution = resolution
-    disp.canvas_resolution = resolution
+    disp.canvas_size = resolution
+    disp.canvas_size = resolution
     disp.canvas_size = resolution
     disp.is_rotated.return_value = False
     disp.has_portrait_themes = False
@@ -377,7 +377,7 @@ class TestDeviceSettings(unittest.TestCase):
         result = lcd.set_rotation(90)
         self.assertTrue(result['success'])
         # Output always swaps for non-square at 90/270
-        self.assertEqual(lcd._display_svc.output_resolution, (480, 800))
+        self.assertEqual(lcd._display_svc.canvas_size, (480, 800))
 
     @patch.object(Device, '_persist')
     def test_rotation_reloads_mask_from_new_dir(self, _):
@@ -830,8 +830,8 @@ def lcd_with_mocks():
     disp.lcd_height = h
     disp.lcd_size = (w, h)
     disp.native_resolution = (w, h)
-    disp.output_resolution = (w, h)
-    disp.canvas_resolution = (w, h)
+    disp.canvas_size = (w, h)
+    disp.canvas_size = (w, h)
     disp.is_rotated.return_value = False
     disp.has_portrait_themes = False
     disp.rotation = 0

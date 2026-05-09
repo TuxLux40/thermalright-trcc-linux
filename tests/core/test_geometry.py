@@ -97,15 +97,10 @@ def _make_disp(
 class TestSquareGeometry:
     """Square device — dirs and resolutions never swap."""
 
-    def test_square_output_never_swaps(self):
-        disp = _make_disp(320, 320)
-        disp.rotation = 90
-        assert disp.output_resolution == (320, 320)
-
     def test_square_canvas_never_swaps(self):
         disp = _make_disp(320, 320)
         disp.rotation = 90
-        assert disp.canvas_resolution == (320, 320)
+        assert disp.canvas_size == (320, 320)
 
     def test_square_image_rotation_returns_actual(self):
         disp = _make_disp(320, 320)
@@ -122,7 +117,8 @@ class TestSquareGeometry:
 class TestNonSquareGeometry:
     """Non-square device — canvas always swaps for non-square at 90/270.
 
-    Post-10B.0b collapse: canvas_resolution == output_resolution always.
+    Phase 8 collapse: canvas_size is the single name; output_resolution /
+    canvas_resolution / effective_resolution all deleted.
     has_portrait_themes only affects which theme dir we pull from and
     whether image_rotation needs to fire pixel rotation.
     """
@@ -131,7 +127,7 @@ class TestNonSquareGeometry:
     def test_no_portrait_canvas_swaps(self):
         disp = _make_disp(1280, 480, has_portrait=False)
         disp.rotation = 90
-        assert disp.canvas_resolution == (480, 1280)
+        assert disp.canvas_size == (480, 1280)
 
     def test_no_portrait_image_rotation_is_actual(self):
         disp = _make_disp(1280, 480, has_portrait=False)
@@ -149,7 +145,7 @@ class TestNonSquareGeometry:
     def test_portrait_canvas_swaps(self):
         disp = _make_disp(1280, 480, has_portrait=True)
         disp.rotation = 90
-        assert disp.canvas_resolution == (480, 1280)
+        assert disp.canvas_size == (480, 1280)
 
     def test_portrait_image_rotation_is_zero(self):
         disp = _make_disp(1280, 480, has_portrait=True)
@@ -162,11 +158,9 @@ class TestNonSquareGeometry:
         disp.rotation = 90
         assert 'theme4801280' in str(disp.theme_dir.path)
 
-    def test_canvas_equals_output(self):
-        """Post-10B.0b: canvas_resolution and output_resolution always match."""
-        disp = _make_disp(1280, 480, has_portrait=False)
-        disp.rotation = 90
-        assert disp.canvas_resolution == disp.output_resolution
+    # Phase 8: canvas_resolution / output_resolution / effective_resolution
+    # all collapsed into canvas_size — no equivalence test needed because
+    # there's only one name.
 
     @patch('pathlib.Path.exists', return_value=True)
     def test_web_dir_swaps_on_rotation(self, _):

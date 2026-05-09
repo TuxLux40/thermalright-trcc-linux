@@ -210,7 +210,7 @@ class LCDHandler(BaseHandler):
         self._w['rotation_combo'].blockSignals(True)
         self._w['rotation_combo'].setCurrentIndex(rotation_index)
         self._w['rotation_combo'].blockSignals(False)
-        ow, oh = self._lcd.output_resolution
+        ow, oh = self._lcd.canvas_size
         self._w['preview'].set_resolution(ow, oh)
         self._update_theme_directories()
 
@@ -661,7 +661,7 @@ class LCDHandler(BaseHandler):
             result = self._lcd.set_rotation(degrees)
             image = result.get('image')
         lcd = self._lcd
-        ow, oh = lcd.output_resolution
+        ow, oh = lcd.canvas_size
         self.log.info("set_rotation: rotation=%d output=%dx%d "
                  "masks_dir=%s web_dir=%s rotated=%s",
                  lcd.rotation, ow, oh, lcd.masks_dir, lcd.web_dir, lcd.is_rotated())
@@ -676,7 +676,7 @@ class LCDHandler(BaseHandler):
         """If a cloud video is active on a non-square device, load the
         orientation-matched version. Downloads it if not already cached."""
         lcd = self._lcd
-        w, h = lcd.native_resolution
+        w, h = lcd.lcd_size
         if w == h:
             self.log.debug("_reload_cloud_theme_for_rotation: square device — skipping")
             return
@@ -832,7 +832,7 @@ class LCDHandler(BaseHandler):
         skip restore_last_theme to avoid a redundant double-load).
         """
         lcd = self._lcd
-        ow, oh = lcd.output_resolution
+        ow, oh = lcd.canvas_size
         self.log.debug("_update_theme_directories: output=%dx%d theme_dir=%s "
                   "web_dir=%s masks_dir=%s rotated=%s",
                   ow, oh,

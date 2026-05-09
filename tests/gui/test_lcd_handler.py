@@ -121,9 +121,9 @@ class TestApplyDeviceConfig:
         mock_settings.device_config_key.return_value = 'k'
         mock_settings.get_device_config.return_value = {}
         # Device already configured at 480x480 from connect() — geometry matches
-        mock_lcd_device.native_resolution = RES_SQ_LARGE
-        mock_lcd_device.output_resolution = RES_SQ_LARGE
-        mock_lcd_device.canvas_resolution = RES_SQ_LARGE
+        mock_lcd_device.lcd_size = RES_SQ_LARGE
+        mock_lcd_device.canvas_size = RES_SQ_LARGE
+        mock_lcd_device.canvas_size = RES_SQ_LARGE
         h = make_lcd_handler(lcd=mock_lcd_device)
         h.apply_device_config(self._device(), *RES_SQ_LARGE)
         h._w['preview'].set_resolution.assert_called_with(*RES_SQ_LARGE)
@@ -161,9 +161,9 @@ class TestReactivate:
     def test_updates_all_widget_resolutions(self, mock_settings,
                                             make_lcd_handler, mock_lcd_device):
         mock_settings.get_device_config.return_value = {}
-        mock_lcd_device.native_resolution = RES_SQ_LARGE
-        mock_lcd_device.output_resolution = RES_SQ_LARGE
-        mock_lcd_device.canvas_resolution = RES_SQ_LARGE
+        mock_lcd_device.lcd_size = RES_SQ_LARGE
+        mock_lcd_device.canvas_size = RES_SQ_LARGE
+        mock_lcd_device.canvas_size = RES_SQ_LARGE
         h = make_lcd_handler()
         h._device_key = 'k'
         h.reactivate(*RES_SQ_LARGE)
@@ -243,8 +243,8 @@ class TestUpdateThemeDirectories:
         theme1 = theme_root / 'Theme1'
         theme1.mkdir(parents=True)
         (theme1 / '00.png').touch()
-        mock_lcd_device.output_resolution = resolution
-        mock_lcd_device.canvas_resolution = resolution
+        mock_lcd_device.canvas_size = resolution
+        mock_lcd_device.canvas_size = resolution
         mock_lcd_device.theme_dir = MagicMock(path=theme_root)
         return tmp_path
 
@@ -719,7 +719,7 @@ class TestDisplaySettings:
         portrait_dir = tmp_path / 'web' / f'{nh}{nw}'
         portrait_dir.mkdir(parents=True)
         (portrait_dir / 'a007.mp4').write_bytes(b'fake')
-        mock_lcd_device.native_resolution = RES_LANDSCAPE
+        mock_lcd_device.lcd_size = RES_LANDSCAPE
         mock_lcd_device.web_dir = portrait_dir
         # Simulate active cloud theme
         mock_lcd_device.current_theme_path = Path(f'/web/{nw}{nh}/a007.mp4')
@@ -731,7 +731,7 @@ class TestDisplaySettings:
     def test_rotation_skips_cloud_reload_for_square(self, lcd_handler, mock_lcd_device):
         """Square device: rotation never triggers cloud theme reload."""
         mock_lcd_device.set_rotation.return_value = {'success': True}
-        mock_lcd_device.native_resolution = RES_SQ_SMALL
+        mock_lcd_device.lcd_size = RES_SQ_SMALL
         w, h = RES_SQ_SMALL
         mock_lcd_device.current_theme_path = Path(f'/web/{w}{h}/a007.mp4')
 
@@ -742,7 +742,7 @@ class TestDisplaySettings:
     def test_rotation_skips_cloud_reload_for_local_theme(self, lcd_handler, mock_lcd_device):
         """Local theme (no .mp4): rotation doesn't trigger cloud download."""
         mock_lcd_device.set_rotation.return_value = {'success': True}
-        mock_lcd_device.native_resolution = RES_LANDSCAPE
+        mock_lcd_device.lcd_size = RES_LANDSCAPE
         mock_lcd_device.current_theme_path = Path('/themes/Theme1')
 
         mock_lcd_device.select.reset_mock()

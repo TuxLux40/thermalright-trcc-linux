@@ -82,8 +82,8 @@ def mock_lcd_device():
     lcd.lcd_size = (w, h)
     lcd.resolution = (w, h)
     lcd.native_resolution = (w, h)
-    lcd.output_resolution = (w, h)
-    lcd.canvas_resolution = (w, h)
+    lcd.canvas_size = (w, h)
+    lcd.canvas_size = (w, h)
     lcd.is_rotated.return_value = False
     lcd.has_portrait_themes = False
     lcd.rotation = 0
@@ -134,9 +134,9 @@ def mock_lcd_device():
     display_svc.lcd_size = (w, h)
     display_svc.canvas_size = (w, h)
     display_svc.effective_resolution = (w, h)
-    display_svc.output_resolution = (w, h)
+    display_svc.canvas_size = (w, h)
     display_svc.native_resolution = (w, h)
-    display_svc.canvas_resolution = (w, h)
+    display_svc.canvas_size = (w, h)
     display_svc.rotation = 0
     display_svc.is_rotated.return_value = False
     display_svc.has_portrait_themes = False
@@ -153,8 +153,8 @@ def mock_lcd_device():
         display_svc.lcd_size = (width, height)
         display_svc.canvas_size = (width, height)
         display_svc.effective_resolution = (width, height)
-        display_svc.output_resolution = (width, height)
-        display_svc.canvas_resolution = (width, height)
+        display_svc.canvas_size = (width, height)
+        display_svc.canvas_size = (width, height)
         display_svc.native_resolution = (width, height)
     display_svc.set_resolution.side_effect = _track_resolution
 
