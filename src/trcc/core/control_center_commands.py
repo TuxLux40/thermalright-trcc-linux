@@ -230,7 +230,7 @@ class ControlCenterCommands:
     def list_gpus(self) -> list[tuple[str, str]]:
         try:
             if self._sensor_enum is None:
-                self._sensor_enum = self._platform.create_sensor_enumerator()
+                self._sensor_enum = self._platform.sensors
             return list(self._sensor_enum.get_gpu_list())
         except Exception as e:
             log.warning('list_gpus: %s', e)
@@ -244,7 +244,7 @@ class ControlCenterCommands:
     def list_sensors(self) -> list[SensorInfo]:
         try:
             if self._sensor_enum is None:
-                self._sensor_enum = self._platform.create_sensor_enumerator()
+                self._sensor_enum = self._platform.sensors
             return list(self._sensor_enum.get_sensors())
         except Exception as e:
             log.warning('list_sensors: %s', e)

@@ -14,8 +14,9 @@ SOLID:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from trcc.core.models import JPEG_MAX_BYTES, DetectedDevice
@@ -462,6 +463,41 @@ class Platform(ABC):
 
     def __init__(self) -> None:
         self._sensor_enum: SensorEnumerator | None = None
+
+    # ── Pythonic surface — the four idioms callers should use ────────────
+
+    @classmethod
+    def for_current_os(cls) -> Platform:
+        """Construct the Platform implementation for the host OS.
+
+        Dispatch lives in :mod:`trcc.adapters.system.__init__` (where the
+        concrete subclasses are importable).  This classmethod is the
+        canonical entry point — callers read like English::
+
+            platform = Platform.for_current_os()
+            for device in platform: ...
+        """
+        from trcc.adapters.system import make_platform
+        return make_platform()
+
+    def __iter__(self) -> Iterator[DetectedDevice]:
+        """Enumerate every USB device present right now.
+
+        Re-runs detection on every call — there's no caching, the host
+        OS may have hot-plugged or unplugged devices.  Equivalent to
+        ``self.create_detect_fn()()`` but reads as ``for d in platform``.
+        """
+        return iter(self.create_detect_fn()())
+
+    @cached_property
+    def sensors(self) -> SensorEnumerator:
+        """The OS-specific sensor enumerator, computed once.
+
+        Pythonic replacement for ``self.create_sensor_enumerator()``.
+        Both APIs return the same instance — they share the same backing
+        cache on ``self._sensor_enum``.
+        """
+        return self.create_sensor_enumerator()
 
     # ── Universal (concrete — same on all OSes) ──────────────────────
 

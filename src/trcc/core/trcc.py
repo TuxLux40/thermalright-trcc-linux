@@ -780,7 +780,7 @@ class Trcc:
         ``_lcd_devices`` / ``_led_devices`` populated by ``discover()``.
         Used by perf benchmarks and debug-report tooling.
         """
-        return list(self._platform.create_detect_fn()())
+        return list(self._platform)
 
     def protocol_for(self, device_info: Any) -> Any:
         """Get-or-create the cached DeviceProtocol for this device info."""
@@ -836,6 +836,43 @@ class Trcc:
 
     def __bool__(self) -> bool:
         return bool(self._lcd_devices) or bool(self._led_devices)
+
+    def __contains__(self, key: object) -> bool:
+        """Membership: ``(vid, pid) in trcc`` or ``device in trcc``.
+
+        Accepts a (vid, pid) tuple OR a device instance — matches the
+        registry semantics so callers can ask either question.
+        """
+        if isinstance(key, tuple) and len(key) == 2:
+            vid, pid = key
+            return any(
+                d.device_info is not None
+                and d.device_info.vid == vid
+                and d.device_info.pid == pid
+                for d in self
+            )
+        return any(d is key for d in self)
+
+    def __getitem__(self, key: int | tuple[int, int]) -> LCDDevice | LEDDevice:
+        """Indexing: ``trcc[i]`` walks the iteration; ``trcc[(vid, pid)]`` looks up by id.
+
+        Index across both LCD and LED in iteration order — same order as
+        ``for d in trcc``.  KeyError / IndexError on miss, matching the
+        normal container contract.
+        """
+        if isinstance(key, int):
+            for i, dev in enumerate(self):
+                if i == key:
+                    return dev
+            raise IndexError(f'Trcc index out of range: {key} (have {len(self)})')
+        if isinstance(key, tuple) and len(key) == 2:
+            vid, pid = key
+            for dev in self:
+                info = dev.device_info
+                if info is not None and info.vid == vid and info.pid == pid:
+                    return dev
+            raise KeyError(f'No device with vid:pid {vid:04x}:{pid:04x}')
+        raise TypeError(f'Trcc indices must be int or (vid, pid) tuple, got {type(key).__name__}')
 
     # ── Context manager — deterministic cleanup on `with` exit ─────────
 
