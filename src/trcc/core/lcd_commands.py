@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..conf import Settings
 from ._command import command
+from ._device_commands import DeviceCommands
 from .events import Topic
 from .models.overlay import OverlayElement
 from .models.theme import MaskInfo, ThemeInfo
@@ -36,7 +37,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-class LCDCommands:
+class LCDCommands(DeviceCommands['LCDDevice']):
     """Command surface for LCD devices.
 
     Holds the list of discovered LCD devices + a reference to the shared
@@ -44,23 +45,14 @@ class LCDCommands:
     performs its action.
     """
 
+    _KIND = 'LCD'
+
     def __init__(self, devices: list[LCDDevice], events: EventBus,
                  settings: Any) -> None:
-        self._devices = devices
-        self._events = events
+        super().__init__(devices, events)
         self._settings = settings
 
     # ── Internal helpers ─────────────────────────────────────────────
-
-    def _get(self, lcd: int) -> LCDDevice | None:
-        if not 0 <= lcd < len(self._devices):
-            log.warning("LCD index %d out of range (have %d)", lcd, len(self._devices))
-            return None
-        return self._devices[lcd]
-
-    @staticmethod
-    def _err(msg: str) -> dict[str, Any]:
-        return {'error': msg, 'success': False}
 
     @staticmethod
     def _device_key(dev: LCDDevice) -> str:
@@ -87,25 +79,25 @@ class LCDCommands:
     @command(result_cls=FrameResult, topic=Topic.LCD_BRIGHTNESS, include_frame=True)
     def set_brightness(self, lcd: int, percent: int):
         if (dev := self._get(lcd)) is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         return dev.set_brightness(percent)
 
     @command(result_cls=FrameResult, topic=Topic.LCD_ROTATION, include_frame=True)
     def set_rotation(self, lcd: int, degrees: int):
         if (dev := self._get(lcd)) is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         return dev.set_rotation(degrees)
 
     @command(result_cls=FrameResult, topic=Topic.LCD_SPLIT_MODE, include_frame=True)
     def set_split_mode(self, lcd: int, mode: int):
         if (dev := self._get(lcd)) is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         return dev.set_split_mode(mode)
 
     @command(result_cls=FrameResult, topic=Topic.LCD_FIT_MODE, include_frame=True)
     def set_fit_mode(self, lcd: int, mode: str):
         if (dev := self._get(lcd)) is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         return dev.set_fit_mode(mode)
 
     # ── Themes ───────────────────────────────────────────────────────
@@ -113,7 +105,7 @@ class LCDCommands:
     @command(result_cls=ThemeResult, extras_rename={'interval': 'interval_ms'})
     def load_theme(self, lcd: int, path: Path):
         if (dev := self._get(lcd)) is None:
-            return ThemeResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, ThemeResult)
         if not path.exists():
             return ThemeResult(success=False, error=f'Theme not found: {path}')
         theme = ThemeInfo(name=path.name, path=path)
@@ -129,7 +121,7 @@ class LCDCommands:
     @command(result_cls=ThemeResult, extras_rename={'interval': 'interval_ms'})
     def load_cloud_theme(self, lcd: int, theme_id: str):
         if (dev := self._get(lcd)) is None:
-            return ThemeResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, ThemeResult)
         # Delegate to Device's cloud-theme resolution via select
         r = dev.load_theme_by_name(theme_id)
         if r.get('success'):
@@ -144,20 +136,20 @@ class LCDCommands:
     @command(result_cls=FrameResult, include_frame=True)
     def load_image(self, lcd: int, path: Path):
         if (dev := self._get(lcd)) is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         return dev.load_image(str(path))
 
     @command(result_cls=FrameResult)
     def send_image(self, lcd: int, path: Path):
         """Open an image file, resize to the device, and push it immediately."""
         if (dev := self._get(lcd)) is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         return dev.send_image(str(path))
 
     @command(result_cls=OpResult)
     def save_theme(self, lcd: int, name: str):
         if (dev := self._get(lcd)) is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         r = dev.save(name)
         if r.get('success') and (key := self._device_key(dev)):
             saved_path = dev.current_theme_path
@@ -169,7 +161,7 @@ class LCDCommands:
     def delete_theme(self, lcd: int, path: Path) -> OpResult:
         # Filesystem delete — doesn't go through the device, so no @command.
         if self._get(lcd) is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         try:
             import shutil
             if path.is_dir():
@@ -185,19 +177,19 @@ class LCDCommands:
     @command(result_cls=OpResult)
     def export_config(self, lcd: int, path: Path):
         if (dev := self._get(lcd)) is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         return dev.export_config(str(path))
 
     @command(result_cls=OpResult)
     def import_config(self, lcd: int, path: Path, data_dir: Path):
         if (dev := self._get(lcd)) is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         return dev.import_config(str(path), str(data_dir))
 
     @command(result_cls=ThemeResult)
     def restore_last_theme(self, lcd: int):
         if (dev := self._get(lcd)) is None:
-            return ThemeResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, ThemeResult)
         return dev.restore_last_theme()
 
     # ── Masks ────────────────────────────────────────────────────────
@@ -205,7 +197,7 @@ class LCDCommands:
     @command(result_cls=FrameResult)
     def apply_mask(self, lcd: int, path: Path, *, is_custom: bool = False):
         if (dev := self._get(lcd)) is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         r = dev.load_mask_standalone(str(path))
         if r.get('success'):
             if key := self._device_key(dev):
@@ -218,7 +210,7 @@ class LCDCommands:
     @command(result_cls=FrameResult)
     def upload_custom_mask(self, lcd: int, png: bytes):
         if (dev := self._get(lcd)) is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         # Caller-side: GUI/CLI/API crops to bytes; we write to user masks dir
         # and apply. Location resolved from the device's geometry delegates.
         user_masks = getattr(dev, 'user_masks_dir', None)
@@ -239,13 +231,13 @@ class LCDCommands:
     @command(result_cls=FrameResult)
     def set_mask_position(self, lcd: int, x: int, y: int):
         if (dev := self._get(lcd)) is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         return dev.set_mask_position(x, y)
 
     @command(result_cls=FrameResult)
     def set_mask_visible(self, lcd: int, visible: bool):
         if (dev := self._get(lcd)) is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         return dev.set_mask_visible(visible)
 
     # ── Overlay ──────────────────────────────────────────────────────
@@ -253,7 +245,7 @@ class LCDCommands:
     @command(result_cls=FrameResult, topic=Topic.LCD_OVERLAY_ENABLED)
     def enable_overlay(self, lcd: int, enabled: bool):
         if (dev := self._get(lcd)) is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         r = dev.enable_overlay(enabled)
         if r.get('success') and (key := self._device_key(dev)):
             prev = Settings.get_device_config(key).get('overlay', {})
@@ -266,7 +258,7 @@ class LCDCommands:
     @command(result_cls=FrameResult, topic=Topic.LCD_OVERLAY)
     def set_overlay_config(self, lcd: int, config: dict):
         if (dev := self._get(lcd)) is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         r = dev.set_config(config)
         if r.get('success') and (key := self._device_key(dev)):
             Settings.save_device_setting(key, 'overlay', {
@@ -278,7 +270,7 @@ class LCDCommands:
     def add_overlay_element(self, lcd: int, element: OverlayElement) -> FrameResult:
         dev = self._get(lcd)
         if dev is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         # Phase 3: delegate via set_config-merged approach. Full add/edit
         # semantics land in Phase 5 alongside persistence moves.
         return FrameResult(
@@ -297,7 +289,7 @@ class LCDCommands:
     ) -> FrameResult:
         dev = self._get(lcd)
         if dev is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         # Phase 5 wires this to the real overlay grid. For now, accept the
         # fields and trigger a render to keep the interface honest.
         changes = {k: v for k, v in {
@@ -317,7 +309,7 @@ class LCDCommands:
     def delete_overlay_element(self, lcd: int, index: int) -> FrameResult:
         dev = self._get(lcd)
         if dev is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         # Phase 5: proper delete via overlay grid manipulation.
         r = dev.render_and_send()
         return FrameResult(
@@ -332,7 +324,7 @@ class LCDCommands:
     ) -> FrameResult:
         dev = self._get(lcd)
         if dev is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         r = dev.set_flash_index(index)
         return FrameResult(
             success=r.get('success', False),
@@ -342,7 +334,7 @@ class LCDCommands:
     def set_overlay_background(self, lcd: int, png: bytes) -> FrameResult:
         dev = self._get(lcd)
         if dev is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         # Phase 5: decode PNG to render surface via the injected Renderer.
         log.debug('set_overlay_background lcd=%d bytes=%d', lcd, len(png))
         return FrameResult(
@@ -355,31 +347,31 @@ class LCDCommands:
     @command(result_cls=OpResult)
     def load_video(self, lcd: int, path: Path):
         if (dev := self._get(lcd)) is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         return dev.load(str(path))
 
     @command(result_cls=OpResult)
     def play_video(self, lcd: int):
         if (dev := self._get(lcd)) is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         return dev.play()
 
     @command(result_cls=OpResult)
     def pause_video(self, lcd: int):
         if (dev := self._get(lcd)) is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         return dev.pause()
 
     @command(result_cls=OpResult)
     def stop_video(self, lcd: int):
         if (dev := self._get(lcd)) is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         return dev.stop()
 
     @command(result_cls=OpResult)
     def seek_video(self, lcd: int, percent: float):
         if (dev := self._get(lcd)) is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         return dev.seek(percent)
 
     # ── Long-running streaming (blocking; publishes frame events) ────
@@ -403,7 +395,7 @@ class LCDCommands:
         """
         dev = self._get(lcd)
         if dev is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
 
         bus = self._events
         device_path = getattr(dev, 'device_path', '?') or '?'
@@ -440,7 +432,7 @@ class LCDCommands:
         """Static-theme keepalive — publishes 'frame' events during idle."""
         dev = self._get(lcd)
         if dev is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
 
         bus = self._events
         device_path = getattr(dev, 'device_path', '?') or '?'
@@ -468,7 +460,7 @@ class LCDCommands:
     ) -> OpResult:
         dev = self._get(lcd)
         if dev is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         # Phase 6: screencast lives in a dedicated service; for now emit a log.
         log.debug('start_screencast lcd=%d region=(%d,%d %dx%d) audio=%s',
                   lcd, x, y, w, h, audio)
@@ -487,7 +479,7 @@ class LCDCommands:
     ) -> OpResult:
         dev = self._get(lcd)
         if dev is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         if (key := self._device_key(dev)):
             prev = Settings.get_device_config(key).get('carousel', {})
             Settings.save_device_setting(key, 'carousel', {
@@ -503,7 +495,7 @@ class LCDCommands:
     def set_slideshow(self, lcd: int, enabled: bool) -> OpResult:
         dev = self._get(lcd)
         if dev is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         if (key := self._device_key(dev)):
             prev = Settings.get_device_config(key).get('carousel', {})
             Settings.save_device_setting(key, 'carousel', {
@@ -521,19 +513,19 @@ class LCDCommands:
     @command(result_cls=FrameResult, include_frame=True)
     def render_and_send(self, lcd: int, *, send: bool = True):
         if (dev := self._get(lcd)) is None:
-            return FrameResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, FrameResult)
         return dev.render_and_send() if send else dev.render()
 
     @command(result_cls=OpResult)
     def send_color(self, lcd: int, r: int, g: int, b: int):
         if (dev := self._get(lcd)) is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         return dev.send_color(r, g, b)
 
     @command(result_cls=OpResult)
     def reset(self, lcd: int):
         if (dev := self._get(lcd)) is None:
-            return OpResult(success=False, error=f'LCD {lcd} not found')
+            return self._missing(lcd, OpResult)
         return dev.reset()
 
     # ── Listing ──────────────────────────────────────────────────────

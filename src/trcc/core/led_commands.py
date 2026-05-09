@@ -14,29 +14,21 @@ import logging
 from typing import TYPE_CHECKING
 
 from ._command import command
+from ._device_commands import DeviceCommands
 from .events import Topic
 from .models.led import LEDMode
 from .results import DiskInfo, LEDResult, LEDSnapshot, LEDStyleInfo, OpResult
 
 if TYPE_CHECKING:
-    from .device.led import LEDDevice
-    from .events import EventBus
+    from .device.led import LEDDevice  # noqa: F401  (used in generic str ref)
 
 log = logging.getLogger(__name__)
 
 
-class LEDCommands:
+class LEDCommands(DeviceCommands['LEDDevice']):
     """Command surface for LED devices."""
 
-    def __init__(self, devices: list[LEDDevice], events: EventBus) -> None:
-        self._devices = devices
-        self._events = events
-
-    def _get(self, led: int) -> LEDDevice | None:
-        if not 0 <= led < len(self._devices):
-            log.warning('LED index %d out of range (have %d)', led, len(self._devices))
-            return None
-        return self._devices[led]
+    _KIND = 'LED'
 
     # ── Color / mode / brightness ────────────────────────────────────
 
@@ -47,7 +39,7 @@ class LEDCommands:
     def set_color(self, led: int, r: int, g: int, b: int,
                   *, zone: int | None = None):
         if (dev := self._get(led)) is None:
-            return LEDResult(success=False, error=f'LED {led} not found')
+            return self._missing(led, LEDResult)
         return dev.set_zone_color(zone, r, g, b) if zone is not None \
             else dev.set_color(r, g, b)
 
@@ -58,7 +50,7 @@ class LEDCommands:
     def set_mode(self, led: int, mode: LEDMode | str | int,
                  *, zone: int | None = None):
         if (dev := self._get(led)) is None:
-            return LEDResult(success=False, error=f'LED {led} not found')
+            return self._missing(led, LEDResult)
         return dev.set_zone_mode(zone, mode) if zone is not None \
             else dev.set_mode(mode)
 
@@ -69,7 +61,7 @@ class LEDCommands:
     def set_brightness(self, led: int, percent: int,
                        *, zone: int | None = None):
         if (dev := self._get(led)) is None:
-            return LEDResult(success=False, error=f'LED {led} not found')
+            return self._missing(led, LEDResult)
         return dev.set_zone_brightness(zone, percent) if zone is not None \
             else dev.set_brightness(percent)
 
@@ -79,14 +71,14 @@ class LEDCommands:
     )
     def toggle(self, led: int, on: bool, *, zone: int | None = None):
         if (dev := self._get(led)) is None:
-            return LEDResult(success=False, error=f'LED {led} not found')
+            return self._missing(led, LEDResult)
         return dev.toggle_zone(zone, on) if zone is not None \
             else dev.toggle_global(on)
 
     @command(result_cls=LEDResult)
     def toggle_segment(self, led: int, index: int, on: bool):
         if (dev := self._get(led)) is None:
-            return LEDResult(success=False, error=f'LED {led} not found')
+            return self._missing(led, LEDResult)
         return dev.toggle_segment(index, on)
 
     # ── Zones ────────────────────────────────────────────────────────
@@ -94,7 +86,7 @@ class LEDCommands:
     @command(result_cls=OpResult)
     def select_zone(self, led: int, zone: int):
         if (dev := self._get(led)) is None:
-            return OpResult(success=False, error=f'LED {led} not found')
+            return self._missing(led, OpResult)
         return dev.set_selected_zone(zone)
 
     @command(result_cls=OpResult, topic=Topic.LED_ZONE_SYNC)
@@ -102,7 +94,7 @@ class LEDCommands:
                       *, zones: list[int] | None = None,
                       interval_s: int | None = None):
         if (dev := self._get(led)) is None:
-            return OpResult(success=False, error=f'LED {led} not found')
+            return self._missing(led, OpResult)
         if zones is not None:
             for idx, z in enumerate(zones):
                 dev.set_zone_sync_zone(z, True)
@@ -114,37 +106,37 @@ class LEDCommands:
     @command(result_cls=OpResult, topic=Topic.LED_CLOCK)
     def set_clock_format(self, led: int, is_24h: bool):
         if (dev := self._get(led)) is None:
-            return OpResult(success=False, error=f'LED {led} not found')
+            return self._missing(led, OpResult)
         return dev.set_clock_format(is_24h)
 
     @command(result_cls=OpResult)
     def set_week_start(self, led: int, sunday: bool):
         if (dev := self._get(led)) is None:
-            return OpResult(success=False, error=f'LED {led} not found')
+            return self._missing(led, OpResult)
         return dev.set_week_start(sunday)
 
     @command(result_cls=OpResult)
     def set_memory_ratio(self, led: int, ratio: int):
         if (dev := self._get(led)) is None:
-            return OpResult(success=False, error=f'LED {led} not found')
+            return self._missing(led, OpResult)
         return dev.set_memory_ratio(ratio)
 
     @command(result_cls=OpResult)
     def set_disk_index(self, led: int, index: int):
         if (dev := self._get(led)) is None:
-            return OpResult(success=False, error=f'LED {led} not found')
+            return self._missing(led, OpResult)
         return dev.set_disk_index(index)
 
     @command(result_cls=OpResult)
     def set_test_mode(self, led: int, enabled: bool):
         if (dev := self._get(led)) is None:
-            return OpResult(success=False, error=f'LED {led} not found')
+            return self._missing(led, OpResult)
         return dev.set_test_mode(enabled)
 
     @command(result_cls=OpResult, topic=Topic.LED_SENSOR)
     def set_sensor_source(self, led: int, source: str):
         if (dev := self._get(led)) is None:
-            return OpResult(success=False, error=f'LED {led} not found')
+            return self._missing(led, OpResult)
         return dev.set_sensor_source(source)
 
     # ── Listing ──────────────────────────────────────────────────────
