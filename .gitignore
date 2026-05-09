@@ -89,7 +89,9 @@ src/trcc/data/ui_*.json
 !/dev/mock_api.py
 !/dev/mock_gui.py
 !/dev/_mock_bootstrap.py
+!/dev/_mock_daemon.py
 !/dev/smoke_rotation_mask.py
+!/dev/smoke_daemon_gui.py
 /dev_*
 # Dev scripts at root
 /test_*.py

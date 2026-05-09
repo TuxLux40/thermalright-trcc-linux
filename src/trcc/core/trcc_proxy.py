@@ -366,6 +366,26 @@ class TrccProxy:
             error=response.get("error"),
         )
 
+    # ── Empty registries — proxy doesn't hold live device objects ────────
+    # Real Trcc exposes ``lcd_devices`` / ``led_devices`` as
+    # DeviceRegistry[LCDDevice] / DeviceRegistry[LEDDevice].  In daemon
+    # mode the proxy can't surface live LCDDevice/LEDDevice instances
+    # (they live in the daemon process), so these properties return
+    # empty tuples.  Callers that just iterate (e.g. "for lcd in
+    # trcc.lcd_devices") become safe no-ops; callers that need device
+    # identity should use ``lcd_descriptors`` / ``led_descriptors``
+    # which round-trip ``DeviceInfo`` over the wire.
+
+    @property
+    def lcd_devices(self) -> tuple:
+        """Empty in daemon mode — use ``lcd_descriptors()`` for identity."""
+        return ()
+
+    @property
+    def led_devices(self) -> tuple:
+        """Empty in daemon mode — use ``led_descriptors()`` for identity."""
+        return ()
+
     def lcd_descriptors(self) -> list[Any]:
         """Mirror of ``Trcc.lcd_descriptors`` — fetched over IPC.
 
