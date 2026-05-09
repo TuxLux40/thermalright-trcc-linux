@@ -323,6 +323,36 @@ class QtRenderer(Renderer):
                       frame.width * 3, QImage.Format.Format_RGB888)
         return qimg.convertToFormat(QImage.Format.Format_RGB32)
 
+    # ── Wire serialization ────────────────────────────────────────
+
+    def encode_for_wire(self, surface: Any) -> bytes:
+        """QImage → PNG bytes for IPC transport.
+
+        Lossless so the GUI preview matches the device output exactly.
+        """
+        buf = QByteArray()
+        qbuf = QBuffer(buf)
+        qbuf.open(QIODevice.OpenModeFlag.WriteOnly)
+        # type: ignore on the format str — PySide6 stubs say bytes, runtime needs str.
+        surface.save(qbuf, 'png')  # type: ignore[call-overload]
+        qbuf.close()
+        return bytes(buf.data())
+
+    def decode_from_wire(self, data: bytes) -> Any:
+        """PNG bytes → QImage (Format_RGB32 / Format_ARGB32 by content)."""
+        img = QImage()
+        # Same Qt stub vs. runtime mismatch as encode_jpeg — format str
+        # is what loadFromData actually accepts at runtime.
+        img.loadFromData(data, 'png')  # type: ignore[arg-type]
+        if img.isNull():
+            log.warning("decode_from_wire: empty/invalid PNG payload (%d bytes)",
+                        len(data))
+            return QImage(1, 1, QImage.Format.Format_RGB32)
+        if img.hasAlphaChannel():
+            return img.convertToFormat(
+                QImage.Format.Format_ARGB32_Premultiplied)
+        return img.convertToFormat(QImage.Format.Format_RGB32)
+
     # ── Drawing primitives ────────────────────────────────────────
 
     def fill_rect(self, surface: Any, x: int, y: int,

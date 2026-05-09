@@ -119,24 +119,20 @@ def main() -> int:
         window._on_rotation_change(index)
 
     def step2_baseline_rotation_zero() -> None:
-        print("\nstep 2: force rotation=0 + assert baseline geometry")
+        print("\nstep 2: assert baseline geometry at rotation=0")
         h = window._active_lcd()
         if not h:
             _check(False, "active handler exists")
             qapp.quit()
             return
-        # Saved config from a prior smoke run may have left the device at 90°.
-        # Drive the device directly to 0° so we have a deterministic baseline
-        # before the test sequence rotates to 90°.  Going through
-        # _on_rotation_change would still race with the device's own
-        # restore_device_settings chain on first selection.
-        print(f"  before reset: rotation={h.display.rotation}, "
-              f"canvas={h.display.canvas_resolution}")
-        h.display.set_rotation(0)
-        QApplication.processEvents()
+        # _clear_saved_device_state() above wiped the per-device rotation
+        # from the on-disk config, so step 1's _restore_rotation(0) chain
+        # leaves the device at 0° already.  No explicit reset needed —
+        # an explicit set_rotation(0) here triggers a heavy theme/reload
+        # pipeline whose nested Qt event loop can let later QTimers fire,
+        # which races with step 3's setCurrentIndex(1).
         lcd = h.display
-        print(f"  after reset:  rotation={lcd.rotation}, "
-              f"canvas={lcd.canvas_resolution}")
+        print(f"  rotation={lcd.rotation}, canvas={lcd.canvas_resolution}")
         _check(lcd.native_resolution == (1280, 480),
                "native_resolution == (1280, 480)",
                f"got {lcd.native_resolution}")

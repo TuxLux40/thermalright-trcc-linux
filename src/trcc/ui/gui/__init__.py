@@ -126,8 +126,10 @@ def launch(verbosity: int = 0, decorated: bool = False,
     )
 
     # ── IPC server bound to Trcc — manifold dispatch for clients ────────
+    # Renderer is forwarded so Topic.FRAME events get their surface payload
+    # encoded into a JSON-safe envelope before reaching TrccProxy clients.
     from trcc.ipc import IPCServer
-    ipc_server = IPCServer(trcc=t)
+    ipc_server = IPCServer(trcc=t, renderer=renderer)
     ipc_server.start()
     window._ipc_server = ipc_server
 

@@ -169,6 +169,15 @@ class Trcc:
         """All connected LED devices, in detection order. See :attr:`lcd_devices`."""
         return self._led_devices
 
+    @property
+    def renderer(self) -> Renderer | None:
+        """The rendering backend wired at construction (``QtRenderer`` in production).
+
+        Read-only handle — needed by the IPC server to encode
+        ``Topic.FRAME`` surface payloads for ``TrccProxy`` clients.
+        """
+        return self._renderer
+
     # ── Descriptors — wire-safe identity slices for clients ───────────────────
     # Pure DeviceInfo lists (no LCDDevice / LEDDevice references).  Stable
     # across the IPC boundary: TrccProxy uses the same shape via its own

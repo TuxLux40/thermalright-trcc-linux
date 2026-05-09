@@ -135,12 +135,20 @@ class EventBusProxy:
     `Trcc.events.publish` directly, never through a proxy.
     """
 
-    __slots__ = ('_lock', '_next_id', '_socket_path', '_subs', '_timeout')
+    __slots__ = (
+        '_lock', '_next_id', '_renderer', '_socket_path', '_subs', '_timeout',
+    )
 
     def __init__(self, socket_path: Path | None = None,
-                 timeout: float = 10.0) -> None:
+                 timeout: float = 10.0,
+                 renderer: Any | None = None) -> None:
         self._socket_path = socket_path
         self._timeout = timeout
+        # Renderer reconstructs ``Topic.FRAME`` surface envelopes back into
+        # native QImages.  None is acceptable — surface envelopes pass
+        # through to the callback as the wrapper dict, which is what
+        # surface-less tests want.
+        self._renderer: Any | None = renderer
         self._lock = threading.Lock()
         self._next_id = 0
         # sub_id → (sock, reader_thread). Reader closes sock on exit;
@@ -202,7 +210,8 @@ class EventBusProxy:
                             continue
                         try:
                             msg = json.loads(text)
-                            payload = tuple(msg.get("payload", ()))
+                            payload = self._desanitize_payload(
+                                msg.get("payload", ()))
                             callback(*payload)
                         except Exception:
                             log.exception(
@@ -246,6 +255,25 @@ class EventBusProxy:
         raise RuntimeError(
             "TrccProxy clients cannot publish — events flow daemon → client. "
             "Use Trcc.events.publish from inside the daemon process.")
+
+    def _desanitize_payload(self, payload: list | tuple) -> tuple:
+        """Reverse :meth:`IPCServer._sanitize_payload`.
+
+        Walks the payload list and unwraps any ``__surface__`` envelopes
+        into native surfaces via the wired renderer.  When no renderer
+        is wired, the envelope dict passes through to the callback —
+        callers that don't care about surfaces (e.g. tests subscribing
+        only to METRICS) are unaffected.
+        """
+        from .wire import is_surface_envelope, unwrap_surface
+
+        if self._renderer is None:
+            return tuple(payload)
+        return tuple(
+            unwrap_surface(self._renderer, item)
+            if is_surface_envelope(item) else item
+            for item in payload
+        )
 
     def cleanup(self) -> None:
         """Close every open subscription. Idempotent.
@@ -299,17 +327,21 @@ class TrccProxy:
     __slots__ = ('_socket_path', '_timeout', 'control_center', 'events', 'lcd', 'led')
 
     def __init__(self, *, socket_path: Path | None = None,
-                 timeout: float = 10.0) -> None:
+                 timeout: float = 10.0,
+                 renderer: Any | None = None) -> None:
         # Build all four facade proxies up front. Cheap (no IPC at
         # construction), and leaves the public surface as plain
         # attribute access — no property-descriptor surprises with
         # __slots__ / __getattr__ interaction.
+        # ``renderer`` is forwarded to the EventBusProxy so it can
+        # reconstruct ``Topic.FRAME`` surface envelopes; the facade
+        # proxies don't need it.
         self._socket_path = socket_path
         self._timeout = timeout
         self.lcd = LCDFacadeProxy(socket_path, timeout)
         self.led = LEDFacadeProxy(socket_path, timeout)
         self.control_center = ControlCenterFacadeProxy(socket_path, timeout)
-        self.events = EventBusProxy(socket_path, timeout)
+        self.events = EventBusProxy(socket_path, timeout, renderer=renderer)
 
     # ── Trcc-level methods (proxied through the `_meta` role) ───────────────
 

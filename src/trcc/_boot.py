@@ -131,7 +131,14 @@ def trcc(
             # TrccProxy is a structural drop-in for Trcc — same .lcd /
             # .led / .control_center / .events surface so call sites
             # stay typed against Trcc and just work at runtime.
-            _cached = cast(Trcc, TrccProxy())
+            # The renderer (caller-supplied or a built offscreen one)
+            # is forwarded to the proxy so its EventBus can reconstruct
+            # ``Topic.FRAME`` surface envelopes received from the daemon.
+            if renderer is None:
+                _ensure_qapp()
+                from trcc.adapters.render.qt import QtRenderer
+                renderer = QtRenderer()
+            _cached = cast(Trcc, TrccProxy(renderer=renderer))
             return _cached
 
         # 2. Resolve / accept the Platform.

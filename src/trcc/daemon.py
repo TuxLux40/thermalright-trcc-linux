@@ -67,7 +67,9 @@ def run_daemon(*, verbosity: int = 0) -> int:
     qapp = _build_qapp()
     trcc = _build_trcc()
 
-    server = IPCServer(trcc=trcc)
+    # Renderer flows through so ``Topic.FRAME`` surface payloads get
+    # encoded into a JSON-safe envelope before reaching TrccProxy clients.
+    server = IPCServer(trcc=trcc, renderer=trcc.renderer)
     server.start()
 
     _install_signal_handlers(qapp, server)

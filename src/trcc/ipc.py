@@ -161,8 +161,13 @@ class IPCServer:
     disconnects.
     """
 
-    def __init__(self, *, trcc: Trcc):
+    def __init__(self, *, trcc: Trcc, renderer: Any | None = None):
         self._trcc: Trcc = trcc
+        # Renderer is needed only to sanitize ``Topic.FRAME`` event payloads
+        # (native surfaces aren't JSON-safe).  None is acceptable — frame
+        # events with surface payloads will be skipped (logged) on the wire,
+        # while every other topic flows untouched.
+        self._renderer: Any | None = renderer
         self._sock: socket.socket | None = None
         self._notifier: Any = None  # QSocketNotifier
         # Long-lived event subscriber connections — each is (sub_id, sock).
@@ -303,7 +308,8 @@ class IPCServer:
         sub_id_holder: list[int] = []
 
         def _forward(*payload: Any) -> None:
-            line = json.dumps({"topic": topic, "payload": list(payload)}) + "\n"
+            wire_payload = self._sanitize_payload(topic, payload)
+            line = json.dumps({"topic": topic, "payload": wire_payload}) + "\n"
             try:
                 client.sendall(line.encode())
             except OSError:
@@ -327,6 +333,48 @@ class IPCServer:
         sub_id_holder.append(sub_id)
         self._event_subs.append((sub_id, client))
         log.info("IPC subscription registered: id=%d topic=%r", sub_id, topic)
+
+    def _sanitize_payload(self, topic: str, payload: tuple) -> list:
+        """Return *payload* in JSON-safe form for transmission.
+
+        Only ``Topic.FRAME`` carries a non-JSON-safe value today: the
+        rendered surface at index 1.  When a renderer is wired in, the
+        surface is wrapped via :func:`trcc.core.wire.wrap_surface`; when
+        not, the surface slot is replaced with ``None`` and a one-shot
+        warning is logged so misconfiguration surfaces during smoke tests
+        rather than as silent dropped frames in production.
+
+        Other topics flow untouched — their payloads are already JSON-safe
+        (strings, ints, lists, dataclasses-as-dicts).
+        """
+        from .core.events import Topic
+
+        if topic != Topic.FRAME:
+            return list(payload)
+
+        # Topic.FRAME contract: (device_path: str, surface: Any | None).
+        # Only index 1 needs sanitizing; index 0 is already a string.
+        if len(payload) < 2 or payload[1] is None:
+            return list(payload)
+
+        if self._renderer is None:
+            if not getattr(self, '_warned_no_renderer', False):
+                log.warning(
+                    "FRAME event subscribed over IPC but IPCServer has no "
+                    "renderer wired — surface payloads will be dropped.  "
+                    "Pass renderer=… in the composition root to enable "
+                    "frame forwarding to TrccProxy clients.")
+                self._warned_no_renderer = True
+            return [payload[0], None, *payload[2:]]
+
+        from .core.wire import wrap_surface
+        try:
+            envelope = wrap_surface(self._renderer, payload[1])
+        except Exception:
+            log.exception("_sanitize_payload: encode_for_wire raised — "
+                          "dropping surface payload")
+            return [payload[0], None, *payload[2:]]
+        return [payload[0], envelope, *payload[2:]]
 
     def _dispatch(self, request: dict) -> dict:
         """Route request to the matching dispatcher.

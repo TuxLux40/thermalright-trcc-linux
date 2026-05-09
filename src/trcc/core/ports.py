@@ -151,6 +151,26 @@ class Renderer(ABC):
     def from_raw_rgb24(self, frame: RawFrame) -> Any:
         """Convert RawFrame (RGB24 bytes) → native surface."""
 
+    # ── Wire serialization (for IPC frame events) ─────────────────
+
+    @abstractmethod
+    def encode_for_wire(self, surface: Any) -> bytes:
+        """Encode a native surface to JSON-safe bytes (PNG by convention).
+
+        Used by ``IPCServer`` to forward ``Topic.FRAME`` payloads to
+        ``TrccProxy`` clients over the manifold socket.  Implementations
+        SHOULD use a lossless format so the GUI's preview matches the
+        device output pixel-for-pixel.
+        """
+
+    @abstractmethod
+    def decode_from_wire(self, data: bytes) -> Any:
+        """Symmetric to :meth:`encode_for_wire` — bytes → native surface.
+
+        Used by ``EventBusProxy`` to reconstruct surfaces in the GUI
+        process after they arrive over the wire.
+        """
+
 
 # =========================================================================
 class DeviceConfigService:
