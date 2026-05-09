@@ -415,7 +415,7 @@ class _LedProbeCache:
                 'model_name': info.model_name,
                 'style_id': info.style.style_id if info.style else 1,
             }
-            from trcc.adapters.infra.atomic_io import atomic_write_json
+            from trcc.core.io import atomic_write_json
             atomic_write_json(cache_path, cache, indent=None)
         except (OSError, ValueError, TypeError) as e:
             log.debug("Failed to save probe cache: %s", e)

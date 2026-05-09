@@ -1,9 +1,15 @@
 """Atomic JSON file write — crash-safe, race-safe persistence.
 
 mkstemp + os.replace so concurrent writers and process deaths can
-never leave a half-written or interleaved file on disk. os.replace
+never leave a half-written or interleaved file on disk.  os.replace
 is atomic on POSIX (rename(2)) and Windows (MoveFileExW with
 MOVEFILE_REPLACE_EXISTING).
+
+Lives in ``core/`` (not ``adapters/infra/``) because it's pure stdlib
+and used from every layer — services, adapters, top-level conf.
+Adapters depending on services-or-core is fine; services depending on
+adapters would invert the hexagonal direction, which is why this
+helper had to leave ``adapters/infra/`` (audit finding 2026-05-09).
 
 Pattern adapted from JoshWrites's PR #112 — extracted into a single
 helper so every JSON writer in the project gets concurrency / crash

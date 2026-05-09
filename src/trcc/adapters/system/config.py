@@ -72,7 +72,7 @@ class SysInfoConfig:
             'version': 1,
             'panels': [asdict(p) for p in self.panels],
         }
-        from trcc.adapters.infra.atomic_io import atomic_write_json
+        from trcc.core.io import atomic_write_json
         atomic_write_json(self.CONFIG_PATH, data)
 
     @staticmethod

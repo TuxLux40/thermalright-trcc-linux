@@ -165,7 +165,7 @@ def load_config() -> dict:
 
 def save_config(config: dict):
     """Save user config to disk atomically (concurrent-safe, crash-safe)."""
-    from trcc.adapters.infra.atomic_io import atomic_write_json
+    from trcc.core.io import atomic_write_json
     os.makedirs(CONFIG_DIR, exist_ok=True)
     atomic_write_json(CONFIG_PATH, config)
 
@@ -179,7 +179,7 @@ _HANDSHAKE_CACHE_PATH = os.path.join(CONFIG_DIR, 'last_handshake.json')
 
 def save_last_handshake(data: dict) -> None:
     """Cache the last successful handshake result for `trcc report`."""
-    from trcc.adapters.infra.atomic_io import atomic_write_json
+    from trcc.core.io import atomic_write_json
     os.makedirs(CONFIG_DIR, exist_ok=True)
     atomic_write_json(_HANDSHAKE_CACHE_PATH, data)
 

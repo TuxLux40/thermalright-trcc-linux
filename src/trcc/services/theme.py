@@ -519,7 +519,7 @@ class ThemeService:
             if mask_path_str and mask_position:
                 config_json['mask_position'] = list(mask_position)
 
-            from trcc.adapters.infra.atomic_io import atomic_write_json
+            from trcc.core.io import atomic_write_json
             atomic_write_json(td.json, config_json)
 
             return True, f"Saved: {safe_name}"

@@ -393,7 +393,7 @@ def write_json(theme_path: str,
         'elements': overlay_config or {},
     }
 
-    from .atomic_io import atomic_write_json
+    from ...core.io import atomic_write_json
     json_path = os.path.join(theme_path, 'config.json')
     atomic_write_json(json_path, data, ensure_ascii=False)
 
