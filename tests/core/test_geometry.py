@@ -120,26 +120,32 @@ class TestSquareGeometry:
 
 
 class TestNonSquareGeometry:
-    """Non-square device — behavior depends on has_portrait_themes."""
+    """Non-square device — canvas always swaps for non-square at 90/270.
 
-    # Without portrait themes — pixel rotation
-    def test_no_portrait_canvas_stays_landscape(self):
+    Post-10B.0b collapse: canvas_resolution == output_resolution always.
+    has_portrait_themes only affects which theme dir we pull from and
+    whether image_rotation needs to fire pixel rotation.
+    """
+
+    # Without portrait themes — canvas swaps, theme stays landscape, pixel rotate
+    def test_no_portrait_canvas_swaps(self):
         disp = _make_disp(1280, 480, has_portrait=False)
         disp.rotation = 90
-        assert disp.canvas_resolution == (1280, 480)
+        assert disp.canvas_resolution == (480, 1280)
 
     def test_no_portrait_image_rotation_is_actual(self):
         disp = _make_disp(1280, 480, has_portrait=False)
         disp.rotation = 90
-        # Overlay matches landscape canvas — pixel rotation needed.
-        assert disp.image_rotation_for(1280, 480) == 90
+        # Theme is landscape; pixel rotation fires onto rotated canvas.
+        assert disp.image_rotation_for(0, 0) == 90
 
     def test_no_portrait_theme_dir_is_landscape(self):
         disp = _make_disp(1280, 480, has_portrait=False)
         disp.rotation = 90
+        # No portrait theme dir exists — theme stays landscape.
         assert 'theme1280480' in str(disp.theme_dir.path)
 
-    # With portrait themes — dir swap
+    # With portrait themes — canvas swaps, theme uses portrait dir, no pixel rotate
     def test_portrait_canvas_swaps(self):
         disp = _make_disp(1280, 480, has_portrait=True)
         disp.rotation = 90
@@ -148,17 +154,19 @@ class TestNonSquareGeometry:
     def test_portrait_image_rotation_is_zero(self):
         disp = _make_disp(1280, 480, has_portrait=True)
         disp.rotation = 90
-        assert disp.image_rotation_for(480, 1280) == 0
+        # Theme already portrait — no further pixel rotation.
+        assert disp.image_rotation_for(0, 0) == 0
 
     def test_portrait_theme_dir_is_portrait(self):
         disp = _make_disp(1280, 480, has_portrait=True)
         disp.rotation = 90
         assert 'theme4801280' in str(disp.theme_dir.path)
 
-    def test_output_resolution_always_swaps(self):
+    def test_canvas_equals_output(self):
+        """Post-10B.0b: canvas_resolution and output_resolution always match."""
         disp = _make_disp(1280, 480, has_portrait=False)
         disp.rotation = 90
-        assert disp.output_resolution == (480, 1280)
+        assert disp.canvas_resolution == disp.output_resolution
 
     @patch('pathlib.Path.exists', return_value=True)
     def test_web_dir_swaps_on_rotation(self, _):

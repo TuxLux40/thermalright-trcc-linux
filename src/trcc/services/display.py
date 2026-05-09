@@ -146,20 +146,24 @@ class DisplayService:
 
     @property
     def canvas_resolution(self) -> tuple[int, int]:
-        """Internal rendering resolution — only swaps when portrait themes exist."""
-        if self._has_portrait_themes and self.is_rotated():
-            w, h = self._native
-            return (h, w)
-        return self._native
+        """Internal rendering resolution — always swaps for non-square at 90/270.
+
+        Collapsed with output_resolution post-10B.0b: one resolution, like
+        C# does it.  has_portrait_themes still affects which theme dir we
+        pull content from (and whether pixel rotation fires) but no longer
+        gates the canvas/output split — that split caused every rotation
+        bug we hit (#137 et al, see April 2026 rotation refactor memo).
+        """
+        return self._rotated_resolution()
 
     @property
     def effective_resolution(self) -> tuple[int, int]:
-        """Canvas rendering resolution — only swaps when portrait dirs exist."""
+        """Alias for canvas_resolution."""
         return self.canvas_resolution
 
     @property
     def canvas_size(self) -> tuple[int, int]:
-        """Alias for effective_resolution."""
+        """Alias for canvas_resolution."""
         return self.canvas_resolution
 
     @property
@@ -167,16 +171,16 @@ class DisplayService:
         return self._has_portrait_themes
 
     def image_rotation_for(self, overlay_w: int, overlay_h: int) -> int:
-        """Pixel rotation taking overlay aspect into account.
+        """Pixel rotation needed at the encode/preview layer.
 
-        0 when portrait theme dirs handle orientation (content already
-        portrait), or when the overlay (mask + text composite) is itself
-        in portrait dimensions — the canvas already represents the rotated
-        frame so no further pixel rotation is needed at this layer.
+        0 when the loaded theme is already portrait (came from a portrait
+        theme dir).  Otherwise the rotation degrees — the theme image is
+        landscape and needs pixel rotation to fit the rotated canvas.
         """
+        del overlay_w, overlay_h  # signature kept for back-compat
         if not self.is_rotated():
             return self._rotation
-        if self._has_portrait_themes or overlay_h > overlay_w:
+        if self._has_portrait_themes:
             return 0
         return self._rotation
 
@@ -1036,13 +1040,21 @@ class DisplayService:
     # -- Directory properties ----------------------------------------------
     # All derived from roots + resolution. Rotation swaps w,h in the name.
 
+    def _theme_resolution(self) -> tuple[int, int]:
+        """Dims used for theme dir name. Swaps only when portrait theme
+        data is on disk — else stays native so we don't construct a path
+        that doesn't exist."""
+        if self._has_portrait_themes and self.is_rotated():
+            return self._rotated_resolution()
+        return self._native
+
     @property
     def theme_dir(self) -> Any | None:
-        """Current ThemeDir. Swaps only when portrait themes exist."""
+        """Current ThemeDir. Swaps only when portrait themes exist on disk."""
         if not self._data_root:
             return None
         from ..core.models import ThemeDir
-        w, h = self.canvas_resolution
+        w, h = self._theme_resolution()
         return ThemeDir(str(self._data_root / theme_dir_name(w, h)))
 
     @property
@@ -1070,10 +1082,15 @@ class DisplayService:
 
     @property
     def user_theme_dir(self) -> Path | None:
-        """User custom themes dir (~/.trcc-user/data/theme{W}{H})."""
+        """User custom themes dir (~/.trcc-user/data/theme{W}{H}).
+
+        Tracks ``theme_dir``: portrait variant only when the system has
+        portrait themes installed (i.e. user can rely on the portrait
+        layout being meaningful for the current rotation).
+        """
         if not self._user_root:
             return None
-        w, h = self.canvas_resolution
+        w, h = self._theme_resolution()
         d = self._user_root / theme_dir_name(w, h)
         return d if d.exists() else None
 

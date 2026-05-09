@@ -509,7 +509,10 @@ class LCDDevice:
         self._persist('rotation', degrees)
 
         new_theme_dir = svc.theme_dir
-        theme_dir_changed = (old_theme_dir != new_theme_dir)
+        # ThemeDir is a value object without __eq__, so compare paths.
+        old_path = old_theme_dir.path if old_theme_dir else None
+        new_path = new_theme_dir.path if new_theme_dir else None
+        theme_dir_changed = (old_path != new_path)
         if old_canvas != svc.canvas_size and theme_dir_changed:
             self.log.info("set_rotation: theme dir changed %s→%s, reloading",
                      old_theme_dir.path if old_theme_dir else None,
@@ -590,15 +593,12 @@ class LCDDevice:
             svc.mask_source_dir = None
             return None
 
-        self.log.info("_reload_mask_for_rotation: %s → %s", old_mask_dir, new_mask_dir)
-        if self.is_rotated():
-            ow, oh = svc.output_resolution
-            svc.overlay.set_resolution(ow, oh)
-            self.log.info("_reload_mask_for_rotation: portrait → overlay %dx%d", ow, oh)
-        else:
-            cw, ch = svc.canvas_size
-            svc.overlay.set_resolution(cw, ch)
-            self.log.info("_reload_mask_for_rotation: landscape → overlay %dx%d", cw, ch)
+        # Canvas always == output_resolution post-10B.0b, so the overlay is
+        # already at the right dims and no special is_rotated branch is needed.
+        cw, ch = svc.canvas_size
+        svc.overlay.set_resolution(cw, ch)
+        self.log.info("_reload_mask_for_rotation: %s → %s (overlay %dx%d)",
+                      old_mask_dir, new_mask_dir, cw, ch)
         self._apply_overlay_from_dir(str(new_mask_dir))
         self.load_mask_standalone(str(new_mask_dir))
         return svc.render_and_process()
