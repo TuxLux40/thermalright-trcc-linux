@@ -25,6 +25,8 @@ log = logging.getLogger(__name__)
 class LCDPersistence:
     """Per-device config persistence for an LCDDevice."""
 
+    __slots__ = ('_device_svc', '_lcd_config', 'log')
+
     def __init__(self, device_svc: Any, lcd_config: Any) -> None:
         self._device_svc = device_svc
         self._lcd_config = lcd_config

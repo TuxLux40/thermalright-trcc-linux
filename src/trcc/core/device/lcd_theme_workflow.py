@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 class LCDThemeWorkflow:
     """Theme load/restore/rotation-reload + theme save/import/export."""
 
+    __slots__ = ('_device',)
+
     def __init__(self, device: LCDDevice) -> None:
         self._device = device
 

@@ -32,6 +32,8 @@ log = logging.getLogger(__name__)
 class RenderPipeline:
     """Pure render pipeline — composite, brightness, split overlay, preview rotation."""
 
+    __slots__ = ('_split_cache', '_svc')
+
     def __init__(self, svc: DisplayService) -> None:
         self._svc = svc
         # Pre-loaded split-overlay surfaces, keyed by (style, rotation).
