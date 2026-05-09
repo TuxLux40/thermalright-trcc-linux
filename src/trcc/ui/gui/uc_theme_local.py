@@ -214,10 +214,10 @@ class UCThemeLocal(BaseThemeBrowser):
             self._show_empty_message()
             return
 
-        from ...conf import settings
+        from ..._boot import trcc as _trcc
         from ...services import ThemeService
 
-        ucd = settings.user_content_dir
+        ucd = _trcc().settings.user_content_dir
         themes = ThemeService.discover_local_merged(
             self.theme_directory, ucd / 'data' if ucd else None)
 

@@ -14,8 +14,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QMenu
 
-import trcc.conf as _conf
-
+from ..._boot import trcc as _trcc
 from ...core.models import CLOUD_MASK_URLS, MaskItem
 from ...core.paths import is_safe_archive_member
 from .base import BaseThumbnail, DownloadableThemeBrowser
@@ -130,7 +129,7 @@ class UCThemeMask(DownloadableThemeBrowser):
     def _user_masks_dir(self) -> Path:
         """Get the user custom masks directory for current resolution."""
         w, h = self._parse_resolution()
-        return _conf.settings.user_masks_dir(w, h)
+        return _trcc().settings.user_masks_dir(w, h)
 
     def refresh_masks(self):
         """Reload masks from disk — only shows what exists per device resolution."""

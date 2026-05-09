@@ -326,10 +326,11 @@ class UCLedControl(QWidget):
         self._title.setVisible(False)
 
         # -- Mode buttons (text rendered via i18n, not baked into PNG) --
-        from ...conf import settings
+        from ..._boot import trcc as _trcc
+        lang = _trcc().settings.lang
         self._mode_buttons: list[QPushButton] = []
         for i, label_key in enumerate(MODE_LABELS):
-            label = tr(label_key, settings.lang)
+            label = tr(label_key, lang)
             btn = QPushButton(label, self)
             x = MODE_X_START + i * (MODE_W + MODE_SPACING)
             btn.setGeometry(x, MODE_Y, MODE_W, MODE_H)
@@ -509,14 +510,14 @@ class UCLedControl(QWidget):
 
         # -- Bottom section labels (i18n text, not baked into PNG) --
         self._display_selection_label = QLabel(
-            tr('Display Selection', settings.lang), self)
+            tr('Display Selection', lang), self)
         self._display_selection_label.setGeometry(590, 668, 140, 20)
         self._display_selection_label.setStyleSheet(
             "color: #ccc; font-size: 12px; background: transparent;")
         self._display_selection_label.setVisible(False)
 
         self._circulate_label = QLabel(
-            tr('Circulate', settings.lang), self)
+            tr('Circulate', lang), self)
         self._circulate_label.setGeometry(760, 668, 80, 20)
         self._circulate_label.setStyleSheet(
             "color: #ccc; font-size: 12px; background: transparent;")
@@ -798,8 +799,8 @@ class UCLedControl(QWidget):
             self._preview.set_overlay(QPixmap(preview_pixmap))
 
         # Set panel background (localized with fallback)
-        from ...conf import settings
-        bg_name = Assets.get_localized(style.background_base, settings.lang)
+        from ..._boot import trcc as _trcc
+        bg_name = Assets.get_localized(style.background_base, _trcc().settings.lang)
         if Assets.get(bg_name):
             set_background_pixmap(self, bg_name)
 
@@ -855,9 +856,9 @@ class UCLedControl(QWidget):
 
     def apply_localized_background(self) -> None:
         """Re-apply localized background and text labels for current lang."""
-        from ...conf import settings
+        from ..._boot import trcc as _trcc
         from ...core.models import LED_STYLES
-        lang = settings.lang
+        lang = _trcc().settings.lang
         style = LED_STYLES[self._style_id]
         bg_name = Assets.get_localized(style.background_base, lang)
         if Assets.get(bg_name):

@@ -170,10 +170,11 @@ class UCAbout(BasePanel):
         self._lang_buttons: dict[str, QPushButton] = {}  # Legacy — populated by combo in trcc_app
         self._temp_mode = 'C'
         self._autostart = platform.autostart_enabled() if platform else False
-        from ...conf import settings
-        self._read_hdd = settings.hdd_enabled
-        self._refresh_interval = settings.refresh_interval
-        self._gpu_device = settings.gpu_device
+        from ..._boot import trcc as _boot_trcc
+        _settings = _boot_trcc().settings
+        self._read_hdd = _settings.hdd_enabled
+        self._refresh_interval = _settings.refresh_interval
+        self._gpu_device = _settings.gpu_device
 
         # Load checkbox pixmaps
         sz = Layout.ABOUT_CHECKBOX_SIZE

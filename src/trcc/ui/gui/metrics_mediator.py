@@ -132,8 +132,8 @@ class MetricsMediator(QObject):
             # Metrics provider surface is wide (sensor plugins + dispatch) — fall safe.
             log.debug("metrics_mediator: metrics_fn raised: %s", e)
             return
-        from ...conf import settings
-        HardwareMetrics.with_temp_unit(metrics, settings.temp_unit)
+        from ..._boot import trcc as _trcc
+        HardwareMetrics.with_temp_unit(metrics, _trcc().settings.temp_unit)
         for sub in active:
             try:
                 sub.callback(metrics)

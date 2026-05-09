@@ -29,7 +29,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import trcc.conf as _conf
 from trcc.conf import Settings
 
 from ...adapters.infra.dc_writer import read_carousel
@@ -292,15 +291,15 @@ class TRCCApp(QMainWindow):
         self._system_svc: SystemService = sys_svc
 
         # Apply saved GPU selection to sensor enumerator
-        from ...conf import settings
-        if settings.gpu_device:
-            self._system_svc.enumerator.set_preferred_gpu(settings.gpu_device)
+        _settings = self._trcc.settings
+        if _settings.gpu_device:
+            self._system_svc.enumerator.set_preferred_gpu(_settings.gpu_device)
 
         self._decorated = decorated
         self._drag_pos = None
         self._force_quit = False
         self._minimized_to_taskbar = False
-        self._data_dir = _conf.settings.user_data_dir
+        self._data_dir = _settings.user_data_dir
 
         self.setWindowTitle("TRCC-Linux - Thermalright LCD Control Center")
         self.setFixedSize(Sizes.WINDOW_W, Sizes.WINDOW_H)
@@ -363,7 +362,7 @@ class TRCCApp(QMainWindow):
         self._hs_notifier.done.connect(self._on_handshake_done)
 
         # Restore temp unit
-        saved_unit = _conf.settings.temp_unit
+        saved_unit = self._trcc.settings.temp_unit
         self.uc_system_info.set_temp_unit(saved_unit)
         self.uc_led_control.set_temp_unit(saved_unit)
         if saved_unit == 1:
@@ -708,7 +707,7 @@ class TRCCApp(QMainWindow):
 
         # Preview
         self.uc_preview = UCPreview(
-            _conf.settings.width, _conf.settings.height, self.form_container)
+            self._trcc.settings.width, self._trcc.settings.height, self.form_container)
         self.uc_preview.setGeometry(*Layout.PREVIEW)
 
         # Info module
@@ -956,7 +955,7 @@ class TRCCApp(QMainWindow):
             TITLE_BAR_TEXT,
             tr,
         )
-        lang = _conf.settings.lang
+        lang = self._trcc.settings.lang
         self._i18n_labels: list[tuple[QLabel, str | None]] = []
 
         def _lbl(parent: QWidget, text: str, x: int, y: int, w: int, h: int,
@@ -1570,7 +1569,7 @@ class TRCCApp(QMainWindow):
         if not isinstance(cropped, _QImage) or cropped.isNull():
             return
         w, hw = h.display.lcd_size
-        user_dir = Path(_conf.settings._path_resolver.user_masks_dir(w, hw))
+        user_dir = Path(self._trcc.settings._path_resolver.user_masks_dir(w, hw))
         user_dir.mkdir(parents=True, exist_ok=True)
 
         raw_name = self._mask_upload_filename or 'custom_001'

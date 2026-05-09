@@ -269,9 +269,8 @@ class TestSaveCustomMask:
         app.uc_theme_mask = MagicMock()
         app.uc_preview = MagicMock()
 
-        import trcc.conf as _conf
-        _conf.settings._path_resolver.user_masks_dir.side_effect = None
-        _conf.settings._path_resolver.user_masks_dir.return_value = str(user_dir)
+        app._trcc = MagicMock()
+        app._trcc.settings._path_resolver.user_masks_dir.return_value = str(user_dir)
         TRCCApp._save_and_apply_custom_mask(app, cropped)
 
         mask_dir = user_dir / 'my_overlay'
@@ -292,9 +291,8 @@ class TestSaveCustomMask:
         app.uc_theme_mask = MagicMock()
         app.uc_preview = MagicMock()
 
-        import trcc.conf as _conf
-        _conf.settings._path_resolver.user_masks_dir.side_effect = None
-        _conf.settings._path_resolver.user_masks_dir.return_value = str(user_dir)
+        app._trcc = MagicMock()
+        app._trcc.settings._path_resolver.user_masks_dir.return_value = str(user_dir)
         TRCCApp._save_and_apply_custom_mask(app, cropped)
 
         thumb = QImage(str(user_dir / 'test_mask' / 'Theme.png'))
@@ -314,9 +312,8 @@ class TestSaveCustomMask:
         app.uc_theme_mask = MagicMock()
         app.uc_preview = MagicMock()
 
-        import trcc.conf as _conf
-        _conf.settings._path_resolver.user_masks_dir.side_effect = None
-        _conf.settings._path_resolver.user_masks_dir.return_value = str(user_dir)
+        app._trcc = MagicMock()
+        app._trcc.settings._path_resolver.user_masks_dir.return_value = str(user_dir)
         TRCCApp._save_and_apply_custom_mask(app, cropped)
 
         assert (user_dir / 'my_mask_2').exists()
@@ -334,9 +331,8 @@ class TestSaveCustomMask:
         app.uc_theme_mask = MagicMock()
         app.uc_preview = MagicMock()
 
-        import trcc.conf as _conf
-        _conf.settings._path_resolver.user_masks_dir.side_effect = None
-        _conf.settings._path_resolver.user_masks_dir.return_value = str(user_dir)
+        app._trcc = MagicMock()
+        app._trcc.settings._path_resolver.user_masks_dir.return_value = str(user_dir)
         TRCCApp._save_and_apply_custom_mask(app, cropped)
 
         app._active_lcd.return_value.apply_mask.assert_called_once()
