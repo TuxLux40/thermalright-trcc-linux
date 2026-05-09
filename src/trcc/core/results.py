@@ -47,7 +47,7 @@ class Frame:
 # Subclasses inherit .success, .message, .error, .exit_code, .format().
 # =============================================================================
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class OpResult:
     """Generic success/failure outcome with a message.
 
@@ -80,13 +80,13 @@ class OpResult:
 # Command result subclasses — inherit OpResult, add payload fields.
 # =============================================================================
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FrameResult(OpResult):
     """Command that renders a frame (brightness, rotation, overlay edit, …)."""
     frame: Frame | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ThemeResult(OpResult):
     """Theme load — may carry overlay config + animation metadata."""
     frame: Frame | None = None
@@ -96,20 +96,20 @@ class ThemeResult(OpResult):
     overlay_enabled: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LEDResult(OpResult):
     """LED command result — includes current display colors for preview."""
     display_colors: list[tuple[int, int, int]] = field(default_factory=list)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DiscoveryResult(OpResult):
     """Device enumeration result — LCDs and LEDs detected."""
     lcd_devices: list[DeviceInfo] = field(default_factory=list)
     led_devices: list[DeviceInfo] = field(default_factory=list)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class UpdateResult(OpResult):
     """Update check result — latest version + per-package-manager download URLs."""
     current_version: str = ''
