@@ -115,6 +115,12 @@ class Trcc:
         self.control_center = ControlCenterCommands(
             platform, self.events, self._settings)
 
+        # Subscribe to OS suspend/resume so a sleeping machine doesn't leave
+        # devices with stale USB handles after wake (issue #144).  Platform
+        # default is a no-op; Linux uses logind's PrepareForSleep, other
+        # OSes get stubs until reporters surface a need.
+        platform.subscribe_power(self._on_suspend, self._on_resume)
+
     # ── Lifecycle ────────────────────────────────────────────────────
     # No public ``bootstrap`` / ``with_renderer`` / factory classmethods —
     # composition lives in ``trcc._boot.trcc()``. Constructors are final
@@ -629,6 +635,33 @@ class Trcc:
             return self._download_pack_fn(pack, force)
         log.warning('download_themes: no download_pack_fn injected')
         return 1
+
+    # ── Power events — Trcc reacts to OS suspend / resume ────────────────
+    # Subscription is wired by Platform.subscribe_power() in __init__.
+    # On suspend: every device's transport gets dropped so no stale fd
+    # survives the kernel's USB power cycle.  On resume: a fresh discover()
+    # rebuilds the device list — /dev/sgN may have shifted, USB addresses
+    # may differ, the firmware may need a re-handshake.
+
+    def _on_suspend(self) -> None:
+        """Drop every device + protocol cache so wake reopens cleanly."""
+        from ..adapters.device.factory import DeviceProtocolFactory
+        for dev in self:
+            try:
+                dev.cleanup()
+            except Exception:
+                log.exception('on_suspend: cleanup failed for %s', dev)
+        self._lcd_devices.clear()
+        self._led_devices.clear()
+        DeviceProtocolFactory.close_all()
+        self.events.publish(Topic.DEVICE_LIST, [])
+
+    def _on_resume(self) -> None:
+        """Rediscover after wake — USB may have re-enumerated."""
+        try:
+            self.discover()
+        except Exception:
+            log.exception('on_resume: discover failed')
 
     def cleanup(self) -> None:
         """Stop the metrics loop, release every device, drop subscribers.

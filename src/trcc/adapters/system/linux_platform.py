@@ -668,6 +668,46 @@ class LinuxPlatform(Platform):
     def wire_ipc_raise(self, app: Any, window: Any) -> None:
         _posix_wire_ipc_raise(app, window)
 
+    def subscribe_power(self, on_suspend, on_resume) -> None:
+        """Linux suspend/resume via systemd-logind PrepareForSleep D-Bus signal.
+
+        Was inline in `gui/trcc_app.py::_setup_sleep_monitor` until we
+        pulled it down to Platform so CLI and API also benefit (e.g.,
+        a long-running `trcc serve` survives a suspend/resume cycle
+        with the same protocol-cache cleanup the GUI does).
+
+        Connection failures (no D-Bus, no systemd, sandbox without
+        access) are logged at debug — Linux without logind just doesn't
+        get power events, same as before.
+        """
+        try:
+            from PySide6.QtDBus import (  # pyright: ignore[reportMissingImports]
+                QDBusConnection,
+            )
+        except ImportError:
+            log.debug("subscribe_power: PySide6.QtDBus unavailable")
+            return
+
+        bus = QDBusConnection.systemBus()
+        if not bus.isConnected():
+            log.debug("subscribe_power: system D-Bus not connected")
+            return
+
+        def _on_prepare_for_sleep(sleeping: bool) -> None:
+            if sleeping:
+                log.info("System suspending — Trcc.on_suspend")
+                on_suspend()
+            else:
+                log.info("System resuming — Trcc.on_resume")
+                on_resume()
+
+        bus.connect(  # pyright: ignore[reportCallIssue]
+            'org.freedesktop.login1', '/org/freedesktop/login1',
+            'org.freedesktop.login1.Manager', 'PrepareForSleep',
+            _on_prepare_for_sleep,
+        )
+        log.info("subscribe_power: PrepareForSleep listener active")
+
     # ── Administration ────────────────────────────────────────
 
     def get_pkg_manager(self) -> str | None:

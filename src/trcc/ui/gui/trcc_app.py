@@ -375,9 +375,8 @@ class TRCCApp(QMainWindow):
 
         # System tray
         self._setup_systray()
-
-        # Sleep monitor
-        self._setup_sleep_monitor()
+        # Sleep handling lives on Trcc now — wired by Platform.subscribe_power()
+        # in Trcc.__init__.  Nothing to do GUI-side.
 
     # ── Device event handlers (main thread) ─────────────────────────
 
@@ -590,37 +589,10 @@ class TRCCApp(QMainWindow):
             handler.handle_frame(image)
 
     # ── Sleep monitor ───────────────────────────────────────────────
-
-    def _setup_sleep_monitor(self) -> None:
-        try:
-            from PySide6.QtDBus import QDBusConnection  # pyright: ignore[reportMissingImports]
-            bus = QDBusConnection.systemBus()
-            if not bus.isConnected():
-                return
-            bus.connect(  # pyright: ignore[reportCallIssue]
-                'org.freedesktop.login1', '/org/freedesktop/login1',
-                'org.freedesktop.login1.Manager', 'PrepareForSleep',
-                self._on_sleep_signal)
-            log.info("Sleep monitor: QDBus listener active")
-        except Exception:
-            log.debug("Sleep monitor: QDBus not available")
-
-    def _on_sleep_signal(self, sleeping: bool) -> None:
-        if sleeping:
-            log.info("System suspending — deactivating handlers")
-            for h in self._handlers.values():
-                h.deactivate()
-            self._screencast.stop()
-        else:
-            log.info("System resuming — rescanning devices in 2s")
-            QTimer.singleShot(2000, self._on_resume_rescan)
-
-    def _on_resume_rescan(self) -> None:
-        """Rescan devices after sleep resume — USB may have re-enumerated."""
-        try:
-            self._trcc.discover()
-        except Exception:
-            log.exception("Resume rescan failed")
+    # Power events are owned by Platform.subscribe_power() now and
+    # forwarded into Trcc._on_suspend / _on_resume.  GUI subscribes to
+    # the EventBus for `device.list` repaints when resume rediscovery
+    # republishes the device snapshot — no QDBus listener needed here.
 
     # ── Timers ──────────────────────────────────────────────────────
 

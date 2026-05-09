@@ -544,6 +544,25 @@ class Platform(ABC):
     def wire_ipc_raise(self, app: Any, window: Any) -> None:
         """Wire IPC signal to raise window on second instance. POSIX overrides."""
 
+    def subscribe_power(
+        self,
+        on_suspend: Callable[[], None],
+        on_resume: Callable[[], None],
+    ) -> None:
+        """Subscribe to system suspend / resume notifications.
+
+        OS-specific signal sources:
+          - Linux:  org.freedesktop.login1.Manager.PrepareForSleep (D-Bus)
+          - Windows: WM_POWERBROADCAST (PBT_APMSUSPEND / PBT_APMRESUMESUSPEND)
+          - macOS:  NSWorkspaceWillSleepNotification / DidWakeNotification
+          - BSD:    devd power events
+
+        Default implementation is a no-op; concrete platforms override.
+        Trcc subscribes once at construction so every UI gets the same
+        suspend/resume cleanup without each one wiring its own listener.
+        """
+        del on_suspend, on_resume  # default: no-op stub, subclasses override
+
     def resolve_assets_dir(self, pkg_assets_dir: Any) -> Any:
         """Resolve GUI assets directory. Non-Linux copies to user dir."""
         return pkg_assets_dir
