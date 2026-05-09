@@ -93,11 +93,11 @@ class BulkDevice(BulkFrameDevice, FrameDevice):
         assert self._ep_in is not None
 
         # Write handshake
-        self._ep_out.write(_HANDSHAKE_PAYLOAD, timeout=_HANDSHAKE_TIMEOUT_MS)  # type: ignore[union-attr]
+        self._ep_out.write(_HANDSHAKE_PAYLOAD, timeout=_HANDSHAKE_TIMEOUT_MS)
         log.debug("Handshake sent (%d bytes)", len(_HANDSHAKE_PAYLOAD))
 
         # Read response
-        resp = bytes(self._ep_in.read(  # type: ignore[union-attr]
+        resp = bytes(self._ep_in.read(
             _HANDSHAKE_READ_SIZE, timeout=_HANDSHAKE_TIMEOUT_MS
         ))
         self._raw_handshake = resp
@@ -180,14 +180,14 @@ class BulkDevice(BulkFrameDevice, FrameDevice):
                 # Send in chunks — a single large transfer can reset the device
                 # on KVM USB passthrough and slower USB hubs.
                 for offset in range(0, len(frame), _WRITE_CHUNK_SIZE):
-                    self._ep_out.write(  # type: ignore[union-attr]
+                    self._ep_out.write(
                         frame[offset:offset + _WRITE_CHUNK_SIZE],
                         timeout=_WRITE_TIMEOUT_MS,
                     )
 
                 # C#: ZLP when total is 512-aligned (num2 % 512 == 0)
                 if len(frame) % 512 == 0:
-                    self._ep_out.write(b"", timeout=_WRITE_TIMEOUT_MS)  # type: ignore[union-attr]
+                    self._ep_out.write(b"", timeout=_WRITE_TIMEOUT_MS)
 
                 log.debug("Bulk frame sent: %dx%d, cmd=%d, %d bytes",
                           self.width, self.height, cmd, data_size)

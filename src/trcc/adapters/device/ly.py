@@ -99,10 +99,10 @@ class LyDevice(BulkFrameDevice, FrameDevice):
         assert self._ep_out is not None
         assert self._ep_in is not None
 
-        self._ep_out.write(_HANDSHAKE_PAYLOAD, timeout=_HANDSHAKE_TIMEOUT_MS)  # type: ignore[union-attr]
+        self._ep_out.write(_HANDSHAKE_PAYLOAD, timeout=_HANDSHAKE_TIMEOUT_MS)
         log.debug("LY handshake sent (%d bytes)", len(_HANDSHAKE_PAYLOAD))
 
-        resp = bytes(self._ep_in.read(  # type: ignore[union-attr]
+        resp = bytes(self._ep_in.read(
             _HANDSHAKE_READ_SIZE, timeout=_HANDSHAKE_TIMEOUT_MS
         ))
         self._raw_handshake = resp
@@ -224,13 +224,13 @@ class LyDevice(BulkFrameDevice, FrameDevice):
                     else:
                         # C#: sends 2048 for the tail (LY), variable for LY1
                         write_size = min(2048, remaining) if self.pid == _PID_LY else remaining
-                    self._ep_out.write(  # type: ignore[union-attr]
+                    self._ep_out.write(
                         send_buf[pos:pos + write_size], timeout=_WRITE_TIMEOUT_MS
                     )
                     pos += _USB_WRITE_SIZE  # C# always advances by 4096
 
                 # Read ACK
-                self._ep_in.read(_HANDSHAKE_READ_SIZE, timeout=_READ_TIMEOUT_MS)  # type: ignore[union-attr]
+                self._ep_in.read(_HANDSHAKE_READ_SIZE, timeout=_READ_TIMEOUT_MS)
 
                 log.debug("LY frame sent: %dx%d, %d bytes, %d chunks",
                           self.width, self.height, total_size, num_chunks)
