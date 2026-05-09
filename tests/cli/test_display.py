@@ -222,17 +222,17 @@ class TestDisplaySettings:
         assert result["success"] is False
 
     def test_set_brightness_persists(self, lcd):
-        lcd._lcd_config = MagicMock()
+        lcd._persistence._lcd_config = MagicMock()
         lcd.set_brightness(2)
-        lcd._lcd_config.persist.assert_called_once()
+        lcd._persistence._lcd_config.persist.assert_called_once()
 
     def test_set_rotation_0(self, lcd):
-        lcd._lcd_config = MagicMock()
+        lcd._persistence._lcd_config = MagicMock()
         result = lcd.set_rotation(0)
 
         assert result["success"] is True
         assert "0°" in result["message"]
-        lcd._lcd_config.persist.assert_called()
+        lcd._persistence._lcd_config.persist.assert_called()
 
     def test_set_rotation_90(self, lcd):
         with patch(_SETTINGS_KEY, return_value="k"), patch(_SETTINGS_SAVE):
@@ -256,12 +256,12 @@ class TestDisplaySettings:
         assert "0, 90, 180, or 270" in result["error"]
 
     def test_set_split_mode_0_off(self, lcd):
-        lcd._lcd_config = MagicMock()
+        lcd._persistence._lcd_config = MagicMock()
         result = lcd.set_split_mode(0)
 
         assert result["success"] is True
         assert "off" in result["message"]
-        lcd._lcd_config.persist.assert_called()
+        lcd._persistence._lcd_config.persist.assert_called()
 
     def test_set_split_mode_1(self, lcd):
         with patch(_SETTINGS_KEY, return_value="k"), patch(_SETTINGS_SAVE):

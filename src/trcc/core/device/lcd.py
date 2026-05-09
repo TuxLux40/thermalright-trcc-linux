@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import Any
 
 from .._logging import tagged_logger
-from ..models import DEFAULT_BRIGHTNESS_LEVEL, ThemeInfo, ThemeType
+from ..models import ThemeInfo, ThemeType
 from ..paths import resolve_theme_dir
+from .lcd_persistence import LCDPersistence
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ class LCDDevice:
         self._events = events  # EventBus, injected by ControllerBuilder
         self._info: Any = None  # DeviceInfo, set during connect()
         self.log: logging.Logger = log
+        self._persistence = LCDPersistence(device_svc, lcd_config)
 
     # ══════════════════════════════════════════════════════════════════════
     # Shared lifecycle (DeviceInfo)
@@ -431,38 +433,19 @@ class LCDDevice:
     # ══════════════════════════════════════════════════════════════════════
 
     def _persist(self, field: str, value: object) -> None:
-        dev = self._device_svc.selected if self._device_svc else None
-        if not dev:
-            self.log.debug("_persist: skipped %s — no device selected", field)
-            return
-        if not self._lcd_config:
-            self.log.debug("_persist: skipped %s — no lcd_config", field)
-            return
-        self._lcd_config.persist(dev, field, value)
-        self.log.debug("_persist: %s = %r", field, value)
+        """Single-field config write — delegates to LCDPersistence."""
+        self._persistence.persist(field, value)
 
     def _persist_dirs(self) -> None:
-        """Write the active per-orientation dirs to config.
-
-        Reads ``theme_dir`` / ``web_dir`` / ``masks_dir`` from the device
-        delegates so non-square devices started rotated persist the
-        portrait-variant paths the runtime is actually using.  Previously
-        this rebuilt names from native dims ignoring rotation, so a
-        1280x480 device started at rotation=90 wrote landscape paths into
-        config while the running app served portrait dirs — restart-from-
-        config then loaded the wrong content.
-        """
+        """Snapshot current per-orientation dirs to config."""
         if not self._display_svc:
             return
-        td = self.theme_dir  # None when data_root unset
-        if td is None or not all(self.native_resolution):
-            return
-        self._persist('theme_dir',
-                      str(td.path) if td.path.exists() else None)
-        web = self.web_dir
-        self._persist('web_dir', str(web) if web else None)
-        masks = self.masks_dir
-        self._persist('masks_dir', str(masks) if masks else None)
+        self._persistence.persist_dirs(
+            theme_dir=self.theme_dir,
+            web_dir=self.web_dir,
+            masks_dir=self.masks_dir,
+            native_resolution=self.native_resolution,
+        )
 
     def refresh_dirs(self) -> None:
         """Re-probe filesystem dirs and update config."""
@@ -472,16 +455,12 @@ class LCDDevice:
 
     def restore_device_settings(self) -> None:
         """Restore brightness + rotation from per-device config."""
-        dev = self._device_svc.selected if self._device_svc else None
-        if not dev or not self._lcd_config:
+        saved = self._persistence.restored_settings()
+        if not saved:
             return
-        cfg = self._lcd_config.get_config(dev)
-        raw = cfg.get('brightness_level', DEFAULT_BRIGHTNESS_LEVEL)
-        percent = raw if 0 <= raw <= 100 else 100
-        self.set_brightness(percent)
-        rotation = cfg.get('rotation', 0)
-        if rotation in (0, 90, 180, 270):
-            self.set_rotation(rotation)
+        self.set_brightness(saved['brightness_level'])
+        if saved['rotation'] is not None:
+            self.set_rotation(saved['rotation'])
 
     def set_brightness(self, percent: int) -> dict:
         """Set LCD brightness."""
