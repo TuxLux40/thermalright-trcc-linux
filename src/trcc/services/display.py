@@ -18,15 +18,15 @@ if TYPE_CHECKING:
     from ..core.ports import Platform
 
 from ..core._logging import tagged_logger
-from ..core.models import SPLIT_MODE_RESOLUTIONS, SPLIT_OVERLAY_MAP
+from ..core.models import SPLIT_MODE_RESOLUTIONS
 from ..core.paths import (
-    RESOURCES_DIR,
     has_themes,
     masks_dir_name,
     theme_dir_name,
     web_dir_name,
 )
 from .device import DeviceService
+from .display_pipeline import RenderPipeline
 from .image import ImageService
 from .media import MediaService
 from .overlay import OverlayService
@@ -80,7 +80,6 @@ class DisplayService:
         self.auto_send = True
         self.brightness = 100     # percent (0-100), config restores actual value
         self.split_mode = 0       # myLddVal: 0=off, 1-3=Dynamic Island style
-        self._split_overlay_cache: dict[tuple[int, int], Any] = {}  # (style,rot)->surface
 
         # Data directory (set by initialize(), used as fallback for save/import)
         self._data_dir: Path | None = None
@@ -101,6 +100,9 @@ class DisplayService:
 
         # Mask source tracking (for rotation reload)
         self._mask_source_dir: Path | None = None
+
+        # Pure rendering pipeline (composite → brightness → split → preview-rotation).
+        self._pipeline = RenderPipeline(self)
 
     # -- Properties --------------------------------------------------------
 
@@ -533,103 +535,22 @@ class DisplayService:
         """Create black background for mask-only themes."""
         self.current_image = ImageService.solid_color(0, 0, 0, *self.canvas_size)
 
-    # -- Rendering ---------------------------------------------------------
+    # -- Rendering (delegates to RenderPipeline) ---------------------------
 
     def _render_and_process(self) -> Any | None:
-        """Render overlay on current image, apply brightness + preview rotation."""
-        if not self.current_image:
-            self.log.debug("_render_and_process: no current_image")
-            return None
-        image = self.current_image
-        self.log.debug("_render_and_process: current_image type=%s overlay_enabled=%s",
-                  type(image).__name__, self.overlay.enabled)
-        if self.overlay.enabled:
-            image = self.overlay.render(image)
-            self.log.debug("_render_and_process: after overlay type=%s", type(image).__name__)
-        return self._apply_for_preview(self._apply_adjustments(image))
+        return self._pipeline.render_and_process()
 
     def render_overlay(self) -> Any | None:
-        """Force-render overlay (for live editing). Returns rotated preview image."""
-        # Use clean background (no old overlay baked in)
-        bg = self._clean_background or self.current_image
-        if not bg:
-            self.log.debug("render_overlay: no background, creating black bg")
-            self._create_black_background()
-            bg = self.current_image
-        image = self.overlay.render(bg, force=True)
-        return self._apply_for_preview(self._apply_adjustments(image))
+        return self._pipeline.render_overlay_force()
 
     def _apply_adjustments(self, image: Any) -> Any:
-        """Apply brightness + split overlay.  No pixel rotation here.
-
-        Rotation is the encode boundary's responsibility (`encode_for_device`
-        with `encode_angle`) so every element (bg + mask + text) ends up with
-        the same rotation count.  Preview consumers wrap this with
-        `_apply_for_preview` to add a single user-rotation for display.
-        """
-        self.log.debug("_apply_adjustments: brightness=%d split_mode=%d",
-                  self.brightness, self.split_mode)
-        if self.brightness >= 100 and not self.split_mode:
-            return image
-        if self.brightness < 100:
-            image = ImageService.apply_brightness(image, self.brightness)
-        return self._apply_split_overlay(image)
+        return self._pipeline.apply_adjustments(image)
 
     def _apply_for_preview(self, image: Any) -> Any:
-        """Wrap `_apply_adjustments` output with user rotation for GUI preview.
-
-        Encode-bound paths bypass this — they go through
-        `encode_for_device(..., encode_angle=self._encode_angle())` which
-        is the sole rotator for device bytes.
-        """
-        rot = self._image_rotation
-        if rot:
-            image = ImageService.apply_rotation(image, rot)
-        return image
+        return self._pipeline.apply_for_preview(image)
 
     def _apply_split_overlay(self, image: Any) -> Any:
-        """Composite Dynamic Island overlay for widescreen split mode."""
-        if not self.split_mode or not self.is_widescreen_split:
-            return image
-
-        key = (self.split_mode, self.rotation)
-        if not (asset_name := SPLIT_OVERLAY_MAP.get(key)):
-            return image
-
-        overlay = self._split_overlay_cache.get(key)
-        if overlay is None:
-            overlay = self._load_split_overlay(asset_name)
-            self._split_overlay_cache[key] = overlay
-
-        if overlay is None:
-            return image
-
-        try:
-            r = ImageService.renderer()
-            image = r.convert_to_rgba(image)
-            img_w, img_h = r.surface_size(image)
-            ovl_w, ovl_h = r.surface_size(overlay)
-            if (ovl_w, ovl_h) != (img_w, img_h):
-                overlay = r.resize(overlay, img_w, img_h)
-            image = r.composite(image, overlay, (0, 0))
-            return r.convert_to_rgb(image)
-        except (OSError, ValueError, RuntimeError) as e:
-            self.log.error("Split overlay composite failed: %s", e)
-            return image
-
-    @staticmethod
-    def _load_split_overlay(asset_name: str) -> Any | None:
-        """Load a split overlay PNG from assets/gui/ as native surface."""
-        try:
-            path = os.path.join(RESOURCES_DIR, asset_name)
-            if os.path.exists(path):
-                r = ImageService.renderer()
-                img = r.open_image(path)
-                return r.convert_to_rgba(img)
-            log.warning("Split overlay not found: %s", path)
-        except (OSError, ValueError, RuntimeError) as e:
-            log.error("Failed to load split overlay %s: %s", asset_name, e)
-        return None
+        return self._pipeline.apply_split_overlay(image)
 
     def set_video_fit_mode(self, mode: str) -> Any | None:
         """Set video fit mode. Re-decodes frames. Returns preview image."""
