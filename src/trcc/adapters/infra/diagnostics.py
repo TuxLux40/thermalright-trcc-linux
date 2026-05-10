@@ -86,6 +86,31 @@ class _DeviceDefaultFilter(logging.Filter):
         return True
 
 
+class _SafeStreamHandler(logging.StreamHandler):
+    """Windows-only StreamHandler that survives cp1252 encoding errors.
+
+    Windows console (cp1252) can't encode characters like ``→`` or ``°``
+    that appear in dozens of log messages.  Some Python deployments
+    (notably Windows Store Python) ignore ``sys.stderr.reconfigure``
+    silently, so we catch the encode error at emit time and fall back to
+    a stream-encoding-aware ``errors='replace'`` write.  No-op on
+    Linux/macOS — they use UTF-8 streams by default.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            super().emit(record)
+        except UnicodeEncodeError:
+            try:
+                msg = self.format(record)
+                encoding = getattr(self.stream, 'encoding', 'ascii') or 'ascii'
+                safe = msg.encode(encoding, errors='replace').decode(encoding)
+                self.stream.write(safe + self.terminator)
+                self.flush()
+            except Exception:
+                self.handleError(record)
+
+
 class TrccLoggingConfigurator(ABC):
     """Port: TRCC application logging configuration.
 
@@ -142,20 +167,7 @@ class StandardLoggingConfigurator(TrccLoggingConfigurator):
             else logging.INFO if verbosity == 1
             else logging.WARNING
         )
-        # Windows console default is cp1252 — can't encode many common log
-        # chars (``→``, ``°``, etc.).  Reconfigure stderr to UTF-8 with
-        # ``errors='replace'`` immediately before the handler captures it,
-        # so we don't depend on __main__.py's earlier reconfigure surviving
-        # the import chain.  Belt-and-suspenders.
-        if sys.platform == 'win32' and hasattr(sys.stderr, 'reconfigure'):
-            try:
-                sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-            except (AttributeError, OSError, ValueError) as e:
-                # Some Python deployments (Windows Store, pythonw.exe with
-                # detached stderr) silently lack working reconfigure.
-                logging.getLogger(__name__).debug(
-                    "stderr.reconfigure failed: %s", e)
-        ch = logging.StreamHandler()
+        ch = _SafeStreamHandler() if sys.platform == 'win32' else logging.StreamHandler()
         ch.setLevel(console_level)
         ch.setFormatter(logging.Formatter(self.FORMAT, datefmt=self.DATE_FMT_CONSOLE))
         ch.addFilter(dev_filter)
