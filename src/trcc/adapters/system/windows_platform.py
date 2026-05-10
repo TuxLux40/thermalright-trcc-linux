@@ -5,6 +5,7 @@ import logging
 import os
 import shutil
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,8 @@ log = logging.getLogger(__name__)
 _REG_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
 _REG_VALUE = 'TRCC Linux'
 
-# LHM SensorType → (category, unit)
+# LHM SensorType → (category, unit). Strings come from the WMI Sensor.SensorType
+# column; mirrors LibreHardwareMonitorLib's SensorType enum names.
 _LHM_TYPE_MAP: dict[str, tuple[str, str]] = {
     'Temperature': ('temperature', '°C'),
     'Fan': ('fan', 'RPM'),
@@ -45,14 +47,6 @@ _LHM_TYPE_MAP: dict[str, tuple[str, str]] = {
     'Data': ('memory', 'GB'),
     'Throughput': ('throughput', 'B/s'),
 }
-
-# ── Optional: LibreHardwareMonitor via pythonnet ──────────────────────
-try:
-    from HardwareMonitor.Hardware import Computer  # pyright: ignore[reportMissingImports]
-    LHM_AVAILABLE = True
-except (ImportError, RuntimeError, OSError) as _lhm_err:
-    LHM_AVAILABLE = False
-    log.debug("LibreHardwareMonitor unavailable (pythonnet/CLR not loaded): %s", _lhm_err)
 
 
 # =========================================================================
@@ -183,7 +177,8 @@ class SensorEnumerator(SensorEnumeratorBase):
 
     def __init__(self) -> None:
         super().__init__()
-        self._lhm_computer: Any = None
+        from ._lhm_subprocess import _LHMSubprocess
+        self._lhm = _LHMSubprocess()
         self._lhm_gpu_used = False
 
     def discover(self) -> list[SensorInfo]:
@@ -199,13 +194,7 @@ class SensorEnumerator(SensorEnumeratorBase):
         return self._sensors
 
     def _on_stop(self) -> None:
-        if self._lhm_computer is not None:
-            try:
-                self._lhm_computer.Close()
-            except Exception as e:
-                # .NET/CLR teardown can throw arbitrary System.* exceptions; log and move on.
-                log.debug("LHM Computer.Close() failed during teardown: %s", e)
-            self._lhm_computer = None
+        self._lhm.stop()
 
     def _discover_psutil_win(self) -> None:
         self._discover_psutil_base()
@@ -217,37 +206,32 @@ class SensorEnumerator(SensorEnumeratorBase):
                 self._sensors.append(SensorInfo(sid, label, 'temperature', '°C', 'psutil'))
 
     def _discover_lhm(self) -> None:
-        if not LHM_AVAILABLE:
+        """Spawn LHM (or reuse a running instance) and register its sensors.
+
+        Sensors come from ``root\\LibreHardwareMonitor`` WMI namespace; LHM
+        runs as a subprocess (``_lhm_subprocess.py``) and exposes a flat
+        Hardware/Sensor tree we walk via ``_walk_lhm_nodes``.
+        """
+        if self._lhm.start() is None:
             return
-        try:
-            computer = Computer()
-            computer.IsGpuEnabled = True
-            computer.IsCpuEnabled = True
-            computer.IsMotherboardEnabled = True
-            computer.Open()
-            self._lhm_computer = computer
+        for hw_key, hw_row in self._walk_lhm_nodes():
+            if 'Gpu' in str(hw_row.HardwareType):
+                self._lhm_gpu_used = True
+            self._register_lhm_sensors(hw_key, hw_row)
+        log.info("LHM discovery: %d sensors (GPU via NVAPI: %s)",
+                 len(self._sensors), self._lhm_gpu_used)
 
-            for hw in computer.Hardware:
-                hw.Update()
-                hw_type = str(hw.HardwareType)
-                hw_name = str(hw.Name)
-                if 'Gpu' in hw_type:
-                    self._lhm_gpu_used = True
-                hw_key = hw_name.lower().replace(' ', '_')[:20]
-                self._register_lhm_sensors(hw_key, hw)
-                for sub in hw.SubHardware:
-                    sub.Update()
-                    sub_key = str(sub.Name).lower().replace(' ', '_')[:20]
-                    self._register_lhm_sensors(sub_key, sub)
+    def _register_lhm_sensors(self, hw_key: str, hw_row: Any) -> None:
+        """Register every sensor that belongs to one Hardware row.
 
-            log.info("LHM discovery: %d sensors (GPU via NVAPI: %s)",
-                     len(self._sensors), self._lhm_gpu_used)
-        except Exception:
-            log.warning("LibreHardwareMonitor discovery failed", exc_info=True)
-
-    def _register_lhm_sensors(self, hw_key: str, hw: Any) -> None:
-        hw_name = str(hw.Name)
-        for sensor in hw.Sensors:
+        ``hw_row`` is a WMI Hardware result; sensors are queried by parent
+        identifier so the relationship survives the round-trip through WMI.
+        """
+        hw_name = str(hw_row.Name)
+        ns = self._lhm.namespace
+        if ns is None:
+            return
+        for sensor in ns.Sensor(Parent=hw_row.Identifier):
             s_type = str(sensor.SensorType)
             s_name = str(sensor.Name)
             if not (mapping := _LHM_TYPE_MAP.get(s_type)):
@@ -277,30 +261,55 @@ class SensorEnumerator(SensorEnumeratorBase):
             for chip, entries in temps.items():
                 for i, entry in enumerate(entries):
                     readings[f'psutil:temp:{chip}:{i}'] = entry.current
-        if self._lhm_computer is not None:
+        if self._lhm.namespace is not None:
             self._poll_lhm(readings)
 
     def _poll_lhm(self, readings: dict[str, float]) -> None:
+        """Read LHM sensor values via WMI into the readings dict."""
+        ns = self._lhm.namespace
+        if ns is None:
+            return
         try:
-            for hw in self._lhm_computer.Hardware:
-                hw.Update()
-                hw_key = str(hw.Name).lower().replace(' ', '_')[:20]
-                self._read_lhm_node(readings, hw_key, hw)
-                for sub in hw.SubHardware:
-                    sub.Update()
-                    sub_key = str(sub.Name).lower().replace(' ', '_')[:20]
-                    self._read_lhm_node(readings, sub_key, sub)
+            for hw_key, hw_row in self._walk_lhm_nodes():
+                self._read_lhm_node(readings, hw_key, hw_row)
         except Exception:
             log.debug("LHM poll failed", exc_info=True)
 
-    @staticmethod
-    def _read_lhm_node(readings: dict[str, float], hw_key: str, hw: Any) -> None:
-        for sensor in hw.Sensors:
+    def _read_lhm_node(self, readings: dict[str, float], hw_key: str, hw_row: Any) -> None:
+        ns = self._lhm.namespace
+        if ns is None:
+            return
+        for sensor in ns.Sensor(Parent=hw_row.Identifier):
             val = sensor.Value
             if val is None:
                 continue
             s_name = str(sensor.Name).lower().replace(' ', '_')
             readings[f'lhm:{hw_key}:{s_name}'] = float(val)
+
+    # ── LHM walker (single chokepoint for all three call sites) ─────────
+    @staticmethod
+    def _lhm_node_key(hw_row: Any) -> str:
+        """Normalize a Hardware row's Name to a sensor-ID-safe key.
+
+        Identical formula to v9.5.x to preserve sensor IDs across the
+        pythonnet→WMI migration; existing user theme configs continue to
+        match.
+        """
+        return str(hw_row.Name).lower().replace(' ', '_')[:20]
+
+    def _walk_lhm_nodes(self) -> Iterator[tuple[str, Any]]:
+        """Yield ``(hw_key, hw_row)`` for every Hardware row from WMI.
+
+        SubHardware items are exposed as Hardware rows with non-empty
+        ``Parent``; iterating ``Hardware()`` returns the flat tree.
+        Single chokepoint — discovery, polling, and GPU enumeration all
+        funnel through here.
+        """
+        ns = self._lhm.namespace
+        if ns is None:
+            return
+        for hw_row in ns.Hardware():
+            yield self._lhm_node_key(hw_row), hw_row
 
     def get_gpu_list(self) -> list[tuple[str, str]]:
         """Enumerate GPUs on Windows.
@@ -316,15 +325,12 @@ class SensorEnumerator(SensorEnumeratorBase):
                Closes #131 for AMD-on-Windows users without LHM running.
         """
         gpus: list[tuple[str, str]] = []
-        if self._lhm_computer is not None:
-            try:
-                for hw in self._lhm_computer.Hardware:
-                    if 'Gpu' in str(hw.HardwareType):
-                        hw_name = str(hw.Name)
-                        hw_key = hw_name.lower().replace(' ', '_')[:20]
-                        gpus.append((f'lhm:{hw_key}', hw_name))
-            except Exception:
-                log.debug("LHM GPU enumeration failed")
+        try:
+            for hw_key, hw_row in self._walk_lhm_nodes():
+                if 'Gpu' in str(hw_row.HardwareType):
+                    gpus.append((f'lhm:{hw_key}', str(hw_row.Name)))
+        except Exception:
+            log.debug("LHM GPU enumeration failed", exc_info=True)
         if not gpus:
             gpus = super().get_gpu_list()
         if not gpus:

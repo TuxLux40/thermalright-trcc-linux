@@ -4,7 +4,13 @@ Shared base behavior (psutil, nvidia, computed I/O, polling, read_all)
 is tested in tests/adapters/system/conftest.py.
 
 Tests follow the app flow: discover() → read_all() → map_defaults().
-Mock at I/O boundary only: LHM Computer COM object, WMI, psutil temps.
+Mock at I/O boundary only: the LHM WMI namespace handle returned by
+``_LHMSubprocess.start()``, WMI, psutil temps.
+
+LHM is read via the ``root\\LibreHardwareMonitor`` WMI namespace, which
+exposes flat ``Hardware`` and ``Sensor`` collections. Sub-hardware is
+just a Hardware row with a non-empty ``Parent``; sensors belong to
+their parent hardware via ``Sensor.Parent == Hardware.Identifier``.
 """
 from __future__ import annotations
 
@@ -15,36 +21,48 @@ import pytest
 MODULE = 'trcc.adapters.system.windows_platform'
 
 
-# ── LHM mock helpers ─────────────────────────────────────────────────
+# ── LHM WMI mock helpers ─────────────────────────────────────────────
 
 
-def _mock_lhm_sensor(name: str, sensor_type: str, value: float | None) -> MagicMock:
-    """Create a mock LHM sensor."""
+def _mock_lhm_sensor(name: str, sensor_type: str, value: float | None,
+                     parent: str = '') -> MagicMock:
+    """Create a mock LHM Sensor row (one entry from `Sensor` WMI class)."""
     s = MagicMock()
     s.Name = name
     s.SensorType = sensor_type
     s.Value = value
+    s.Parent = parent
     return s
 
 
-def _mock_lhm_hardware(
-    name: str, hw_type: str,
-    sensors: list[MagicMock],
-    sub_hardware: list[MagicMock] | None = None,
-) -> MagicMock:
+def _mock_lhm_hardware(name: str, hw_type: str, identifier: str = '',
+                      parent: str = '') -> MagicMock:
+    """Create a mock LHM Hardware row (one entry from `Hardware` WMI class).
+
+    SubHardware is represented as a Hardware row with non-empty ``parent``.
+    """
     hw = MagicMock()
     hw.Name = name
     hw.HardwareType = hw_type
-    hw.Sensors = sensors
-    hw.SubHardware = sub_hardware or []
+    hw.Identifier = identifier or f'/{hw_type.lower()}/0'
+    hw.Parent = parent
     return hw
 
 
-def _make_lhm_computer(hardware: list[MagicMock]) -> MagicMock:
-    """Create a mock LHM Computer with given hardware."""
-    computer = MagicMock()
-    computer.Hardware = hardware
-    return computer
+def _make_lhm_namespace(
+    hardware: list[MagicMock],
+    sensors_by_parent: dict[str, list[MagicMock]] | None = None,
+) -> MagicMock:
+    """Mock the WMI handle to ``root\\LibreHardwareMonitor``.
+
+    ``Hardware()`` returns the flat list. ``Sensor(Parent=X)`` returns the
+    sensors belonging to the hardware whose Identifier is X.
+    """
+    ns = MagicMock()
+    ns.Hardware.return_value = hardware
+    sensors = sensors_by_parent or {}
+    ns.Sensor.side_effect = lambda Parent='': sensors.get(Parent, [])
+    return ns
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────
@@ -53,38 +71,43 @@ def _make_lhm_computer(hardware: list[MagicMock]) -> MagicMock:
 @pytest.fixture
 def mock_win_no_lhm(mock_io_no_nvidia):
     """Windows enumerator — no LHM, no nvidia. Psutil only."""
-    with patch(f'{MODULE}.LHM_AVAILABLE', False), \
-         patch(f'{MODULE}.psutil') as win_psutil:
-        # Windows psutil for sensors_temperatures in _poll_platform
+    with patch(f'{MODULE}.psutil') as win_psutil:
         win_psutil.sensors_temperatures.return_value = {}
         mock_io_no_nvidia.win_psutil = win_psutil
+        # _LHMSubprocess.start() returns None when LHM isn't available;
+        # we set _namespace_handle to None so .start() short-circuits and
+        # _lhm.namespace stays None throughout discovery + polling.
+        mock_io_no_nvidia.lhm_ns = None
         yield mock_io_no_nvidia
 
 
 @pytest.fixture
 def mock_win_lhm(mock_io_no_nvidia):
     """Windows enumerator with mocked LHM GPU + CPU."""
+    gpu_id = '/gpu-nvidia/0'
+    cpu_id = '/intelcpu/0'
     gpu_sensors = [
-        _mock_lhm_sensor('GPU Core', 'Temperature', 72.0),
-        _mock_lhm_sensor('GPU Core Load', 'Load', 95.0),
-        _mock_lhm_sensor('GPU Core Clock', 'Clock', 1950.0),
-        _mock_lhm_sensor('GPU Package Power', 'Power', 310.0),
-        _mock_lhm_sensor('GPU Fan', 'Fan', 1800.0),
+        _mock_lhm_sensor('GPU Core', 'Temperature', 72.0, parent=gpu_id),
+        _mock_lhm_sensor('GPU Core Load', 'Load', 95.0, parent=gpu_id),
+        _mock_lhm_sensor('GPU Core Clock', 'Clock', 1950.0, parent=gpu_id),
+        _mock_lhm_sensor('GPU Package Power', 'Power', 310.0, parent=gpu_id),
+        _mock_lhm_sensor('GPU Fan', 'Fan', 1800.0, parent=gpu_id),
     ]
     cpu_sensors = [
-        _mock_lhm_sensor('CPU Package', 'Temperature', 65.0),
-        _mock_lhm_sensor('CPU Package Power', 'Power', 125.0),
+        _mock_lhm_sensor('CPU Package', 'Temperature', 65.0, parent=cpu_id),
+        _mock_lhm_sensor('CPU Package Power', 'Power', 125.0, parent=cpu_id),
     ]
-    gpu_hw = _mock_lhm_hardware('NVIDIA RTX 4090', 'GpuNvidia', gpu_sensors)
-    cpu_hw = _mock_lhm_hardware('Intel Core i9', 'Cpu', cpu_sensors)
-    computer = _make_lhm_computer([gpu_hw, cpu_hw])
+    gpu_hw = _mock_lhm_hardware('NVIDIA RTX 4090', 'GpuNvidia', identifier=gpu_id)
+    cpu_hw = _mock_lhm_hardware('Intel Core i9', 'Cpu', identifier=cpu_id)
+    ns = _make_lhm_namespace(
+        [gpu_hw, cpu_hw],
+        {gpu_id: gpu_sensors, cpu_id: cpu_sensors},
+    )
 
-    with patch(f'{MODULE}.LHM_AVAILABLE', True), \
-         patch(f'{MODULE}.Computer', return_value=computer, create=True), \
-         patch(f'{MODULE}.psutil') as win_psutil:
+    with patch(f'{MODULE}.psutil') as win_psutil:
         win_psutil.sensors_temperatures.return_value = {}
         mock_io_no_nvidia.win_psutil = win_psutil
-        mock_io_no_nvidia.lhm_computer = computer
+        mock_io_no_nvidia.lhm_ns = ns
         yield mock_io_no_nvidia
 
 
@@ -92,35 +115,43 @@ def mock_win_lhm(mock_io_no_nvidia):
 def mock_win_nvidia(mock_io):
     """Windows enumerator — no LHM, nvidia fallback."""
     mock_io.setup_nvidia(temp=68, usage=80, clock=1800, power_mw=250000, fan=55)
-    with patch(f'{MODULE}.LHM_AVAILABLE', False), \
-         patch(f'{MODULE}.psutil') as win_psutil:
+    with patch(f'{MODULE}.psutil') as win_psutil:
         win_psutil.sensors_temperatures.return_value = {}
         mock_io.win_psutil = win_psutil
+        mock_io.lhm_ns = None
         yield mock_io
 
 
-def _make_enum():
+def _make_enum(lhm_ns: MagicMock | None = None):
+    """Construct SensorEnumerator and seed the LHM namespace.
+
+    Pre-populating ``_lhm._namespace_handle`` makes ``_LHMSubprocess.start()``
+    short-circuit (it's idempotent), so no real subprocess is spawned.
+    Tests that want "no LHM" pass ``lhm_ns=None``.
+    """
     from trcc.adapters.system.windows_platform import SensorEnumerator
-    return SensorEnumerator()
+    e = SensorEnumerator()
+    e._lhm._namespace_handle = lhm_ns
+    return e
 
 
 @pytest.fixture
 def enum_no_lhm(mock_win_no_lhm):
-    e = _make_enum()
+    e = _make_enum(lhm_ns=None)
     e.discover()
     return e
 
 
 @pytest.fixture
 def enum_lhm(mock_win_lhm):
-    e = _make_enum()
+    e = _make_enum(lhm_ns=mock_win_lhm.lhm_ns)
     e.discover()
     return e
 
 
 @pytest.fixture
 def enum_nvidia(mock_win_nvidia):
-    e = _make_enum()
+    e = _make_enum(lhm_ns=None)
     e.discover()
     return e
 
@@ -143,7 +174,7 @@ class TestDiscover:
         assert any('cpu_package' in sid and 'lhm:' in sid for sid in ids)
 
     def test_lhm_gpu_skips_nvidia_discovery(self, enum_lhm):
-        """When LHM finds GPU, pynvml discovery is skipped."""
+        """When LHM finds a GPU, pynvml discovery is skipped."""
         assert not any(s.source == 'nvidia' for s in enum_lhm.get_sensors())
 
     def test_nvidia_fallback_when_no_lhm(self, enum_nvidia):
@@ -152,12 +183,11 @@ class TestDiscover:
         assert 'nvidia:0:gpu_busy' in ids
 
     def test_psutil_cpu_temps_registered(self, mock_io_no_nvidia):
-        with patch(f'{MODULE}.LHM_AVAILABLE', False), \
-             patch(f'{MODULE}.psutil') as win_psutil:
+        with patch(f'{MODULE}.psutil') as win_psutil:
             win_psutil.sensors_temperatures.return_value = {
                 'coretemp': [MagicMock(label='Package', current=65.0)],
             }
-            e = _make_enum()
+            e = _make_enum(lhm_ns=None)
             e.discover()
             assert any(s.id == 'psutil:temp:coretemp:0' for s in e.get_sensors())
 
@@ -166,16 +196,16 @@ class TestDiscover:
         assert not any(s.source == 'wmi' for s in enum_no_lhm.get_sensors())
 
     def test_lhm_subhardware_discovered(self, mock_io_no_nvidia):
-        core_sensor = _mock_lhm_sensor('Core #0', 'Temperature', 60.0)
-        sub = _mock_lhm_hardware('CPU Core', 'Cpu', [core_sensor])
-        cpu_hw = _mock_lhm_hardware('Intel CPU', 'Cpu', [], sub_hardware=[sub])
-        computer = _make_lhm_computer([cpu_hw])
+        cpu_id = '/intelcpu/0'
+        sub_id = '/intelcpu/0/core/0'
+        core_sensor = _mock_lhm_sensor('Core #0', 'Temperature', 60.0, parent=sub_id)
+        cpu_hw = _mock_lhm_hardware('Intel CPU', 'Cpu', identifier=cpu_id)
+        sub_hw = _mock_lhm_hardware('CPU Core', 'Cpu', identifier=sub_id, parent=cpu_id)
+        ns = _make_lhm_namespace([cpu_hw, sub_hw], {sub_id: [core_sensor]})
 
-        with patch(f'{MODULE}.LHM_AVAILABLE', True), \
-             patch(f'{MODULE}.Computer', return_value=computer, create=True), \
-             patch(f'{MODULE}.psutil') as wp:
+        with patch(f'{MODULE}.psutil') as wp:
             wp.sensors_temperatures.return_value = {}
-            e = _make_enum()
+            e = _make_enum(lhm_ns=ns)
             e.discover()
             assert any('cpu_core' in s.id for s in e.get_sensors())
 
@@ -205,36 +235,34 @@ class TestReadAll:
         assert 'psutil:mem_percent' in readings
 
     def test_lhm_none_values_skipped(self, mock_io_no_nvidia):
-        dead_sensor = _mock_lhm_sensor('Dead', 'Temperature', None)
-        dead_sensor.Value = None
-        hw = _mock_lhm_hardware('Board', 'Motherboard', [dead_sensor])
-        computer = _make_lhm_computer([hw])
+        board_id = '/mainboard/0'
+        dead_sensor = _mock_lhm_sensor('Dead', 'Temperature', None, parent=board_id)
+        hw = _mock_lhm_hardware('Board', 'Motherboard', identifier=board_id)
+        ns = _make_lhm_namespace([hw], {board_id: [dead_sensor]})
 
-        with patch(f'{MODULE}.LHM_AVAILABLE', True), \
-             patch(f'{MODULE}.Computer', return_value=computer, create=True), \
-             patch(f'{MODULE}.psutil') as wp:
+        with patch(f'{MODULE}.psutil') as wp:
             wp.sensors_temperatures.return_value = {}
-            e = _make_enum()
+            e = _make_enum(lhm_ns=ns)
             e.discover()
             readings = e.read_all()
             assert not any(k.startswith('lhm:board:dead') for k in readings)
 
     def test_lhm_poll_exception_isolated(self, mock_io_no_nvidia):
-        """LHM COM failure doesn't crash the enumerator."""
-        hw = MagicMock()
-        hw.Name = 'Broken'
-        hw.HardwareType = 'Cpu'
-        hw.Sensors = []
-        hw.SubHardware = []
-        computer = _make_lhm_computer([hw])
-        # Make Update() crash on poll
-        hw.Update.side_effect = RuntimeError("COM disconnected")
+        """LHM WMI failure doesn't crash the enumerator.
 
-        with patch(f'{MODULE}.LHM_AVAILABLE', True), \
-             patch(f'{MODULE}.Computer', return_value=computer, create=True), \
-             patch(f'{MODULE}.psutil') as wp:
+        WMI raises arbitrary COM errors during poll if the LHM provider
+        de-registers (process killed, machine sleep wake). Verify the
+        enumerator catches and logs without aborting the whole poll.
+        """
+        cpu_id = '/intelcpu/0'
+        cpu_hw = _mock_lhm_hardware('Broken', 'Cpu', identifier=cpu_id)
+        ns = _make_lhm_namespace([cpu_hw], {})
+        # Make Hardware() crash on the second call (poll), not on discovery.
+        ns.Hardware.side_effect = [[cpu_hw], RuntimeError("COM disconnected")]
+
+        with patch(f'{MODULE}.psutil') as wp:
             wp.sensors_temperatures.return_value = {}
-            e = _make_enum()
+            e = _make_enum(lhm_ns=ns)
             e.discover()
             # Should not raise — LHM failure is caught
             readings = e.read_all()
@@ -283,12 +311,18 @@ class TestMapDefaults:
 
 class TestPolling:
 
-    def test_lhm_closed_on_stop(self, mock_win_lhm):
-        e = _make_enum()
+    def test_lhm_stopped_on_stop(self, mock_win_lhm):
+        """``stop_polling`` must terminate the LHM subprocess we spawned.
+
+        The new architecture replaces the ``Computer.Close()`` cleanup with
+        ``_LHMSubprocess.stop()`` which clears the namespace handle and
+        kills any process we own.
+        """
+        e = _make_enum(lhm_ns=mock_win_lhm.lhm_ns)
         e.discover()
         e.start_polling(interval=0.01)
         e.stop_polling()
-        mock_win_lhm.lhm_computer.Close.assert_called_once()
+        assert e._lhm.namespace is None
 
 
 # ── LHM type map ─────────────────────────────────────────────────────
@@ -312,10 +346,10 @@ class TestLhmTypeMap:
 # ── WMI GPU fallback (issue #131) ────────────────────────────────────
 #
 # AMD-on-Windows users without LibreHardwareMonitor running used to see
-# "No GPUs detected" because `pynvml` is NVIDIA-only. v9.6.0 adds a
-# `Win32_VideoController` fallback that detects every GPU Windows knows
+# "No GPUs detected" because ``pynvml`` is NVIDIA-only. v9.6.0 adds a
+# ``Win32_VideoController`` fallback that detects every GPU Windows knows
 # about — temperature/usage data still requires LHM/ADLX, but at least
-# the card appears in `trcc gpus` for selection.
+# the card appears in ``trcc gpus`` for selection.
 
 
 def _mock_wmi_video(name: str = 'AMD Radeon RX 9070 XT') -> MagicMock:
@@ -330,7 +364,7 @@ class TestWmiGpuFallback:
     neither LHM nor pynvml returned any GPUs."""
 
     def _patch_wmi(self, controllers: list[MagicMock]):
-        """Install a mock `wmi` module returning the given controllers."""
+        """Install a mock ``wmi`` module returning the given controllers."""
         mock_wmi_mod = MagicMock()
         mock_wmi_instance = MagicMock()
         mock_wmi_instance.Win32_VideoController.return_value = controllers
@@ -375,10 +409,10 @@ class TestWmiGpuFallback:
         assert result == [('wmi:1', 'Real GPU')]
 
     def test_returns_empty_when_wmi_pkg_missing(self):
-        """No `wmi` package on path (e.g. running on Linux): empty list, no crash."""
+        """No ``wmi`` package on path (e.g. running on Linux): empty list, no crash."""
         from trcc.adapters.system.windows_platform import SensorEnumerator
         with patch.dict('sys.modules', {'wmi': None}):
-            # `import wmi` with sys.modules[wmi]=None raises ImportError
+            # ``import wmi`` with sys.modules[wmi]=None raises ImportError
             result = SensorEnumerator._wmi_get_gpu_list()
         assert result == []
 
@@ -399,7 +433,7 @@ class TestGetGpuListFallbackOrder:
         """Reporter scenario: AMD GPU, no LHM, no NVIDIA. WMI fallback fires."""
         from trcc.adapters.system.windows_platform import SensorEnumerator
         e = SensorEnumerator()
-        e._lhm_computer = None  # No LHM
+        e._lhm._namespace_handle = None  # No LHM
         # Patch base get_gpu_list (pynvml NVIDIA path) to return empty
         with patch.object(
             SensorEnumerator.__bases__[0], 'get_gpu_list', return_value=[],
@@ -414,12 +448,11 @@ class TestGetGpuListFallbackOrder:
         """LHM is preferred when running — its results include sensor data."""
         from trcc.adapters.system.windows_platform import SensorEnumerator
         e = SensorEnumerator()
-        # Mock LHM with one GPU
-        lhm_gpu = MagicMock()
-        lhm_gpu.HardwareType = 'GpuAmd'
-        lhm_gpu.Name = 'AMD Radeon RX 9070 XT'
-        e._lhm_computer = MagicMock()
-        e._lhm_computer.Hardware = [lhm_gpu]
+        gpu_id = '/gpu-amd/0'
+        lhm_gpu = _mock_lhm_hardware(
+            'AMD Radeon RX 9070 XT', 'GpuAmd', identifier=gpu_id,
+        )
+        e._lhm._namespace_handle = _make_lhm_namespace([lhm_gpu])
         with patch.object(
             SensorEnumerator, '_wmi_get_gpu_list',
             return_value=[('wmi:0', 'should not see this')],
@@ -433,7 +466,7 @@ class TestGetGpuListFallbackOrder:
         """pynvml NVIDIA path takes precedence over WMI when present."""
         from trcc.adapters.system.windows_platform import SensorEnumerator
         e = SensorEnumerator()
-        e._lhm_computer = None
+        e._lhm._namespace_handle = None
         with patch.object(
             SensorEnumerator.__bases__[0], 'get_gpu_list',
             return_value=[('nvidia:0', 'RTX 4090 (24576 MB)')],
