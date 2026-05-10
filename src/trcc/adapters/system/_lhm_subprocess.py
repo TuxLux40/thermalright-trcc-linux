@@ -31,8 +31,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import psutil
-
 log = logging.getLogger(__name__)
 
 _LHM_PROCESS_NAME = "LibreHardwareMonitor.exe"
@@ -63,23 +61,33 @@ class _LHMSubprocess:
     def start(self) -> Any:
         """Ensure LHM is running and the WMI namespace is queryable.
 
-        Returns the WMI handle, or ``None`` if LHM couldn't be started or
-        the namespace never registered within the timeout. Idempotent —
-        callers can invoke repeatedly; only the first start spawns.
+        Detection is namespace-first: if ``root\\LibreHardwareMonitor``
+        already returns Hardware rows, LHM is alive somewhere (manually
+        installed, autostart, another TRCC process) — we reuse it.
+        Falls back to spawning the bundled exe only if the namespace is
+        absent. Process detection via psutil is unreliable across user
+        sessions and ACL boundaries; WMI is the actual contract.
         """
         if self._namespace_handle is not None:
             return self._namespace_handle
 
-        if not _is_lhm_running():
-            self._owned_process = _spawn_lhm()
-            if self._owned_process is None:
-                log.warning("LibreHardwareMonitor not bundled or spawn failed; "
-                            "Windows temps/fans unavailable")
-                return None
-            log.info("Spawned LibreHardwareMonitor (pid=%d)",
-                     self._owned_process.pid)
-        else:
-            log.info("LibreHardwareMonitor already running; reusing")
+        # First: is the namespace already live? (LHM running manually, autostart,
+        # or any other source — we don't care who spawned it.)
+        existing = _probe_wmi_namespace()
+        if existing is not None:
+            log.info("LibreHardwareMonitor already running; reusing WMI namespace")
+            self._namespace_handle = existing
+            return existing
+
+        # Not running: try to spawn from the bundled location.
+        self._owned_process = _spawn_lhm()
+        if self._owned_process is None:
+            log.warning("LibreHardwareMonitor not running and bundled exe not "
+                        "found; Windows temps/fans unavailable. Install LHM "
+                        "v0.9.6 + PawnIO manually, or rely on the installer.")
+            return None
+        log.info("Spawned LibreHardwareMonitor (pid=%d)",
+                 self._owned_process.pid)
 
         self._namespace_handle = _wait_for_wmi_namespace()
         if self._namespace_handle is None:
@@ -126,18 +134,22 @@ def _lhm_exe_path() -> Path | None:
     return None
 
 
-def _is_lhm_running() -> bool:
-    """Check whether any ``LibreHardwareMonitor.exe`` process is alive."""
+def _probe_wmi_namespace() -> Any:
+    """Return a WMI handle to ``root\\LibreHardwareMonitor`` if it responds.
+
+    Faster cousin of ``_wait_for_wmi_namespace`` — single attempt, no retry.
+    Returns the handle if Hardware() yields at least one row, else None.
+    Used to detect an already-running LHM (manual install, autostart,
+    parallel TRCC process) without depending on psutil's process visibility.
+    """
+    from trcc.adapters.system._windows_wmi import wmi_handle
     try:
-        for proc in psutil.process_iter(["name"]):
-            try:
-                if (proc.info.get("name") or "").lower() == _LHM_PROCESS_NAME.lower():
-                    return True
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-    except psutil.Error as e:
-        log.debug("psutil process scan failed: %s", e)
-    return False
+        handle = wmi_handle(namespace=_LHM_NAMESPACE)
+        if list(handle.Hardware()):
+            return handle
+    except Exception as e:
+        log.debug("LHM WMI namespace not available: %s", e)
+    return None
 
 
 def _spawn_lhm() -> subprocess.Popen[bytes] | None:
