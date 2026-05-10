@@ -29,12 +29,19 @@ def wmi_handle(**wmi_kwargs: Any) -> Any:
 
     ``wmi_kwargs`` are forwarded to ``wmi.WMI`` (e.g. ``namespace='root\\WMI'``).
     """
-    import pythoncom  # pyright: ignore[reportMissingImports, reportMissingModuleSource]
     import wmi  # pyright: ignore[reportMissingImports]
 
     try:
-        pythoncom.CoInitialize()
-    except pythoncom.com_error:
-        # Already initialized for this thread — fine, continue.
-        pass
+        import pythoncom  # pyright: ignore[reportMissingImports, reportMissingModuleSource]
+        try:
+            pythoncom.CoInitialize()
+        except pythoncom.com_error:
+            # Already initialized for this thread — fine, continue.
+            pass
+    except ImportError:
+        # pythoncom is part of pywin32 (Windows-only); on non-Windows or
+        # in test contexts where it isn't installed, skip the COM init —
+        # wmi.WMI() will raise its own informative error if it actually
+        # needs COM.
+        log.debug("wmi_handle: pythoncom unavailable, skipping CoInitialize")
     return wmi.WMI(**wmi_kwargs)
