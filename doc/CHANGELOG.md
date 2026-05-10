@@ -1,5 +1,26 @@
 # Changelog
 
+## v9.5.11
+
+Fast follow-up on v9.5.10.
+
+v9.5.10 stopped the crash on every Linux launch (the suspend hook was
+calling ``QDBusConnection.connect`` with a Python callable, which
+PySide6 rejects with a TypeError) — but my defensive bytes-form slot
+``b'1handle(bool)'`` was *also* rejected at runtime ("wrong argument
+values"), so the hook silently failed.  Tee86's #144 fix was effectively
+inert on v9.5.10 even though the launcher worked.
+
+Empirical bisect on PySide6 6.10.3: the binding's declared
+``slot: bytes | bytearray | memoryview`` is wrong — only the ``str``
+returned by ``PySide6.QtCore.SLOT('handle(bool)')`` is accepted at
+runtime.  Switched to that and verified end-to-end:
+``subscribe_power: PrepareForSleep listener active`` now logs against
+the live system bus.
+
+This is the version that actually ships the #144 sleep/resume fix
+working as designed.
+
 ## v9.5.10
 
 ### User-facing fixes
