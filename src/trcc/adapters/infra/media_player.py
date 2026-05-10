@@ -42,6 +42,13 @@ class VideoDecoder:
             'height' — scale height to LCD, letterbox/crop width (C# buttonTPJCH)
         """
         w, h = target_size
+        if w <= 0 or h <= 0:
+            raise ValueError(
+                f"VideoDecoder: target_size {target_size} has a non-positive "
+                "dimension — the device resolution wasn't determined (handshake "
+                "may have failed to extract PM/SUB). Run `trcc report` and check "
+                "the handshake section."
+            )
 
         if fit_mode in ('width', 'height'):
             video_dims = self._probe_dimensions(video_path)
