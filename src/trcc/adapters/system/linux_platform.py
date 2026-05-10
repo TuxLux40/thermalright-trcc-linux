@@ -671,16 +671,23 @@ class LinuxPlatform(Platform):
     def subscribe_power(self, on_suspend, on_resume) -> None:
         """Linux suspend/resume via systemd-logind PrepareForSleep D-Bus signal.
 
-        Was inline in `gui/trcc_app.py::_setup_sleep_monitor` until we
-        pulled it down to Platform so CLI and API also benefit (e.g.,
-        a long-running `trcc serve` survives a suspend/resume cycle
-        with the same protocol-cache cleanup the GUI does).
+        Connection failures (no D-Bus, no systemd, sandbox without access,
+        PySide6 missing) are logged at debug — Linux without logind just
+        doesn't get power events, same as before.
 
-        Connection failures (no D-Bus, no systemd, sandbox without
-        access) are logged at debug — Linux without logind just doesn't
-        get power events, same as before.
+        ``QDBusConnection.connect()`` in PySide6 only binds to a Qt slot on
+        a QObject — it does NOT accept a Python callable.  The bridge below
+        is a tiny QObject whose ``@Slot(bool)`` method forwards into the
+        Python callbacks; we keep a reference on ``self`` so the QObject
+        isn't garbage-collected while the signal is still wired.  Bug
+        shipped in v9.5.9 (passed a bare Python callable, crashed every
+        ``trcc`` invocation on Linux).
         """
         try:
+            from PySide6.QtCore import (  # pyright: ignore[reportMissingImports]
+                QObject,
+                Slot,
+            )
             from PySide6.QtDBus import (  # pyright: ignore[reportMissingImports]
                 QDBusConnection,
             )
@@ -693,20 +700,38 @@ class LinuxPlatform(Platform):
             log.debug("subscribe_power: system D-Bus not connected")
             return
 
-        def _on_prepare_for_sleep(sleeping: bool) -> None:
-            if sleeping:
-                log.info("System suspending — Trcc.on_suspend")
-                on_suspend()
-            else:
-                log.info("System resuming — Trcc.on_resume")
-                on_resume()
+        class _PrepareForSleepBridge(QObject):
+            @Slot(bool)
+            def handle(self, sleeping: bool) -> None:
+                if sleeping:
+                    log.info("System suspending — Trcc.on_suspend")
+                    on_suspend()
+                else:
+                    log.info("System resuming — Trcc.on_resume")
+                    on_resume()
 
-        bus.connect(  # pyright: ignore[reportCallIssue]
-            'org.freedesktop.login1', '/org/freedesktop/login1',
-            'org.freedesktop.login1.Manager', 'PrepareForSleep',
-            _on_prepare_for_sleep,
-        )
-        log.info("subscribe_power: PrepareForSleep listener active")
+        # Keep a reference on self so the QObject (and the wired signal)
+        # outlives this method's stack frame.
+        self._sleep_listener = _PrepareForSleepBridge()
+
+        try:
+            ok = bus.connect(
+                'org.freedesktop.login1',
+                '/org/freedesktop/login1',
+                'org.freedesktop.login1.Manager',
+                'PrepareForSleep',
+                'b',
+                self._sleep_listener,
+                b'1handle(bool)',
+            )
+        except Exception as e:
+            log.warning("subscribe_power: bus.connect raised: %s", e)
+            return
+
+        if ok:
+            log.info("subscribe_power: PrepareForSleep listener active")
+        else:
+            log.debug("subscribe_power: bus.connect returned False")
 
     # ── Administration ────────────────────────────────────────
 
