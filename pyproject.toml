@@ -208,6 +208,18 @@ ignore = [
 # not production code.  Same legacy rationale as tests/ — keeping them
 # strict-PTH-clean isn't worth blocking releases over.
 ".github/scripts/**/*.py" = ["PTH", "SIM115"]
+# Dev smoke harnesses + mock-bootstrap: legitimately exercise adapters
+# directly (they ARE the test fixtures), and use sys.path.insert before
+# imports because they run as standalone scripts.
+"dev/**/*.py" = [
+    "PTH", "UP", "SIM115", "SIM117",
+    "E402",      # sys.path.insert(0, ...) before imports — required for standalone scripts
+    "I001",      # import order rearranged by sys.path mutation
+    "TID251",    # smoke harnesses exercise adapters directly, just like tests
+    "B007", "B018", "B023",
+    "PIE807", "PIE808",
+    "RUF013", "RUF015", "RUF043", "RUF059",
+]
 "src/trcc/_entry.py" = ["PTH", "SIM115", "SIM117"]
 "src/trcc/conf.py" = ["PTH", "SIM115", "SIM117"]
 "src/trcc/ipc.py" = ["PTH", "SIM115", "SIM117"]
