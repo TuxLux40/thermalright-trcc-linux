@@ -27,6 +27,7 @@ ENV/
 *.swo
 *~
 *.code-workspace
+pyrightconfig_strict.json
 
 # AI tooling
 CLAUDE.md
