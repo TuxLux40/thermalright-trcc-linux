@@ -35,15 +35,15 @@ class WindowsDeviceDetector:
         """
         # Import here to avoid ImportError on Linux
         try:
-            import wmi  # pyright: ignore[reportMissingImports]
+            from trcc.adapters.system._windows_wmi import wmi_handle
         except ImportError:
-            log.error("wmi package not installed — pip install wmi")
+            log.error("wmi package not installed — pip install wmi pywin32")
             return []
 
         devices: list[DetectedDevice] = []
         seen_paths: set[str] = set()
         try:
-            w = wmi.WMI()
+            w = wmi_handle()
             for usb in w.Win32_USBControllerDevice():
                 dependent = usb.Dependent
                 vid, pid = _parse_vid_pid(dependent.DeviceID)
@@ -185,8 +185,8 @@ def _find_physical_drive(vid: int, pid: int) -> str | None:
     vid_tag = f'VID_{vid:04X}'
     pid_tag = f'PID_{pid:04X}'
     try:
-        import wmi  # pyright: ignore[reportMissingImports]
-        w = wmi.WMI()
+        from trcc.adapters.system._windows_wmi import wmi_handle
+        w = wmi_handle()
 
         # Step 1: confirm VID/PID is present in the USB device tree
         confirmed = False

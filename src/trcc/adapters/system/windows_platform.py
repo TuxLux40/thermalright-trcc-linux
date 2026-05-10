@@ -105,8 +105,8 @@ def _get_disk_health(device_id: str | None) -> str:
     if not device_id:
         return 'Unknown'
     try:
-        import wmi  # pyright: ignore[reportMissingImports]
-        w = wmi.WMI(namespace='root\\WMI')
+        from ._windows_wmi import wmi_handle
+        w = wmi_handle(namespace='root\\WMI')
         for status in w.MSStorageDriver_FailurePredictStatus():
             if status.Active:
                 return 'FAILED' if status.PredictFailure else 'PASSED'
@@ -122,8 +122,8 @@ def get_memory_info() -> list[dict[str, str]]:
     """Get DRAM slot info via WMI Win32_PhysicalMemory."""
     slots: list[dict[str, str]] = []
     try:
-        import wmi  # pyright: ignore[reportMissingImports]
-        w = wmi.WMI()
+        from ._windows_wmi import wmi_handle
+        w = wmi_handle()
         for mem in w.Win32_PhysicalMemory():
             slot: dict[str, str] = {}
             slot['manufacturer'] = (mem.Manufacturer or '').strip()
@@ -157,8 +157,8 @@ def get_disk_info() -> list[dict[str, str]]:
     """Get physical disk info via WMI Win32_DiskDrive."""
     disks: list[dict[str, str]] = []
     try:
-        import wmi  # pyright: ignore[reportMissingImports]
-        w = wmi.WMI()
+        from ._windows_wmi import wmi_handle
+        w = wmi_handle()
         for disk in w.Win32_DiskDrive():
             info: dict[str, str] = {}
             info['name'] = disk.DeviceID or ''
@@ -258,8 +258,8 @@ class SensorEnumerator(SensorEnumeratorBase):
 
     def _discover_wmi(self) -> None:
         try:
-            import wmi  # pyright: ignore[reportMissingImports]
-            w = wmi.WMI(namespace='root\\WMI')
+            from ._windows_wmi import wmi_handle
+            w = wmi_handle(namespace='root\\WMI')
             try:
                 for tz in w.MSAcpi_ThermalZoneTemperature():
                     sid = f'wmi:thermal:{tz.InstanceName}'
@@ -341,8 +341,8 @@ class SensorEnumerator(SensorEnumeratorBase):
         name; sensor data lives in LHM/ADLX, not here.
         """
         try:
-            import wmi  # pyright: ignore[reportMissingImports]
-            w = wmi.WMI()
+            from ._windows_wmi import wmi_handle
+            w = wmi_handle()
             return [
                 (f'wmi:{i}', str(vc.Name).strip() or f'GPU {i}')
                 for i, vc in enumerate(w.Win32_VideoController())
