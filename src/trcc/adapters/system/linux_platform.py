@@ -685,6 +685,7 @@ class LinuxPlatform(Platform):
         """
         try:
             from PySide6.QtCore import (  # pyright: ignore[reportMissingImports]
+                SLOT,
                 QObject,
                 Slot,
             )
@@ -714,6 +715,11 @@ class LinuxPlatform(Platform):
         # outlives this method's stack frame.
         self._sleep_listener = _PrepareForSleepBridge()
 
+        # Empirical: PySide6's QDBusConnection.connect signature declares
+        # ``slot: bytes | bytearray | memoryview`` but accepts only the
+        # ``str`` returned by ``SLOT(...)`` at runtime — the bytes form
+        # raises "wrong argument values".  Verified on PySide6 6.10.3.
+        slot_str: Any = SLOT('handle(bool)')
         try:
             ok = bus.connect(
                 'org.freedesktop.login1',
@@ -722,7 +728,7 @@ class LinuxPlatform(Platform):
                 'PrepareForSleep',
                 'b',
                 self._sleep_listener,
-                b'1handle(bool)',
+                slot_str,
             )
         except Exception as e:
             log.warning("subscribe_power: bus.connect raised: %s", e)
