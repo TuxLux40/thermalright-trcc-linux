@@ -61,14 +61,16 @@ class NoopScsiTransport(ScsiTransport):
 class NoopUsbTransport(UsbTransport):
     """Fake USB transport — returns canned HID/LED handshake, discards frames.
 
-    Configure with the handshake response bytes to return on first read.
-    Subsequent reads return zeros (frame acks).
+    Returns the canned response on any read whose length matches the response
+    size (handshake reads).  Smaller reads (frame ACKs) get zeros.  This
+    mirrors a real device: the firmware re-emits the handshake bytes every
+    time the host writes the init packet, so re-handshake after sleep/resume
+    or hot-plug works the same as the first call.
     """
 
     def __init__(self, handshake_response: bytes) -> None:
         self._resp = handshake_response
         self._open = False
-        self._first_read = True
         self.writes: int = 0
 
     def open(self) -> None:
@@ -86,9 +88,8 @@ class NoopUsbTransport(UsbTransport):
         return len(data)
 
     def read(self, endpoint: int, length: int, timeout: int = 5000) -> bytes:
-        if self._first_read:
-            self._first_read = False
-            return self._resp[:length]
+        if length == len(self._resp):
+            return self._resp
         return b'\x00' * length
 
 
@@ -141,4 +142,87 @@ def build_led_response(pm: int, sub: int = 0) -> bytes:
     resp[4] = sub
     resp[5] = pm
     resp[12] = 0x01
+    return bytes(resp)
+
+
+def build_bulk_response(pm: int = 32, sub: int = 0) -> bytes:
+    """Build a valid USBLCDNew bulk handshake response.
+
+    Layout (1024 bytes):
+      [24] = pm byte (must be non-zero)
+      [36] = sub byte
+    PM=32 → RGB565 mode; everything else → JPEG.
+    """
+    resp = bytearray(1024)
+    resp[24] = pm
+    resp[36] = sub
+    return bytes(resp)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Bulk / LY — fake Device class (these protocols wrap a Device, not a transport)
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class NoopBulkLikeDevice:
+    """Fake BulkDevice / LyDevice — satisfies the contract _BulkLikeProtocol calls.
+
+    Bulk and LY don't go through ``DeviceProtocolFactory.create_usb_transport``;
+    they wrap a Device that owns its pyusb endpoints directly.  The smoke
+    matrix patches ``_make_device`` on each protocol class to return one of
+    these instead, so the protocol's lifecycle runs end-to-end without ever
+    hitting real USB.
+    """
+
+    def __init__(
+        self,
+        vid: int,
+        pid: int,
+        *,
+        addr=None,
+        resolution: tuple[int, int] = (480, 480),
+        model_id: int = 32,
+    ) -> None:
+        from trcc.core.models import HandshakeResult
+        self.vid = vid
+        self.pid = pid
+        self.addr = addr
+        self._handshake_result = HandshakeResult(
+            resolution=resolution, model_id=model_id,
+        )
+        self.frames_sent: int = 0
+        self.closed: bool = False
+
+    def handshake(self):
+        return self._handshake_result
+
+    def send_frame(self, image_data: bytes) -> bool:
+        self.frames_sent += 1
+        return True
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def build_ly_response(pm_raw: int = 1, sub: int = 0, *, pid: int = 0x5408) -> bytes:
+    """Build a valid LY-protocol (Trofeo Vision) handshake response.
+
+    Layout (512 bytes):
+      [0]  = 0x03   (response code)
+      [1]  = 0xFF   (magic)
+      [8]  = 0x01   (ack)
+      [20] = pm_raw  (LY:  PM = 64 + raw, clamped to 1 if <= 3)
+      [22] = sub
+      [36] = pm_raw  (LY1: PM = 50 + resp[36])
+    """
+    resp = bytearray(512)
+    resp[0] = 0x03
+    resp[1] = 0xFF
+    resp[8] = 0x01
+    if pid == 0x5408:
+        resp[20] = pm_raw
+        resp[22] = sub
+    else:  # 0x5409
+        resp[36] = pm_raw
+        resp[22] = sub
     return bytes(resp)
