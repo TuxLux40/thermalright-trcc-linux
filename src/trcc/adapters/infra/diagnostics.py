@@ -142,6 +142,19 @@ class StandardLoggingConfigurator(TrccLoggingConfigurator):
             else logging.INFO if verbosity == 1
             else logging.WARNING
         )
+        # Windows console default is cp1252 — can't encode many common log
+        # chars (``→``, ``°``, etc.).  Reconfigure stderr to UTF-8 with
+        # ``errors='replace'`` immediately before the handler captures it,
+        # so we don't depend on __main__.py's earlier reconfigure surviving
+        # the import chain.  Belt-and-suspenders.
+        if sys.platform == 'win32' and hasattr(sys.stderr, 'reconfigure'):
+            try:
+                sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+            except (AttributeError, OSError, ValueError) as e:
+                # Some Python deployments (Windows Store, pythonw.exe with
+                # detached stderr) silently lack working reconfigure.
+                logging.getLogger(__name__).debug(
+                    "stderr.reconfigure failed: %s", e)
         ch = logging.StreamHandler()
         ch.setLevel(console_level)
         ch.setFormatter(logging.Formatter(self.FORMAT, datefmt=self.DATE_FMT_CONSOLE))
