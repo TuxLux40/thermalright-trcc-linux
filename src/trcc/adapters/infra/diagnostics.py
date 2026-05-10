@@ -92,23 +92,29 @@ class _SafeStreamHandler(logging.StreamHandler):
     Windows console (cp1252) can't encode characters like ``→`` or ``°``
     that appear in dozens of log messages.  Some Python deployments
     (notably Windows Store Python) ignore ``sys.stderr.reconfigure``
-    silently, so we catch the encode error at emit time and fall back to
-    a stream-encoding-aware ``errors='replace'`` write.  No-op on
-    Linux/macOS — they use UTF-8 streams by default.
+    silently.  Stdlib ``StreamHandler.emit`` wraps the write in its own
+    ``try/except Exception`` and calls ``handleError`` — printing the
+    "Logging error" traceback — *before* a subclass could catch the
+    UnicodeEncodeError.  So we override ``emit`` entirely and wrap the
+    write itself; the outer catch only fires for genuinely fatal cases.
+    No-op on Linux/macOS — they use UTF-8 streams by default.
     """
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            super().emit(record)
-        except UnicodeEncodeError:
+            msg = self.format(record)
+            stream = self.stream
             try:
-                msg = self.format(record)
-                encoding = getattr(self.stream, 'encoding', 'ascii') or 'ascii'
+                stream.write(msg + self.terminator)
+            except UnicodeEncodeError:
+                encoding = getattr(stream, 'encoding', 'ascii') or 'ascii'
                 safe = msg.encode(encoding, errors='replace').decode(encoding)
-                self.stream.write(safe + self.terminator)
-                self.flush()
-            except Exception:
-                self.handleError(record)
+                stream.write(safe + self.terminator)
+            self.flush()
+        except RecursionError:
+            raise
+        except Exception:
+            self.handleError(record)
 
 
 class TrccLoggingConfigurator(ABC):
