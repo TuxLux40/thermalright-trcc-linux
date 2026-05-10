@@ -48,16 +48,38 @@ log = logging.getLogger('trcc.main')
 log.info("Starting TRCC — platform=%s, executable=%s", sys.platform, sys.executable)
 
 # Windows: stdout/stderr default to cp1252, which can't encode common
-# Unicode chars used in log messages (e.g. ``→``).  Without this, every
-# log emit that hits a StreamHandler raises UnicodeEncodeError and
-# Python's default error path prints the entire traceback to the console.
-# Reconfigure to UTF-8 with ``errors='replace'`` — modern terminals
-# (Windows Terminal, PowerShell 7+) render it correctly; legacy cmd.exe
-# falls back to ``?`` rather than crashing.
+# Unicode chars used in log messages (e.g. ``→``, ``°``).  ``reconfigure``
+# is a silent no-op on some Python deployments (Windows Store), so on
+# top of that we monkey-patch ``logging.StreamHandler.emit`` to wrap the
+# write call in its own ``except UnicodeEncodeError`` that re-encodes
+# with ``errors='replace'``.  This catches EVERY StreamHandler — ours,
+# stdlib lastResort, third-party — at the class level, no matter when
+# or where they're instantiated.
 if sys.platform == 'win32':
     for _stream in (sys.stdout, sys.stderr):
         if hasattr(_stream, 'reconfigure'):
-            _stream.reconfigure(encoding='utf-8', errors='replace')
+            try:
+                _stream.reconfigure(encoding='utf-8', errors='replace')
+            except (AttributeError, OSError, ValueError):
+                pass
+
+    def _safe_stream_emit(self: logging.StreamHandler, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            stream = self.stream
+            try:
+                stream.write(msg + self.terminator)
+            except UnicodeEncodeError:
+                encoding = getattr(stream, 'encoding', 'ascii') or 'ascii'
+                safe = msg.encode(encoding, errors='replace').decode(encoding)
+                stream.write(safe + self.terminator)
+            self.flush()
+        except RecursionError:
+            raise
+        except Exception:
+            self.handleError(record)
+
+    logging.StreamHandler.emit = _safe_stream_emit  # type: ignore[method-assign]
 
 # Windows: ensure libusb-1.0.dll is findable by pyusb (ctypes).
 # PyInstaller bundles the DLL next to the exe, but Python 3.8+ on Windows
