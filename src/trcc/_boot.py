@@ -167,6 +167,13 @@ def trcc(
             renderer = QtRenderer()
 
         # 5. Build infra services. Composition happens once, here.
+        from trcc.adapters.infra.data_repository import DataManager
+        from trcc.adapters.infra.theme_downloader import (
+            download_pack as download_pack_fn,
+        )
+        from trcc.adapters.infra.theme_downloader import (
+            list_available as list_available_fn,
+        )
         from trcc.conf import settings as _settings
         from trcc.core.builder import ControllerBuilder
         from trcc.services.image import ImageService
@@ -175,8 +182,7 @@ def trcc(
         ImageService.set_renderer(renderer)
         system_svc = builder.build_system(settings=_settings)
         set_instance(system_svc)
-        ensure_data_fn = builder.build_ensure_data_fn()
-        download_pack_fn, list_available_fn = builder.build_download_fns()
+        ensure_data_fn = DataManager.ensure_all
 
         # 6. Construct the singleton Trcc with every dependency injected.
         # No ``set_X`` mutation later — Pure DI means construction is final.

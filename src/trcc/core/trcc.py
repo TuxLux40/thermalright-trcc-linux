@@ -279,8 +279,7 @@ class Trcc:
             builder = builder.with_renderer(self._renderer)
 
         try:
-            detect_fn = builder.build_detect_fn()
-            detected = detect_fn()
+            detected = list(self._platform)
         except Exception as e:
             log.exception('discover: detect failed')
             return DiscoveryResult(success=False, error=str(e))

@@ -1162,9 +1162,11 @@ def device_debug(
     """
     try:
         if detect_fn is None:
-            from trcc.adapters.system import make_platform
-            from trcc.core.builder import ControllerBuilder
-            detect_fn = ControllerBuilder(make_platform()).build_detect_fn()
+            from trcc.core.ports import Platform
+            _platform = Platform.for_current_os()
+            def _local_detect() -> list[Any]:
+                return list(_platform)
+            detect_fn = _local_detect
 
         print("Device Debug — Handshake Diagnostic")
         print("=" * _WIDTH)
@@ -1311,9 +1313,11 @@ class DebugReport:
 
     def _get_detect_fn(self) -> Callable[[], list[Any]]:
         if self._detect_fn is None:
-            from trcc.adapters.system import make_platform
-            from trcc.core.builder import ControllerBuilder
-            self._detect_fn = ControllerBuilder(make_platform()).build_detect_fn()
+            from trcc.core.ports import Platform
+            _platform = Platform.for_current_os()
+            def _detect() -> list[Any]:
+                return list(_platform)
+            self._detect_fn = _detect
         return self._detect_fn
 
     # ── Public API ───────────────────────────────────────────────────────────

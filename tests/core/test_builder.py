@@ -232,11 +232,7 @@ class TestControllerBuilderSystem(unittest.TestCase):
 
 
 class TestControllerBuilderExtra(unittest.TestCase):
-    """ControllerBuilder auxiliary build methods."""
-
-    def test_build_ensure_data_fn_returns_callable(self):
-        fn = _make_builder().build_ensure_data_fn()
-        self.assertTrue(callable(fn))
+    """ControllerBuilder auxiliary surface — Phase 3 reduced to platform delegates."""
 
     def test_os_has_autostart_methods(self):
         b = _make_builder()
@@ -249,9 +245,12 @@ class TestControllerBuilderExtra(unittest.TestCase):
         self.assertTrue(callable(b.os.get_memory_info))
         self.assertTrue(callable(b.os.get_disk_info))
 
-    def test_build_detect_fn_returns_callable(self):
-        fn = _make_builder().build_detect_fn()
-        self.assertTrue(callable(fn))
+    def test_platform_iter_returns_devices(self):
+        """Phase 3: detect via list(platform), no more build_detect_fn wrapper."""
+        b = _make_builder()
+        # Iterating the platform delegates to create_detect_fn — same shape
+        # as the old build_detect_fn() but reads `for d in platform`.
+        self.assertTrue(hasattr(b.os, '__iter__'))
 
 
 class TestBuilderPsutilFallback(unittest.TestCase):

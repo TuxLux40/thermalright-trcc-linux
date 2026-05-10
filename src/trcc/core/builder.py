@@ -195,27 +195,14 @@ class ControllerBuilder:
             settings=settings,
         )
 
-    def build_ensure_data_fn(self):
-        """Return DataManager.ensure_all — the data extraction callable."""
-        from ..adapters.infra.data_repository import DataManager
-        return DataManager.ensure_all
-
-    def build_download_fns(self):
-        """Return (download_pack, list_available) callables for theme downloads."""
-        from ..adapters.infra.theme_downloader import download_pack, list_available
-        return download_pack, list_available
-
-    def build_detect_fn(self):
-        """Return the platform-appropriate device detect callable."""
-        return self._os.create_detect_fn()
-
-    def build_device_svc(self):
-        """Build a DeviceService wired with platform-appropriate adapters."""
-        return self._build_device_svc()
-
-    def build_hardware_fns(self) -> tuple:
-        """Return platform-specific (get_memory_info, get_disk_info) callables."""
-        return self._os.get_memory_info, self._os.get_disk_info
+    # 5 thin wrappers (build_ensure_data_fn, build_download_fns,
+    # build_detect_fn, build_device_svc, build_hardware_fns) deleted
+    # in Phase 3 — callers now go straight to the source:
+    #   ensure_data_fn         → DataManager.ensure_all
+    #   download_fns           → from theme_downloader import download_pack, list_available
+    #   detect_fn              → list(platform)  (or platform.create_detect_fn())
+    #   device_svc             → builder._build_device_svc()  (still internal)
+    #   memory/disk_info       → platform.get_memory_info / platform.get_disk_info
 
     def device_from_service(self, device_svc) -> LCDDevice:
         """Build an LCDDevice from an existing DeviceService (API standalone)."""

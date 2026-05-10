@@ -44,9 +44,8 @@ def detect_devices():
         trcc = Trcc(make_platform())
         trcc.discover()
     """
-    from trcc.adapters.system import make_platform
-    from trcc.core.builder import ControllerBuilder
-    return ControllerBuilder(make_platform()).build_detect_fn()()
+    from trcc.core.ports import Platform
+    return list(Platform.for_current_os())
 
 
 __all__ = [

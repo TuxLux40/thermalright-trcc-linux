@@ -57,14 +57,12 @@ def _format(dev, probe=False):
 def detect(show_all=False, detect_fn=None, os_platform=None):
     """Detect LCD device."""
     from trcc.conf import Settings
-    from trcc.core.builder import ControllerBuilder
-
     log.debug("detect called show_all=%s", show_all)
     if detect_fn is None or os_platform is None:
         from trcc._boot import trcc as _trcc
         app = _trcc()
         if detect_fn is None:
-            detect_fn = ControllerBuilder(app.os).build_detect_fn()
+            detect_fn = app.detect
         if os_platform is None:
             os_platform = app.os
     devices = detect_fn()
@@ -102,7 +100,6 @@ def select(number, detect_fn=None):
     import sys
 
     from trcc.conf import Settings
-    from trcc.core.builder import ControllerBuilder
 
     print(
         "Note: 'trcc select' is deprecated — auto-discovery replaces it. "
@@ -112,7 +109,7 @@ def select(number, detect_fn=None):
     log.debug("select device number=%d", number)
     if detect_fn is None:
         from trcc._boot import trcc as _trcc
-        detect_fn = ControllerBuilder(_trcc().os).build_detect_fn()
+        detect_fn = _trcc().detect
     if not (devices := detect_fn()):
         print("No devices found.")
         return 1

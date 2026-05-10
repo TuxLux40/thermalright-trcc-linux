@@ -52,12 +52,12 @@ class TestLinuxBuilderContract:
         from trcc.core.ports import Platform
         assert isinstance(linux_builder.os, Platform)
 
-    def test_build_detect_fn_returns_callable(self, linux_builder):
+    def test_platform_iterable(self, linux_builder):
+        """Phase 3: detect via list(platform) instead of build_detect_fn wrapper."""
         from unittest.mock import patch
         with patch("trcc.adapters.device.detector.DeviceDetector.make_detect_fn",
                    return_value=lambda: []):
-            fn = linux_builder.build_detect_fn()
-        assert callable(fn)
+            assert list(linux_builder.os) == []
 
     def test_build_device_led_returns_led(self, linux_builder):
         from trcc.core.device import Device
