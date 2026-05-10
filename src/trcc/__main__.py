@@ -47,6 +47,18 @@ logging.basicConfig(
 log = logging.getLogger('trcc.main')
 log.info("Starting TRCC — platform=%s, executable=%s", sys.platform, sys.executable)
 
+# Windows: stdout/stderr default to cp1252, which can't encode common
+# Unicode chars used in log messages (e.g. ``→``).  Without this, every
+# log emit that hits a StreamHandler raises UnicodeEncodeError and
+# Python's default error path prints the entire traceback to the console.
+# Reconfigure to UTF-8 with ``errors='replace'`` — modern terminals
+# (Windows Terminal, PowerShell 7+) render it correctly; legacy cmd.exe
+# falls back to ``?`` rather than crashing.
+if sys.platform == 'win32':
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, 'reconfigure'):
+            _stream.reconfigure(encoding='utf-8', errors='replace')
+
 # Windows: ensure libusb-1.0.dll is findable by pyusb (ctypes).
 # PyInstaller bundles the DLL next to the exe, but Python 3.8+ on Windows
 # doesn't search the exe's directory for ctypes DLLs unless explicitly told.
