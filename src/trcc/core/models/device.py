@@ -149,7 +149,7 @@ ALL_DEVICES: dict[tuple[int, int], DeviceEntry] = {
 }
 
 
-@dataclass
+@dataclass(slots=True)
 class DeviceInfo:
     """
     Information about a connected LCD device.

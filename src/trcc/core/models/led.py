@@ -35,7 +35,7 @@ class LEDZoneState:
     on: bool = True
 
 
-@dataclass
+@dataclass(slots=True)
 class LEDState:
     """Complete LED device state matching FormLED.cs globals.
 
