@@ -1,5 +1,17 @@
 # Changelog
 
+## v9.5.8
+
+### User-facing fixes
+- **#144 Tee86 — LCD stays black after Linux suspend/resume.** The OS suspend cycle dropped USB power on the panel, but the app held a cached SCSI fd whose underlying USB device had silently re-enumerated; subsequent writes went into a closed handle and the firmware never saw a fresh handshake. v9.5.8 hooks systemd-logind's `PrepareForSleep` D-Bus signal at the Platform layer (was previously GUI-only), tears down every device's transport cleanly before the suspend, and re-runs full discovery on resume. Suspend, wake, the LCD comes back without a reboot. CLI long-running commands (`trcc serve`) and the API daemon now also survive suspend/resume — was previously GUI-only.
+
+### Architecture
+- **Sealed UI ↔ adapters seam** — `src/trcc/ui/` can no longer import from `trcc.adapters.device.*` (enforced by `flake8-tidy-imports` banned-api lint). Every device action travels through `trcc.lcd` / `trcc.led` / `trcc.control_center` / `trcc.probe` / `trcc.handshake` / `trcc.cleanup`. Future regressions become a CI failure, not a code-review oversight. Six pre-existing UI bypass sites deleted (cli probe, cli system, cli perf, api perf, gui handshake worker, gui close-event).
+- **Pythonic `Platform` and `Trcc` surface.** `Platform.for_current_os()` classmethod replaces module-level `make_platform()`. `for d in platform` enumerates USB. `platform.sensors` is a `@cached_property` instead of `create_sensor_enumerator()`. `(0x0402, 0x3922) in trcc` and `trcc[(vid, pid)]` work as you'd expect. Composition reads like English.
+- **Resolution alias merge — 5 names → 1.** `output_resolution` / `canvas_resolution` / `effective_resolution` / `_rotated_resolution` all collapsed into `canvas_size` on `DisplayService`; `LCDDevice` lost the three corresponding delegates. Native dims stay on `lcd_size`. The pattern that produced #137 (FW360 Ultra upside-down) was alias drift — fixed structurally so the bug class can't return.
+- **`SYSTEM_SUSPENDED` / `SYSTEM_RESUMED` events** on the EventBus — UIs subscribe to flush their own resources on suspend (GUI screencast stops here). Verified end-to-end by `dev/smoke_sleep_cycle.py` (13 assertions on suspend → cleanup → discover → resume order).
+- **`ControllerBuilder` cleanup** — deleted 5 thin one-line wrappers (`build_ensure_data_fn`, `build_download_fns`, `build_detect_fn`, `build_device_svc`, `build_hardware_fns`); callers go straight to source. The two real composers (`build_device`, `build_system`) stay.
+
 ## v9.5.7
 
 ### User-facing fixes
