@@ -1,5 +1,58 @@
 # Changelog
 
+## v9.5.10
+
+### User-facing fixes
+
+- **trcc gui crashes on launch on every Linux v9.5.9 install.** v9.5.9's
+  `subscribe_power` (the #144 Tee86 post-suspend hook) called PySide6's
+  `QDBusConnection.connect()` with a Python callable, but PySide6 only
+  binds D-Bus signals to a `QObject` receiver paired with a SLOT-bytes
+  string. Every `trcc` invocation hit
+  `TypeError: 'PySide6.QtDBus.QDBusConnection.connect' called with wrong
+  argument types: (str, str, str, str, str, function)` at
+  `Trcc.__init__` and exited 1 — meaning the desktop entry / `trcc gui`
+  / `trcc anything` all silently failed.  Fix introduces a tiny
+  `_PrepareForSleepBridge(QObject)` with a `@Slot(bool)` handler held by
+  reference on `LinuxPlatform`, plus a defensive try/except around
+  `bus.connect` so any future PySide6 API tweak degrades to "suspend
+  hook inactive" instead of crashing the launcher.
+- **#136 questist — `trcc video` → `range() arg 3 must not be zero`.** When
+  the device handshake didn't extract PM/SUB the resolution collapsed to
+  a zero dimension and reached `VideoDecoder` unchecked, producing the
+  cryptic range() error from the decode loop. `_decode` now raises a
+  clear `ValueError` at entry naming the actual problem (handshake
+  didn't determine the resolution) and points at `trcc report`.
+- **#131 lallemandgianni — `'DeviceInfo' has no attribute 'addr'` →
+  `wmi.x_wmi_uninitialised_thread`.** The addr-threading half was fixed
+  in v9.5.2; v9.5.10 closes the second half. Worker-thread WMI calls
+  (USB enumeration, sensor discovery) crashed because
+  `pythoncom.CoInitialize()` was never called. New
+  `_windows_wmi.wmi_handle()` helper centralizes the discipline; all 5
+  WMI call sites in `windows_platform.py` + `windows/detector.py` route
+  through it.
+
+### Tooling for contributors
+
+- **`dev/smoke_anything.py` — parameterized OS / device / from-report
+  harness.** Drop a `trcc report` dump from a GitHub issue into the
+  `--from-report` flag and the harness runs every probe through the
+  fully DI'd stack at the reporter's exact OS + VID:PID. Each probe is
+  a real-bug class we've already paid for; if any goes `BAD`, that's
+  the bug. Probes today cover video target dims, addr-threading, RAPL
+  permission, geometry stability, handshake idempotency, sleep/resume
+  cycle, WMI CoInitialize.
+
+### Internal
+
+- `slots=True` on `DeviceInfo` and `LEDState` (Kite shape — hot
+  containers, no `__dict__` needed).
+- Documentation refresh: src/ tree under README/CLAUDE shows current
+  ui/{gui,cli,api} layout; CLI/API counts updated everywhere
+  (49→78 endpoints, 56/58/60→95 commands); 65 untagged code blocks
+  across `doc/` now carry language hints; `README` Documentation table
+  fixes a dead link to a doc/audit/ folder that never existed.
+
 ## v9.5.9
 
 Fast follow-up — v9.5.8 packages didn't build because release CI runs
