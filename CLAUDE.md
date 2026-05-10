@@ -21,7 +21,7 @@ Legacy architecture follows below.
 - **Builder** (`core/builder.py`): `ControllerBuilder` — fluent builder, assembles devices with DI. Composition root: imports adapters to inject into services.
 - **Views** (`gui/`): PySide6 GUI adapter. `TRCCApp` (thin shell) + `LCDHandler`/`LEDHandler` (one per device).
 - **CLI** (`cli/`): Typer CLI adapter (package: `__init__.py` + 8 submodules). Thin wrappers over `LCDDevice`/`LEDDevice`.
-- **API** (`api/`): FastAPI REST adapter (package: `__init__.py` + 7 submodules). 49 endpoints. WebSocket preview stream + cloud themes + export. Uses `LCDDevice`/`LEDDevice` from core/.
+- **API** (`api/`): FastAPI REST adapter (package: `__init__.py` + 7 submodules). 78 endpoints. WebSocket preview stream + cloud themes + export. Uses `LCDDevice`/`LEDDevice` from core/.
 - **Config** (`conf.py`): `Settings` singleton. `init_settings(platform)` called by composition roots. Single source of truth for mutable app state.
 - **Entry**: `cli/` → `trcc_app.py` (TrccApp) → builder.build_device()
 - **Protocols**: All protocols implement `send_data()` — SCSI (LCD frames), HID (handshake/resolution), LED (RGB effects + segment displays)

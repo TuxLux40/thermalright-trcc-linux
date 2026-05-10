@@ -891,11 +891,11 @@ trcc detect
 ```
 
 You should see something like:
-```
+```json
 [1] 0402:3922  ALi Corp  (SCSI)  path=/dev/sg1
 ```
 or for HID devices:
-```
+```json
 [1] 0416:5302  USBDISPLAY  (HID)  path=1-8.1
 ```
 

@@ -30,7 +30,7 @@ The terminal is your command line. It's like PowerShell or Command Prompt, but m
 - Or search "Terminal" in your app menu
 
 You'll see something like:
-```
+```text
 user@computer:~$
 ```
 

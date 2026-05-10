@@ -4,7 +4,7 @@ Complete reference for the `trcc` command-line interface.
 
 ## Usage
 
-```
+```bash
 trcc [--version] [-v] <command> [options]
 ```
 
@@ -54,7 +54,7 @@ trcc detect --all      # list all detected devices
 
 **Example output:**
 
-```
+```text
 * [1] /dev/sg2 — Thermalright LCD Display [87cd:70db] (SCSI)
   [2] /dev/sg3 — ALi Corp LCD Display [0416:5406] (SCSI)
 ```
@@ -155,7 +155,7 @@ trcc info
 
 **Example output:**
 
-```
+```text
 System Information
 ========================================
 
@@ -266,7 +266,7 @@ trcc hid-debug --test-frame   # send red test frame after handshake
 
 **Example output:**
 
-```
+```text
 HID Debug — Handshake Diagnostic
 ============================================================
 
@@ -441,7 +441,7 @@ trcc shell
 ```
 
 Inside the shell:
-```
+```text
 trcc> detect
   [1] 0402:3922  Frozen Warframe  (SCSI)  path=/dev/sg0
 trcc> brightness 80
@@ -502,7 +502,7 @@ trcc lang
 ```
 
 **Example output:**
-```
+```text
 en (English)
 ```
 
@@ -531,7 +531,7 @@ trcc lang-list
 ```
 
 **Example output:**
-```
+```text
 Available languages (38):
   de     Deutsch
   en     English

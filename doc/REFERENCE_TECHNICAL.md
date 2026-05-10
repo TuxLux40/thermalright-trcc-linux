@@ -101,7 +101,7 @@ Theme archives for all 15 LCD resolutions are tracked in git. On first use, `ens
 4. Extracts via system `7z` CLI
 5. Falls back to `~/.trcc/data/` if the package dir is read-only
 
-```
+```text
 src/trcc/data/
 ├── Theme240240.7z          # All 16 resolutions bundled
 ├── Theme240320.7z
@@ -141,7 +141,7 @@ Mask-only themes (in `zt*/` directories) omit `00.png`.
 All communication via `sg_raw` to `/dev/sgX`. Source: reverse-engineered from `USBLCD.exe` (native C++/MFC) via Ghidra decompilation.
 
 **Header format (20 bytes):**
-```
+```text
 bytes[0:3]   = command (LE uint32)
 bytes[4:11]  = zeros
 bytes[12:15] = data size (LE uint32)
@@ -153,7 +153,7 @@ Only bytes[0:15] are sent as the SCSI CDB (16-byte). The CRC32 is appended but t
 
 The 4-byte command field encodes a structured protocol:
 
-```
+```text
 byte[0] = 0xF5   (always — protocol marker)
 byte[1] = sub-command:
     0x00 = poll/read
@@ -193,7 +193,7 @@ byte[3] = chunk/frame index
 
 ### Initialization Sequence
 
-```
+```text
 1. Poll:  0xF5   READ  0xE100 bytes → check device ready, detect resolution
 2. Init:  0x1F5  WRITE 0xE100 zeros → initialize display controller
 ```
@@ -305,7 +305,7 @@ The LED handshake reads a PM (product mode) byte from the device, which maps to 
 
 ### LED Packet Format
 
-```
+```text
 Byte 0:     Report ID (0x00)
 Byte 1:     Command (0xA0 = LED data)
 Byte 2:     Global on/off (0x01 = on, 0x00 = off)
@@ -358,7 +358,7 @@ Same HID-style handshake as other devices. PM byte maps through `pm_to_fbl()` �
 
 Frames are JPEG-encoded and split into 512-byte chunks:
 
-```
+```text
 Each chunk (512 bytes):
   Bytes 0-15:   Header (16 bytes)
     [0]:        0xEF (magic)
@@ -440,7 +440,7 @@ Prefixes: `A0` (startup), `A1` (device images), `A2` (dropdowns), `D0` (device p
 
 Hexagonal architecture (Ports & Adapters). Services are the core hexagon; CLI, GUI, API, and Setup GUI are driving adapters.
 
-```
+```text
 src/trcc/
 ├── cli/                         # Typer CLI adapter package (8 submodules)
 ├── api/                         # FastAPI REST adapter package (7 submodules)
@@ -547,7 +547,7 @@ src/trcc/
 
 ### Device Detection Flow
 
-```
+```text
 1. lsusb → find known VID:PID
 2. lsscsi → map USB to /dev/sgX
 3. sysfs → verify USBLCD vendor

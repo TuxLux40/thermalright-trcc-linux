@@ -5,7 +5,7 @@ This binary handles **non-SCSI LCD devices** on Windows via LibUsbDotNet raw USB
 
 ## Overview
 
-```
+```text
 Windows:  TRCC.exe ──shared memory──> USBLCDNEW.exe ──LibUsbDotNet──> USB Bulk EP
 Linux:    trcc ──────────────────────────────────────────────────────> PyUSB/HIDAPI
 ```
@@ -53,7 +53,7 @@ These constants are defined in the class but used by TRCC.exe when preparing com
 
 ### Memory Layout
 
-```
+```text
 Name:       "shareMemory_ImageRGB"
 Total size: 34,560,000 bytes (50 slots × 691,200 bytes/slot)
 Slot size:  691,200 bytes
@@ -80,7 +80,7 @@ After processing a send trigger, USBLCDNEW clears byte[2] to 0.
 
 ### USB Configuration
 
-```
+```text
 Endpoint Write: EP01 OUT
 Endpoint Read:  EP01 IN
 ```
@@ -88,7 +88,7 @@ Endpoint Read:  EP01 IN
 ### Handshake
 
 Send 64 bytes:
-```
+```text
 Offset  Value
 0-3     12 34 56 78    (magic: 0x12345678)
 4-55    00 00 ...      (zeros)
@@ -104,7 +104,7 @@ Two branches based on `response[56]`:
 
 **Branch A — `response[56] == 0x81` (129):** Reads bytes 48-51 as 4-byte hex string for device name.
 
-```
+```text
 9-byte header + 8-char hex string:
 
 Byte  Source          Purpose
@@ -122,7 +122,7 @@ Byte  Source          Purpose
 
 **Branch B — all other `response[56]` values:** Uses device path string as device name.
 
-```
+```text
 Same 9-byte header, but:
 8     path.Length     Device path string length
 9+    path bytes      UTF-8 device path from DevicePath.Split('#')[2]
@@ -144,7 +144,7 @@ The 64-byte offset suggests the frame data has a 64-byte internal header (prepar
 
 ### USB Configuration
 
-```
+```text
 Endpoint Write: EP02 OUT    ← NOTE: different endpoint than 87CD
 Endpoint Read:  EP01 IN
 ```
@@ -152,7 +152,7 @@ Endpoint Read:  EP01 IN
 ### Handshake (DA/DB/DC/DD)
 
 Send 512 bytes:
-```
+```text
 Offset  Value
 0-3     DA DB DC DD    (magic handshake)
 4-11    00 00 ...      (zeros)
@@ -162,7 +162,7 @@ Offset  Value
 ```
 
 Read 512 bytes response. Validate:
-```
+```text
 response[0]  == 0xDA
 response[1]  == 0xDB
 response[2]  == 0xDC
@@ -210,7 +210,7 @@ The 20-byte offset suggests the frame data has a 20-byte internal header (the DA
 
 ### USB Configuration
 
-```
+```text
 Endpoint Write: EP02 OUT    ← Same as 0416:5302
 Endpoint Read:  EP01 IN
 ```
@@ -218,7 +218,7 @@ Endpoint Read:  EP01 IN
 ### Handshake (SCSI-like 0xF5)
 
 Send 16 + 1024 = 1040 bytes:
-```
+```text
 Header (16 bytes):
 Offset  Value
 0       F5             (SCSI protocol marker)
@@ -234,7 +234,7 @@ All zeros
 ```
 
 Read 1024 bytes response. Check:
-```
+```text
 response[0] == '6' (0x36) → 240×320 display (frame size 153,600 bytes)
 response[0] == 'e' (0x65) → 320×320 display (frame size 204,800 bytes)
 response[0] == 'f' (0x66) → other resolution (frame size 204,800 bytes)
@@ -268,7 +268,7 @@ Frame size depends on resolution code:
 - all others: 204,800 bytes (320×320×2)
 
 Send 16 + frame_size bytes as one USB bulk write:
-```
+```text
 Header (16 bytes):
 Offset  Value
 0       F5             (SCSI protocol marker)
@@ -297,7 +297,7 @@ These appear at bytes[4:7] in both poll and frame headers. They may be a constan
 
 ### USB Configuration
 
-```
+```text
 Endpoint Write: EP09 OUT    ← Unique endpoint, different from all other protocols
 Endpoint Read:  EP01 IN
 ```
@@ -305,7 +305,7 @@ Endpoint Read:  EP01 IN
 ### Handshake
 
 Send 16 + 2032 = 2048 bytes:
-```
+```text
 Header (16 bytes):
 Offset  Value
 0       02             (command)
@@ -319,7 +319,7 @@ All zeros
 ```
 
 Read 512 bytes response. Validate:
-```
+```text
 response[0] == 0x03
 response[1] == 0xFF
 response[8] == 0x01
@@ -353,7 +353,7 @@ Data begins at offset 64 within the slot (same as 87CD:70DB).
 
 Frame is split into 512-byte chunks with 496 bytes of payload each:
 
-```
+```text
 Each chunk (512 bytes):
 Offset  Value
 0       01             (chunk marker)
@@ -377,7 +377,7 @@ Chunks are sent in **4096-byte bursts** (8 chunks at a time). If the remaining d
 
 ### USB Configuration
 
-```
+```text
 Endpoint Write: EP02 OUT    ← Same as 0416:5302 and 0416:5406
 Endpoint Read:  EP01 IN
 ```
@@ -385,7 +385,7 @@ Endpoint Read:  EP01 IN
 ### Handshake
 
 Send 16 + 496 = 512 bytes:
-```
+```text
 Header (16 bytes):
 Same as LY: {02, FF, 00, 00, 00, 00, 00, 00, 01, 00, 00, 00, 00, 00, 00, 00}
 
@@ -394,7 +394,7 @@ All zeros
 ```
 
 Read 511 bytes response. Validate:
-```
+```text
 response[0] == 0x03
 response[1] == 0xFF
 response[8] == 0x01

@@ -10,7 +10,7 @@ No UI gets shortcuts. No UI gets left behind. Adding a capability means adding i
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │  GUI handlers    CLI subcommands    API endpoints│   UI tier — dumb pipes
 │       ↘              ↓                  ↙       │
@@ -36,7 +36,7 @@ No UI gets shortcuts. No UI gets left behind. Adding a capability means adding i
 
 Widgets never read `conf.settings`, never import `core.device.Device`, never call services.
 
-```
+```text
 widget input → command → result → widget paints result
                   ↓
               EventBus → handler subscribes → widget paints event payload
@@ -50,7 +50,7 @@ Three consequences:
 
 ## File layout
 
-```
+```text
 core/
   trcc.py                      — facade: composes the three + EventBus
   lcd_commands.py              — LCDCommands (28 methods)

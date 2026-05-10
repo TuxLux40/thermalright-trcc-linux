@@ -8,7 +8,7 @@ The hexagonal architecture was correct. The SOLID principles were correct. The C
 
 ## Result — Hexagonal Layers
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │  Adapters (thin — parse input, format output)   │
 │                                                 │
@@ -58,7 +58,7 @@ None of this requires a CommandBus. It requires clean interfaces and dependency 
 
 One device list, indexed. Handshake determines type. Index is the universal selector.
 
-```
+```json
 [0] Frozen Warframe Pro  (LCD, 320x320, /dev/sg2)
 [1] AX120 R3             (LED, 6 zones, /dev/hidraw3)
 ```

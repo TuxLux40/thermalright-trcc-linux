@@ -2,7 +2,7 @@
 
 ## Big picture
 
-```
+```text
                    ┌──────────────────────────────────┐
                    │  Composition root (_boot.trcc)   │
                    │  Builds either:                  │
@@ -156,7 +156,7 @@ Every command that mutates state publishes its topic.  Subscribers (GUI handlers
 
 `LCDDevice` and `LEDDevice` are the device-level facades.  `LCDDevice` was split in 10B:
 
-```
+```text
 LCDDevice                 (core/device/lcd.py — the facade)
 ├── LCDPersistence        (core/device/lcd_persistence.py)
 │       SRP: per-device config writes, restore_device_settings reads
@@ -171,7 +171,7 @@ LCDDevice                 (core/device/lcd.py — the facade)
 
 `DisplayService` is the orchestrator.  Its rendering subgraph and CLI/API blocking loops were split in 10B:
 
-```
+```text
 DisplayService            (services/display.py — orchestrator + state)
 ├── RenderPipeline        (services/display_pipeline.py)
 │       SRP: pure rendering — composite, brightness, split overlay,

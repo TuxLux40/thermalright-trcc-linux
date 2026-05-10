@@ -44,7 +44,7 @@ curl -H "X-API-Token: mysecret" http://localhost:9876/devices
 
 WebSocket connections use a query parameter instead:
 
-```
+```text
 ws://localhost:9876/display/preview/stream?token=mysecret
 ```
 

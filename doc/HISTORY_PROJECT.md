@@ -30,7 +30,7 @@ All Thermalright display devices communicate over USB, but use 5 different proto
 ## Resolution Discovery Pipeline (Hardest Problem)
 The single biggest source of bugs was resolution. Devices don't report resolution directly — you get a PM (product mode) byte from the handshake, convert it to an FBL (framebuffer layout) code, then look up the resolution. Getting any step wrong cascades into wrong image size, wrong encoding, wrong byte order, and garbled display.
 
-```
+```text
 Handshake → PM byte → pm_to_fbl() → FBL code → fbl_to_resolution() → (width, height)
                                                                      ↓
                                                         JPEG_MODE_FBLS check → encoding mode
@@ -41,7 +41,7 @@ Handshake → PM byte → pm_to_fbl() → FBL code → fbl_to_resolution() → (
 **FBL table completeness is critical.** Missing FBL values default to (320, 320) which silently produces wrong encoding, wrong byte order, and no pre-rotation. This caused #24 (triple/overlapping images) — FBL 58 was missing.
 
 Current FBL table (16 entries, full C# parity):
-```
+```text
 36→240x240  37→240x240  50→320x240  51→320x240(BE)  53→320x240(BE)
 54→360x360  58→320x240  64→640x480  72→480x480  100→320x320(BE)
 101→320x320(BE)  102→320x320(BE)  114→1600x720  128→1280x480

@@ -47,7 +47,7 @@
 [![Buy Me a Beer](https://img.shields.io/badge/Buy_Me_a_Beer-🍺-FF5F5F?style=flat)](https://buymeacoffee.com/Lexonight1)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-☕-FF5E5B?style=flat&logo=kofi&logoColor=white)](https://ko-fi.com/lexonight1)
 
-> Huge thanks to **[@Reborn627](https://github.com/Reborn627)**, **[@nihilistqueen](https://github.com/nihilistqueen)**, **[@javisaman](https://github.com/javisaman)**, **[@woebygon](https://github.com/woebygon)**, **[@knappstar](https://github.com/knappstar)**, **[@chava-byte](https://github.com/chava-byte)**, **[@loosethoughts19-hash](https://github.com/loosethoughts19-hash)**, **[@rhuggins573-crypto](https://github.com/rhuggins573-crypto)**, **[@Mr-Renegade](https://github.com/Mr-Renegade)**, **[@Xentrino](https://github.com/Xentrino)**, and **[@Smokemic](https://github.com/Smokemic)** for the beers — you guys are legends.
+> Huge thanks to **[@Xentrino](https://github.com/Xentrino)**, **[@javisaman](https://github.com/javisaman)**, **[@loosethoughts19-hash](https://github.com/loosethoughts19-hash)**, **[@Reborn627](https://github.com/Reborn627)**, **[@Mr-Renegade](https://github.com/Mr-Renegade)**, **[@knappstar](https://github.com/knappstar)**, **[@woebygon](https://github.com/woebygon)**, **[@Smokemic](https://github.com/Smokemic)**, **[@chava-byte](https://github.com/chava-byte)**, **[@nihilistqueen](https://github.com/nihilistqueen)**, **[@rhuggins573-crypto](https://github.com/rhuggins573-crypto)**, **[@unfirthman](https://github.com/unfirthman)**, **Glyn**, **dugalex**, and **Dunvcpi** for the beers — you guys are legends.
 
 Native Linux port of the Thermalright LCD Control Center (Windows TRCC 2.1.2). Control and customize the LCD displays and LED segment displays on Thermalright CPU coolers, AIO pump heads, and fan hubs — entirely from Linux.
 
@@ -176,7 +176,7 @@ trcc serve --tls              # HTTPS with auto-generated self-signed cert
 trcc serve --host 0.0.0.0     # Listen on all interfaces (LAN access)
 ```
 
-49 endpoints covering devices, display, LED, themes, and system metrics. Use `trcc api` to list all endpoints.
+78 endpoints covering devices, display, LED, themes, and system metrics. Use `trcc api` to list all endpoints.
 
 ```bash
 # Examples with curl
@@ -200,7 +200,7 @@ Set the angle to **90°** (or 270°) in the GUI, then open **Cloud Themes** — 
 | [Install Guide](doc/GUIDE_INSTALL.md) | Installation for all major distros |
 | [CLI Reference](doc/REFERENCE_CLI.md) | All CLI commands with options and examples |
 | [User Guide](doc/GUIDE_USER.md) | How to use everything — GUI, themes, overlays, media, LED |
-| [API Reference](doc/REFERENCE_API.md) | All 49 REST API endpoints with request/response models |
+| [API Reference](doc/REFERENCE_API.md) | All 78 REST API endpoints with request/response models |
 | [Troubleshooting](doc/GUIDE_TROUBLESHOOTING.md) | Common issues and fixes |
 | [New to Linux](doc/GUIDE_NEW_TO_LINUX.md) | Guide for Linux beginners |
 | [Changelog](doc/CHANGELOG.md) | Version history |
@@ -214,7 +214,7 @@ Set the angle to **90°** (or 270°) in the GUI, then open **Cloud Themes** — 
 
 | Document | Description |
 |----------|-------------|
-| [USBLCD Protocol](doc/audit/USBLCD_PROTOCOL.md) | SCSI frame transfer protocol |
+| [Technical Reference](doc/REFERENCE_TECHNICAL.md) | SCSI protocol, FBL detection, PM/SUB mapping |
 | [USBLCDNEW Protocol](doc/PROTOCOL_USBLCDNEW.md) | USB bulk/LY frame transfer protocol |
 | [USBLED Protocol](doc/PROTOCOL_USBLED.md) | HID LED segment display protocol |
 
@@ -224,7 +224,7 @@ Set the angle to **90°** (or 270°) in the GUI, then open **Cloud Themes** — 
 |----------|-------------|
 | **GUI** | Full PySide6 desktop app — theme browser, video player, overlay editor, LED control panel, 38 languages |
 | **CLI** | `trcc gui`, `trcc send`, `trcc video`, `trcc led-color`, `trcc screencast`, `trcc shell`, and more |
-| **REST API** | 49 endpoints — control everything remotely, build integrations, automate your setup |
+| **REST API** | 78 endpoints — control everything remotely, build integrations, automate your setup |
 | **Themes** | Local, cloud, and masks — carousel mode, export/import as `.tr` files, custom mask upload with X/Y positioning, 5 starters + 120 masks per resolution |
 | **Media** | Video/GIF playback on LCD, video trimmer, image cropper, screen cast (X11 + Wayland), mic audio visualization |
 | **Overlay Editor** | Text, sensors, date/time overlays — font picker, dynamic scaling, color picker |
@@ -293,19 +293,35 @@ Run `lsusb` to find your USB ID (`xxxx:xxxx` after `ID`), then match it below.
 
 ## Architecture
 
-```
+```text
 src/trcc/
 ├── core/           # Models, enums, domain constants — zero I/O
 ├── services/       # Business logic — pure Python, no framework deps
 ├── adapters/       # USB device protocols (SCSI, HID, Bulk, LY, LED)
-├── gui/  # PySide6 GUI (themes, video, overlay, LED, sensors)
-├── cli/            # Typer CLI — 56 commands across 8 modules
-├── api/            # FastAPI REST API — 49 endpoints across 7 modules
+├── ui/
+│   ├── gui/        # PySide6 GUI — themes, video, overlay, LED, sensors
+│   ├── cli/        # Typer CLI — 95 commands across 8 modules
+│   └── api/        # FastAPI REST API — 78 endpoints across 7 modules
+├── _boot.py        # Composition root — returns Trcc or TrccProxy
+├── daemon.py       # Optional singleton daemon mode (TRCC_DAEMON=1)
+├── ipc.py          # Manifold IPC — UI ↔ daemon over Unix socket
 ├── conf.py         # Settings singleton
 └── assets/         # GUI images, desktop entry, polkit policy, systemd service
 ```
 
 **Hexagonal architecture** — GUI, CLI, and API are interchangeable adapters over the same core services. Adding a new interface (Android app, Home Assistant plugin) means writing a new adapter, not touching business logic.
+
+### Reproducing reporter bugs (contributors)
+
+When a `trcc report` lands on an issue, the harness in `dev/smoke_anything.py` runs every probe — handshake idempotency, video target dims, RAPL discovery, WMI CoInitialize, addr-threading, sleep/resume cycle — through the fully DI'd stack at the reporter's exact OS + device:
+
+```bash
+PYTHONPATH=src python3 dev/smoke_anything.py --from-report report.txt
+PYTHONPATH=src python3 dev/smoke_anything.py --os linux --device 87ad:70db
+PYTHONPATH=src python3 dev/smoke_anything.py --list-probes
+```
+
+If a probe goes `BAD`, that's the bug — fix in `src/`, re-run, see `PASS`. Every reproduced regression becomes a new probe in `PROBES`, so the next reporter with the same root cause gets caught in 30 seconds. Discipline: never reply "try vX.Y.Z" until a probe has actually gone `PASS` against the reporter's environment.
 
 **6 USB protocols** reverse-engineered from the Windows C# app:
 
@@ -364,13 +380,13 @@ Special thanks to everyone who has contributed invaluable reports to this projec
 
 Thanks to everyone who took a moment to star this project.
 
-**[akasvi](https://github.com/akasvi)** · **[alessa-lara](https://github.com/alessa-lara)** · **[ArcaneCoder404](https://github.com/ArcaneCoder404)** · **[azrael1911](https://github.com/azrael1911)** · **[betolink](https://github.com/betolink)** · **[bive242](https://github.com/bive242)** · **[BrunoLeguizamon05](https://github.com/BrunoLeguizamon05)** · **[cancos1](https://github.com/cancos1)** · **[cesarnr21](https://github.com/cesarnr21)** · **[codeflitting](https://github.com/codeflitting)** · **[dabombUSA](https://github.com/dabombUSA)** · **[damachine](https://github.com/damachine)** · **[DasFlogetier](https://github.com/DasFlogetier)** · **[david43](https://github.com/david43)** · **[eap5](https://github.com/eap5)** · **[emaspa](https://github.com/emaspa)** · **[falumamx](https://github.com/falumamx)** · **[Gdetrane](https://github.com/Gdetrane)** · **[greaseyjockey](https://github.com/greaseyjockey)** · **[gupsterg](https://github.com/gupsterg)** · **[israelsz](https://github.com/israelsz)** · **[jezzaw007](https://github.com/jezzaw007)** · **[jhlasnik](https://github.com/jhlasnik)** · **[jmo808](https://github.com/jmo808)** · **[Jorann](https://github.com/Jorann)** · **[knappstar](https://github.com/knappstar)** · **[Legendarycentaur](https://github.com/Legendarycentaur)** · **[Leonnaki](https://github.com/Leonnaki)** · **[lotte25](https://github.com/lotte25)** · **[mgaruccio](https://github.com/mgaruccio)** · **[michelle0812](https://github.com/michelle0812)** · **[mkogut](https://github.com/mkogut)** · **[nathanielhernandez](https://github.com/nathanielhernandez)** · **[NuiQuant](https://github.com/NuiQuant)** · **[oddajpierscien](https://github.com/oddajpierscien)** · **[okrzanowska](https://github.com/okrzanowska)** · **[PantherX12max](https://github.com/PantherX12max)** · **[Pewful2021](https://github.com/Pewful2021)** · **[Pikarz](https://github.com/Pikarz)** · **[qussaif10](https://github.com/qussaif10)** · **[qwerty22121998](https://github.com/qwerty22121998)** · **[Rehaell](https://github.com/Rehaell)** · **[rhuggins573-crypto](https://github.com/rhuggins573-crypto)** · **[riodevelop](https://github.com/riodevelop)** · **[rslater](https://github.com/rslater)** · **[saucymcbeef](https://github.com/saucymcbeef)** · **[shadowepaxeor-glitch](https://github.com/shadowepaxeor-glitch)** · **[ShaunnyBwoy](https://github.com/ShaunnyBwoy)** · **[Smokemic](https://github.com/Smokemic)** · **[Spebelgenenst](https://github.com/Spebelgenenst)** · **[spiritofjon](https://github.com/spiritofjon)** · **[stephenvalente](https://github.com/stephenvalente)** · **[Thymur](https://github.com/Thymur)** · **[Torotin](https://github.com/Torotin)** · **[urbnywrt](https://github.com/urbnywrt)** · **[Vydon](https://github.com/Vydon)** · **[Xentrino](https://github.com/Xentrino)** · **[YahusRevus](https://github.com/YahusRevus)** · **[Ziusz](https://github.com/Ziusz)**
+**[akasvi](https://github.com/akasvi)** · **[alessa-lara](https://github.com/alessa-lara)** · **[alicepolice](https://github.com/alicepolice)** · **[ArcaneCoder404](https://github.com/ArcaneCoder404)** · **[Arty-x-g](https://github.com/Arty-x-g)** · **[azrael1911](https://github.com/azrael1911)** · **[betolink](https://github.com/betolink)** · **[bfesfbsbfesfbn](https://github.com/bfesfbsbfesfbn)** · **[bive242](https://github.com/bive242)** · **[BrunoLeguizamon05](https://github.com/BrunoLeguizamon05)** · **[cancos1](https://github.com/cancos1)** · **[capiazmi](https://github.com/capiazmi)** · **[cesarnr21](https://github.com/cesarnr21)** · **[codeflitting](https://github.com/codeflitting)** · **[curttheg](https://github.com/curttheg)** · **[dabombUSA](https://github.com/dabombUSA)** · **[damachine](https://github.com/damachine)** · **[DasFlogetier](https://github.com/DasFlogetier)** · **[david43](https://github.com/david43)** · **[DavidKirkitadze](https://github.com/DavidKirkitadze)** · **[eap5](https://github.com/eap5)** · **[emaspa](https://github.com/emaspa)** · **[enricomarchesin](https://github.com/enricomarchesin)** · **[falumamx](https://github.com/falumamx)** · **[Gdetrane](https://github.com/Gdetrane)** · **[greaseyjockey](https://github.com/greaseyjockey)** · **[gupsterg](https://github.com/gupsterg)** · **[immenz](https://github.com/immenz)** · **[israelsz](https://github.com/israelsz)** · **[jamespo](https://github.com/jamespo)** · **[jaminmc](https://github.com/jaminmc)** · **[jezzaw007](https://github.com/jezzaw007)** · **[jhlasnik](https://github.com/jhlasnik)** · **[jmo808](https://github.com/jmo808)** · **[Jorann](https://github.com/Jorann)** · **[k1w3l](https://github.com/k1w3l)** · **[knappstar](https://github.com/knappstar)** · **[Langustensorbet](https://github.com/Langustensorbet)** · **[Legendarycentaur](https://github.com/Legendarycentaur)** · **[Leonnaki](https://github.com/Leonnaki)** · **[lotte25](https://github.com/lotte25)** · **[m-marcal](https://github.com/m-marcal)** · **[mgaruccio](https://github.com/mgaruccio)** · **[michelle0812](https://github.com/michelle0812)** · **[mkogut](https://github.com/mkogut)** · **[mrsaraiva](https://github.com/mrsaraiva)** · **[narfel](https://github.com/narfel)** · **[nathanielhernandez](https://github.com/nathanielhernandez)** · **[NostraTiepus](https://github.com/NostraTiepus)** · **[NuiQuant](https://github.com/NuiQuant)** · **[oddajpierscien](https://github.com/oddajpierscien)** · **[okrzanowska](https://github.com/okrzanowska)** · **[PantherX12max](https://github.com/PantherX12max)** · **[Pewful2021](https://github.com/Pewful2021)** · **[Pikarz](https://github.com/Pikarz)** · **[psyrie](https://github.com/psyrie)** · **[qussaif10](https://github.com/qussaif10)** · **[qwerty22121998](https://github.com/qwerty22121998)** · **[Reborn627](https://github.com/Reborn627)** · **[Rehaell](https://github.com/Rehaell)** · **[rhuggins573-crypto](https://github.com/rhuggins573-crypto)** · **[riodevelop](https://github.com/riodevelop)** · **[RolandTaverner](https://github.com/RolandTaverner)** · **[rslater](https://github.com/rslater)** · **[satoru8](https://github.com/satoru8)** · **[saucymcbeef](https://github.com/saucymcbeef)** · **[shadowepaxeor-glitch](https://github.com/shadowepaxeor-glitch)** · **[ShaunnyBwoy](https://github.com/ShaunnyBwoy)** · **[sigizito](https://github.com/sigizito)** · **[Smokemic](https://github.com/Smokemic)** · **[Spebelgenenst](https://github.com/Spebelgenenst)** · **[spiritofjon](https://github.com/spiritofjon)** · **[stephenvalente](https://github.com/stephenvalente)** · **[sudo-st8less](https://github.com/sudo-st8less)** · **[Thymur](https://github.com/Thymur)** · **[TimG-NL](https://github.com/TimG-NL)** · **[Torotin](https://github.com/Torotin)** · **[trizmark](https://github.com/trizmark)** · **[TuxLux40](https://github.com/TuxLux40)** · **[urbnywrt](https://github.com/urbnywrt)** · **[vindocel](https://github.com/vindocel)** · **[Viwyn](https://github.com/Viwyn)** · **[Vydon](https://github.com/Vydon)** · **[Xentrino](https://github.com/Xentrino)** · **[YahusRevus](https://github.com/YahusRevus)** · **[zhanghangt](https://github.com/zhanghangt)** · **[Ziusz](https://github.com/Ziusz)**
 
 ## Faulkers
 
 Thanks for carrying the torch — these folks forked the repo to build on it.
 
-**[dabombUSA](https://github.com/dabombUSA)** · **[DasFlogetier](https://github.com/DasFlogetier)** · **[jemte](https://github.com/jemte)** · **[jezzaw007](https://github.com/jezzaw007)** · **[taillis](https://github.com/taillis)**
+**[capiazmi](https://github.com/capiazmi)** · **[dabombUSA](https://github.com/dabombUSA)** · **[danleyb2](https://github.com/danleyb2)** · **[DasFlogetier](https://github.com/DasFlogetier)** · **[elsiedotcafe](https://github.com/elsiedotcafe)** · **[jaminmc](https://github.com/jaminmc)** · **[jemte](https://github.com/jemte)** · **[jezzaw007](https://github.com/jezzaw007)** · **[JoshWrites](https://github.com/JoshWrites)** · **[jwcrowley](https://github.com/jwcrowley)** · **[maniwaroka](https://github.com/maniwaroka)** · **[taillis](https://github.com/taillis)** · **[TuxLux40](https://github.com/TuxLux40)**
 
 ## Donations
 

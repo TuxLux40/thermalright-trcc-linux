@@ -205,7 +205,7 @@ In TRCC, "Animation Linkage" and "Keyboard Linkage" panels were stubs (Visible=f
 
 ## Project Structure Recommendation
 
-```
+```text
 src/
 ├── core/
 │   ├── models.py       # Data classes (ThemeInfo, DeviceInfo, etc.)

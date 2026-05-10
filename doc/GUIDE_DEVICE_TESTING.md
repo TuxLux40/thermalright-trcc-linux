@@ -40,7 +40,7 @@ trcc detect --all
 
 You should see your device listed. Example:
 
-```
+```text
 * [1] No device path found — USBDISPLAY (HID) [0416:5302] (HID)
 ```
 
@@ -58,7 +58,7 @@ trcc hid-debug
 
 Example output:
 
-```
+```text
 HID Debug — Handshake Diagnostic
 ============================================================
 

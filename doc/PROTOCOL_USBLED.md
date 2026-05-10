@@ -7,7 +7,7 @@ For HID LCD devices, see [PROTOCOL_USBLCDNEW.md](PROTOCOL_USBLCDNEW.md).
 
 ## Overview
 
-```
+```text
 Windows:  TRCC.exe → FormLED.cs (effects) → UCDevice.cs (HID sender) → USB HID 64-byte reports
 Linux:    trcc → LEDController (effects) → LedHidSender (chunking) → pyusb/hidapi → USB HID
 ```
@@ -35,7 +35,7 @@ Windows code: `UsbHidDevice(1046, 32769, hidNameList1, 64)` in UCDevice.cs.
 
 64 bytes, mostly zero-padded:
 
-```
+```text
 Offset  Size  Value         Description
 0-3     4     DA DB DC DD   Magic header
 4-11    8     00 × 8        Reserved
@@ -55,7 +55,7 @@ Offset  Size  Value         Description
 
 64 bytes:
 
-```
+```text
 Offset  Size  Value         Description
 0-3     4     DA DB DC DD   Magic echo (must match)
 4       1     ??            Reserved
@@ -108,7 +108,7 @@ From `FormLEDInit()` (FormLED.cs line 1598):
 
 From `SendHidVal()` (FormLED.cs line 4309):
 
-```
+```text
 Offset  Size  Value         Description
 0-3     4     DA DB DC DD   Magic header
 4-11    8     00 × 8        Reserved
@@ -122,7 +122,7 @@ Offset  Size  Value         Description
 
 One RGB triplet per LED, in device wire order:
 
-```
+```text
 Offset      Value    Description
 0           R₀       LED 0 red   (scaled)
 1           G₀       LED 0 green (scaled)
@@ -152,7 +152,7 @@ Off LEDs send `(0, 0, 0)`.
 
 ### Complete Packet
 
-```
+```json
 [20-byte header] + [N × 3 bytes RGB payload]
 ```
 
@@ -167,7 +167,7 @@ From `ThreadSendDeviceData1()` (UCDevice.cs line 983):
 
 The complete packet is split into 64-byte HID reports:
 
-```
+```text
 Packet size   Chunks   Example
 110 bytes     2        [64] + [46→64 padded]
 272 bytes     5        [64] × 4 + [16→64 padded]
@@ -189,7 +189,7 @@ Six effect modes, each implemented as a timer function in FormLED.cs. The timer 
 
 All segments set to the user-selected color `(rgbR1, rgbG1, rgbB1)`.
 
-```
+```text
 for each segment i:
     color[i] = (rgbR1, rgbG1, rgbB1)
 ```
@@ -198,7 +198,7 @@ for each segment i:
 
 Fade in/out with a 66-tick cycle (period ≈ 2 seconds at 30ms ticks).
 
-```
+```text
 Constants:
     BREATHING_PERIOD = 66 ticks
     BREATHING_HALF = 33 ticks (fade in = fade out)
@@ -226,7 +226,7 @@ The 80/20 blend ensures LEDs never go completely dark — they maintain a 20% mi
 
 Smooth 6-phase color transition. All segments show the same color as it cycles through the spectrum.
 
-```
+```text
 Constants:
     COLORFUL_STEP = 28 ticks per phase transition
     6 phases × 28 ticks = 168 tick full cycle (≈ 5 seconds)
@@ -244,7 +244,7 @@ Phases:
 
 Per-LED rainbow using the 768-entry RGB lookup table with phase offset per LED.
 
-```
+```text
 Constants:
     TABLE_SIZE = 768 entries
     STEP = 4 entries per tick
@@ -338,7 +338,7 @@ The HR10 is a NVMe SSD heatsink with a 31-LED 7-segment display. It shares PM=12
 
 ### Physical LED Layout
 
-```
+```text
 Wire positions (left → right on the physical heatsink):
 
 [Digit4] [Digit3] [Digit2] [°] [Digit1] [MB/s] [%]
@@ -362,7 +362,7 @@ Purpose:  MB/s  %   [----Digit 1----] [°]  [----Digit 2----] ...
 Each digit's 7 segments are wired in the order: **c, d, e, g, b, a, f**
 
 Standard 7-segment labeling:
-```
+```text
  aaa
 f   b
 f   b
