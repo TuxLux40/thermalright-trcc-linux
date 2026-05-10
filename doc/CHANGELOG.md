@@ -1,5 +1,19 @@
 # Changelog
 
+## v9.5.9
+
+Fast follow-up — v9.5.8 packages didn't build because release CI runs
+`ruff check .` (full repo), not `ruff check src/ tests/`.  The new
+banned-api lint rule (TID251) and the new sleep cycle smoke (`dev/smoke_sleep_cycle.py`)
+both tripped on the dev/ side (legitimate adapter access for fixtures
++ standard sys.path.insert pattern).  Added a `dev/**/*.py`
+per-file-ignore mirroring the tests/ shape so CI lints clean.
+
+Same content as v9.5.8 — fixes #144 Tee86 post-suspend, sealed UI
+seam, Pythonic Platform/Trcc surface, resolution alias merge,
+ControllerBuilder cleanup.  Just with packages that actually build
+this time.
+
 ## v9.5.8
 
 ### User-facing fixes
