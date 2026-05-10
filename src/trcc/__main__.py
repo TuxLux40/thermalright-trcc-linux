@@ -17,12 +17,30 @@ _log_dir = Path.home() / '.trcc'
 _log_dir.mkdir(parents=True, exist_ok=True)
 _log_path = _log_dir / 'trcc.log'
 
+
+# Windows-only: stdlib RotatingFileHandler can't rotate a file that's open
+# in another process — ``os.rename`` fails with WinError 32 and the default
+# error path prints the traceback to stderr *and* drops the log record.
+# Linux/macOS rename of an open file works, so they use the stdlib handler.
+if sys.platform == 'win32':
+    class _SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
+        def doRollover(self) -> None:
+            try:
+                super().doRollover()
+            except (PermissionError, OSError):
+                pass
+
+    _rotating_handler_cls: type[logging.handlers.RotatingFileHandler] = _SafeRotatingFileHandler
+else:
+    _rotating_handler_cls = logging.handlers.RotatingFileHandler
+
+
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s [%(levelname)s] %(name)s.%(funcName)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     handlers=[
-        logging.handlers.RotatingFileHandler(
+        _rotating_handler_cls(
             _log_path, maxBytes=1_000_000, backupCount=3),
     ],
 )

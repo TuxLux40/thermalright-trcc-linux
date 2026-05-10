@@ -66,6 +66,11 @@ jobs:
             --hidden-import PySide6.QtSvg `
             --hidden-import pynvml `
             --hidden-import wmi `
+            --hidden-import HardwareMonitor `
+            --hidden-import HardwareMonitor.Hardware `
+            --hidden-import clr_loader `
+            --collect-all HardwareMonitor `
+            --collect-all clr_loader `
             --collect-submodules trcc `
             --noconfirm `
             src/trcc/__main__.py
@@ -83,6 +88,11 @@ jobs:
             --hidden-import PySide6.QtSvg `
             --hidden-import pynvml `
             --hidden-import wmi `
+            --hidden-import HardwareMonitor `
+            --hidden-import HardwareMonitor.Hardware `
+            --hidden-import clr_loader `
+            --collect-all HardwareMonitor `
+            --collect-all clr_loader `
             --collect-submodules trcc `
             --noconfirm `
             src/trcc/__main__.py
@@ -127,11 +137,13 @@ jobs:
           if (-not (Test-Path "dist/trcc/ffmpeg.exe")) { $missing += "ffmpeg.exe" }
           $libusb = Get-ChildItem "dist/trcc/libusb*" -ErrorAction SilentlyContinue
           if (-not $libusb) { $missing += "libusb-1.0.dll" }
+          $lhm = Get-ChildItem "dist/trcc" -Recurse -Filter "LibreHardwareMonitorLib.dll" -ErrorAction SilentlyContinue
+          if (-not $lhm) { $missing += "LibreHardwareMonitorLib.dll" }
           if ($missing.Count -gt 0) {
             Write-Error "FAILED — Missing: $($missing -join ', ')"
             exit 1
           }
-          Write-Host "PASSED — trcc.exe, trcc-gui.exe, 7z.exe, ffmpeg.exe, libusb OK"
+          Write-Host "PASSED — trcc.exe, trcc-gui.exe, 7z.exe, ffmpeg.exe, libusb, LibreHardwareMonitorLib OK"
 
       - name: Extract version
         id: version

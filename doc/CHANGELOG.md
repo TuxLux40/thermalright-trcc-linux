@@ -1,5 +1,42 @@
 # Changelog
 
+## v9.6.0
+
+Windows runtime: bundle LibreHardwareMonitor + silence log-rotation noise.
+
+The Windows installer was shipping without the LibreHardwareMonitor
+wrapper (``HardwareMonitor`` on PyPI), so anything not covered by
+``psutil`` / ``wmi`` / ``pynvml`` came back blank — CPU temperature,
+GPU temperature on AMD/Intel, fan RPM, motherboard sensors.  The GUI
+sidebar still showed CPU% (psutil), but theme overlays on the LCD
+device that referenced any LHM-only sensor rendered as empty space.
+Result: device displayed the theme image with no metric text drawn
+on it.
+
+Fix is upstream of the runtime: ``pyproject.toml`` ``[windows]`` extra
+now declares ``HardwareMonitor>=1.1.0``, ``pythonnet>=3.0.3``, and
+``pywin32>=306``; ``windows.yml`` adds ``--hidden-import`` /
+``--collect-all`` for ``HardwareMonitor`` and ``clr_loader`` to both
+the CLI and GUI PyInstaller invocations; the bundle verification step
+now fails the build if ``LibreHardwareMonitorLib.dll`` isn't present
+in the dist tree.  Linux / macOS / BSD packaging is unchanged — those
+distros use ``hwmon`` / ``IOKit`` / ``sysctl`` natively.
+
+Second fix bundled here: ``trcc report`` (or any CLI invocation) run
+while the GUI is open was printing ``--- Logging error ---`` walls
+from ``RotatingFileHandler.doRollover`` — Python's stdlib handler
+can't rename a file that's open in another process on Windows
+(``WinError 32``), and the default error path prints the entire
+traceback to stderr *and* drops the log record.  ``__main__.py`` now
+swaps in a ``_SafeRotatingFileHandler`` subclass on win32 only that
+swallows ``PermissionError`` / ``OSError`` from rotation; the record
+still lands in the (un-rotated) file, no traceback escapes.  Linux /
+macOS still use the vanilla stdlib handler — they don't have this
+problem.
+
+Closes the regression behind the Win11-VM "GUI is dark, device shows
+no metrics" report.
+
 ## v9.5.12
 
 Windows installer asset fix.
