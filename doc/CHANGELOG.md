@@ -1,5 +1,26 @@
 # Changelog
 
+## v9.5.12
+
+Windows installer asset fix.
+
+The PyInstaller spec in ``windows.yml`` only bundled
+``src/trcc/assets`` (icons / fonts / .desktop / polkit policy) — the
+~600 GUI PNGs at ``src/trcc/ui/gui/assets/`` (sidebar, tabs, theme
+panels, preview frames, control buttons) were never copied into the
+Windows ``.exe``.  ``_copy_assets_to_user_dir`` silently no-op'd
+because the bundled package directory didn't exist, ``Assets.get()``
+returned ``None`` for every key, and the GUI rendered with empty
+stylesheets — a dark window with no graphics.
+
+The macOS workflow already had the second ``--add-data`` line for the
+GUI assets tree.  Windows just never got it.  Added it to both the CLI
+and GUI ``pyinstaller`` invocations; mirrors macOS exactly, no app code
+changes.
+
+Linux is unaffected — distribution packages (RPM / DEB / Arch) install
+the assets directly from the wheel layout.
+
 ## v9.5.11
 
 Fast follow-up on v9.5.10.
