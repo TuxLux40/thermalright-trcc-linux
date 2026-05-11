@@ -84,10 +84,9 @@ class TestPlatformContract:
 
     @pytest.mark.parametrize("platform_cls", ALL_PLATFORMS,
                              ids=lambda c: c.__name__)
-    def test_has_detect_fn(self, platform_cls):
+    def test_has_detect_devices(self, platform_cls):
         p = platform_cls()
-        fn = p.create_detect_fn()
-        assert callable(fn)
+        assert callable(p.detect_devices)
 
     @pytest.mark.parametrize("platform_cls", ALL_PLATFORMS,
                              ids=lambda c: c.__name__)
@@ -122,7 +121,7 @@ class TestScsiWiring:
 
     def _inject_noop_scsi(self, fbl: int = 100):
         """Inject a noop SCSI transport factory into the protocol factory."""
-        def _noop_factory(path, vid=0, pid=0):
+        def _noop_factory(path, vid=0, pid=0, **_ignore):
             return NoopScsiTransport(fbl=fbl)
         DeviceProtocolFactory.set_scsi_transport(_noop_factory)
 

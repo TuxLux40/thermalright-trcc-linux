@@ -22,7 +22,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from trcc.core.models import (
     DEVICE_TYPE_NAMES,
@@ -30,6 +30,9 @@ from trcc.core.models import (
     HandshakeResult,
     UsbAddress,
 )
+
+if TYPE_CHECKING:
+    from trcc.core.models import DeviceInfo
 
 log = logging.getLogger(__name__)
 
@@ -300,19 +303,19 @@ class UsbProtocol(LazyTransportProtocol):
 
     def __init__(
         self, vid: int, pid: int,
-        *, addr: UsbAddress | None = None,
+        *, usb_address: UsbAddress | None = None,
     ):
         super().__init__()
         self._vid = vid
         self._pid = pid
-        self._addr = addr  # bus+address from detector — disambiguates dual same-VID/PID coolers
+        self._usb_address = usb_address  # disambiguates dual same-VID/PID coolers (#128)
 
     def _open_transport(self) -> Any:
         log.debug("Opening %s transport: %04X:%04X%s",
                   self.protocol_name, self._vid, self._pid,
-                  f" @ {self._addr}" if self._addr else "")
+                  f" @ {self._usb_address}" if self._usb_address else "")
         transport = DeviceProtocolFactory.create_usb_transport(
-            self._vid, self._pid, addr=self._addr)
+            self._vid, self._pid, usb_address=self._usb_address)
         transport.open()
         return transport
 
@@ -452,20 +455,20 @@ class DeviceProtocolFactory:
     @staticmethod
     def create_usb_transport(
         vid: int, pid: int,
-        *, addr: UsbAddress | None = None,
+        *, usb_address: UsbAddress | None = None,
     ):
         """Create the best available USB transport (pyusb preferred, hidapi fallback).
 
-        ``addr`` (bus + address) binds the transport to a specific physical USB
-        device — required when two coolers share the same VID:PID (issue #128).
+        ``usb_address`` (bus + address) binds the transport to a specific physical
+        USB device — required when two coolers share the same VID:PID (#128).
         """
         from .hid import HIDAPI_AVAILABLE, PYUSB_AVAILABLE
         if PYUSB_AVAILABLE:
             from .hid import PyUsbTransport
-            return PyUsbTransport(vid, pid, addr=addr)
+            return PyUsbTransport(vid, pid, usb_address=usb_address)
         elif HIDAPI_AVAILABLE:
             from .hid import HidApiTransport
-            return HidApiTransport(vid, pid, addr=addr)
+            return HidApiTransport(vid, pid, usb_address=usb_address)
         else:
             raise ImportError(
                 "No USB backend available. Install pyusb or hidapi:\n"
@@ -603,7 +606,14 @@ class ProtocolInfo:
 
 
 # =========================================================================
-# Register concrete Protocol classes
+# ProtocolFactory — one factory subclass per protocol kind.
+#
+# Mirrors the ``PlatformFactory`` idiom in ``adapters/system/__init__.py``:
+# ABC + ``@ProtocolFactory.register('name')`` self-registering subclasses +
+# single ``ProtocolFactory.for_info(info)`` chokepoint that dispatches by
+# the protocol *name* carried on ``DeviceInfo``. Two factory layers, one
+# pattern — readers learn it once and apply it everywhere.
+#
 # Imports are at the bottom to avoid the circular dependency (each protocol
 # module imports DeviceProtocol/UsbProtocol/ProtocolInfo from this module).
 # =========================================================================
@@ -614,11 +624,90 @@ from .led_protocol import LedProtocol  # noqa: E402
 from .ly_protocol import LyProtocol  # noqa: E402
 from .scsi_protocol import ScsiProtocol  # noqa: E402
 
+
+class ProtocolFactory(ABC):
+    """Abstract factory for a single ``DeviceProtocol`` class.
+
+    Subclasses self-register via ``@ProtocolFactory.register('name')``. The
+    registry is consulted via ``ProtocolFactory.for_info(info)`` — the
+    single chokepoint that turns a ``DeviceInfo`` into the right
+    ``DeviceProtocol`` instance (DI'd into ``Device`` at construction).
+
+    Open/Closed: new protocol support = one new decorated subclass. Zero
+    touchpoints elsewhere.
+    """
+
+    _registry: ClassVar[dict[str, type['ProtocolFactory']]] = {}
+
+    @classmethod
+    def register(cls, name: str):
+        """Mark a factory subclass as the one to use for ``info.protocol == name``."""
+        def deco(sub: type['ProtocolFactory']) -> type['ProtocolFactory']:
+            cls._registry[name] = sub
+            return sub
+        return deco
+
+    @classmethod
+    def for_info(cls, info: 'DeviceInfo') -> DeviceProtocol:
+        """Build the right ``DeviceProtocol`` for a ``DeviceInfo`` (dispatch by name)."""
+        factory_cls = cls._registry.get(info.protocol)
+        if factory_cls is None:
+            raise ValueError(f"Unknown protocol: {info.protocol!r}")
+        return factory_cls().make(info)
+
+    @abstractmethod
+    def make(self, info: 'DeviceInfo') -> DeviceProtocol:
+        """Construct the protocol instance from a ``DeviceInfo``."""
+
+
+@ProtocolFactory.register('scsi')
+class ScsiProtocolFactory(ProtocolFactory):
+    """Build ``ScsiProtocol`` for ``info.protocol == 'scsi'``."""
+
+    def make(self, info: 'DeviceInfo') -> DeviceProtocol:
+        return ScsiProtocol(info.path, info.vid, info.pid, usb_address=info.usb_address)
+
+
+@ProtocolFactory.register('hid')
+class HidProtocolFactory(ProtocolFactory):
+    """Build ``HidProtocol`` (Type 2 or Type 3 chosen via ``info.device_type``)."""
+
+    def make(self, info: 'DeviceInfo') -> DeviceProtocol:
+        return HidProtocol(
+            vid=info.vid, pid=info.pid,
+            usb_address=info.usb_address,
+            device_type=info.device_type,
+        )
+
+
+@ProtocolFactory.register('bulk')
+class BulkProtocolFactory(ProtocolFactory):
+    """Build ``BulkProtocol`` for raw-USB-bulk LCDs (USBLCDNew)."""
+
+    def make(self, info: 'DeviceInfo') -> DeviceProtocol:
+        return BulkProtocol(vid=info.vid, pid=info.pid, usb_address=info.usb_address)
+
+
+@ProtocolFactory.register('ly')
+class LyProtocolFactory(ProtocolFactory):
+    """Build ``LyProtocol`` for LY USB-bulk LCDs (0416:5408 / 0416:5409)."""
+
+    def make(self, info: 'DeviceInfo') -> DeviceProtocol:
+        return LyProtocol(vid=info.vid, pid=info.pid, usb_address=info.usb_address)
+
+
+@ProtocolFactory.register('led')
+class LedProtocolFactory(ProtocolFactory):
+    """Build ``LedProtocol`` for RGB LED controllers (HID 64-byte reports)."""
+
+    def make(self, info: 'DeviceInfo') -> DeviceProtocol:
+        return LedProtocol(vid=info.vid, pid=info.pid, usb_address=info.usb_address)
+
+
+# Bridge the new factory subclasses into the orchestration class's registry —
+# keeps every legacy caller (``DeviceProtocolFactory.create_protocol`` /
+# ``.get_protocol``) working without rewrites.
 DeviceProtocolFactory._PROTOCOL_REGISTRY = {
-    'scsi': lambda di: ScsiProtocol(di.path, di.vid, di.pid),
-    'bulk': lambda di: BulkProtocol(vid=di.vid, pid=di.pid, addr=di.addr),
-    'ly':   lambda di: LyProtocol(vid=di.vid, pid=di.pid, addr=di.addr),
-    'led':  lambda di: LedProtocol(vid=di.vid, pid=di.pid, addr=di.addr),
-    'hid':  lambda di: HidProtocol(vid=di.vid, pid=di.pid, addr=di.addr,
-                device_type=getattr(di, 'device_type', 2)),
+    name: (lambda fc: lambda di: fc().make(di))(factory_cls)
+    for name, factory_cls in ProtocolFactory._registry.items()
 }

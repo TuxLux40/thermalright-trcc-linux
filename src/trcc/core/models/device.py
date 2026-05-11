@@ -10,6 +10,12 @@ from .protocol import _DEFAULT_PROFILE, BULK_RGB565_FBLS, DeviceProfile, get_pro
 LCD_DEFAULT_BUTTON = "A1CZTV"
 LED_DEFAULT_BUTTON = "A1KVMALEDC6"
 
+# DeviceInfo runtime-state defaults — named so the dataclass declarations
+# read like prose instead of magic numbers.
+_DEFAULT_RESOLUTION: tuple[int, int] = (0, 0)
+_DEFAULT_BRIGHTNESS = 65    # 0–100% — C# default
+_DEFAULT_ROTATION = 0       # 0 / 90 / 180 / 270
+
 
 @dataclass(frozen=True, slots=True)
 class DeviceEntry:
@@ -39,9 +45,9 @@ class UsbAddress:
     def parse(cls, usb_path: str) -> UsbAddress | None:
         """Parse 'usb:5:2' into UsbAddress(5, 2). Returns None on bad input."""
         match usb_path.split(':'):
-            case ['usb', bus, addr]:
+            case ['usb', bus, address]:
                 try:
-                    return cls(int(bus), int(addr))
+                    return cls(int(bus), int(address))
                 except ValueError:
                     return None
         return None
@@ -56,18 +62,22 @@ class UsbAddress:
 
 @dataclass(slots=True)
 class DetectedDevice:
-    """Detected USB/SCSI device."""
-    vid: int  # Vendor ID
-    pid: int  # Product ID
+    """Raw OS-level discovery — what one of the per-OS detectors finds.
+
+    Convert to ``DeviceInfo`` via ``DeviceInfo.from_detected`` (the single
+    sanctioned conversion site, which guarantees ``usb_address`` is set).
+    """
+    vid: int                                    # Vendor ID
+    pid: int                                    # Product ID
     vendor_name: str
     product_name: str
-    usb_path: str  # e.g., "usb:5:2"
-    scsi_device: str | None = None  # e.g., "/dev/sg0"
-    implementation: str = "generic"  # Device-specific implementation
-    model: str = "CZTV"  # Device model for button image lookup
-    button_image: str = LCD_DEFAULT_BUTTON  # Sidebar image prefix
-    protocol: str = "scsi"  # "scsi" or "hid"
-    device_type: int = 1  # 1=SCSI, 2=HID Type 2, 3=HID Type 3, 4=Bulk, 5=LY
+    usb_path: str                               # e.g., "usb:5:2"
+    scsi_device: str | None = None              # e.g., "/dev/sg0"
+    implementation: str = "generic"             # Device-specific implementation
+    model: str = "CZTV"                         # Device model for button image lookup
+    button_image: str = LCD_DEFAULT_BUTTON      # Sidebar image prefix
+    protocol: str = "scsi"                      # "scsi" / "hid" / "bulk" / "ly" / "led"
+    device_type: int = 1                        # 1=SCSI, 2=HID Type 2, 3=HID Type 3, 4=Bulk, 5=LY
 
     @property
     def path(self) -> str:
@@ -75,8 +85,8 @@ class DetectedDevice:
         return self.scsi_device or self.usb_path
 
     @property
-    def addr(self) -> UsbAddress | None:
-        """Physical USB (bus, address) parsed from usb_path. None for SCSI-only devices."""
+    def usb_address(self) -> UsbAddress | None:
+        """Physical USB ``(bus, address)`` parsed from ``usb_path``; ``None`` for SCSI-only."""
         return UsbAddress.parse(self.usb_path)
 
 
@@ -151,37 +161,71 @@ ALL_DEVICES: dict[tuple[int, int], DeviceEntry] = {
 
 @dataclass(slots=True)
 class DeviceInfo:
-    """
-    Information about a connected LCD device.
+    """Runtime device info — derived from a ``DetectedDevice`` plus handshake state.
 
-    Matches Windows FormCZTV device data.
+    Construct only via the three sanctioned classmethods:
+      • ``DeviceInfo.from_detected``  — the conversion chokepoint
+      • ``DeviceInfo.from_dict``      — legacy dict input
+      • ``DeviceInfo.from_wire_dict`` — IPC reconstruction
+
+    Each guarantees ``usb_address`` is parsed, so the factory's
+    ``device_info.usb_address`` access never raises ``AttributeError`` and
+    multi-device disambiguation (#128) always has the data it needs.
     """
     name: str
-    path: str  # /dev/sgX
-    resolution: tuple[int, int] = (0, 0)  # Discovered via handshake
+    path: str                                   # /dev/sgX (SCSI) or "usb:bus:addr" (USB)
+    resolution: tuple[int, int] = _DEFAULT_RESOLUTION
 
-    # Device properties (from detection)
+    # Identity (mirrors DetectedDevice)
     vendor: str | None = None
     product: str | None = None
     model: str | None = None
     vid: int = 0
     pid: int = 0
-    addr: UsbAddress | None = None  # Physical USB (bus, address) for non-SCSI; None for SCSI
-    device_index: int = 0  # 0-based ordinal among detected devices
-    fbl_code: int | None = None  # Resolution identifier
-    protocol: str = "scsi"  # "scsi" or "hid"
-    device_type: int = 1  # 1=SCSI, 2=HID Type 2 ("H"), 3=HID Type 3 ("ALi")
-    implementation: str = "generic"  # e.g. "thermalright_lcd_v1", "hid_type2", "hid_led"
-    button_image: str = LCD_DEFAULT_BUTTON    # Sidebar image prefix
-    pm_byte: int = 0                # Raw PM from handshake (for button image lookup)
-    sub_byte: int = 0               # Raw SUB from handshake (for encode rotation lookup)
-    led_style_id: int | None = None  # LED style from probe (avoids name-based lookup)
-    led_style_sub: int = 0              # LED style sub-variant (C# nowLedStyleSub)
+    usb_address: UsbAddress | None = None       # physical USB (bus, address); None for SCSI
+    device_index: int = 0                       # 0-based ordinal among detected devices
+    fbl_code: int | None = None                 # Resolution identifier
+    protocol: str = "scsi"                      # "scsi" / "hid" / "bulk" / "ly" / "led"
+    device_type: int = 1                        # 1=SCSI, 2=HID T2, 3=HID T3
+    implementation: str = "generic"             # "thermalright_lcd_v1", "hid_type2", "hid_led", ...
+    button_image: str = LCD_DEFAULT_BUTTON
 
-    # State
+    # Handshake-derived
+    pm_byte: int = 0                            # PM from handshake → button image lookup
+    sub_byte: int = 0                           # SUB from handshake → encode rotation
+    led_style_id: int | None = None             # LED style from probe
+    led_style_sub: int = 0                      # LED style sub-variant
+
+    # Runtime state
     connected: bool = True
-    brightness: int = 65  # 0-100% (C# default: 65)
-    rotation: int = 0  # 0, 90, 180, 270
+    brightness: int = _DEFAULT_BRIGHTNESS
+    rotation: int = _DEFAULT_ROTATION
+
+    # ── Conversion chokepoints — the only sanctioned constructors ────────
+
+    @classmethod
+    def from_detected(cls, d: DetectedDevice, device_index: int = 0) -> DeviceInfo:
+        """**THE** ``DetectedDevice → DeviceInfo`` conversion site.
+
+        Guarantees ``usb_address`` is populated from the source's USB path.
+        Every code path that turns raw discovery into runtime device info
+        funnels through here — closes the bug class behind #130/#131.
+        """
+        return cls(
+            name=f"{d.vendor_name} {d.product_name}",
+            path=d.path,
+            vendor=d.vendor_name,
+            product=d.product_name,
+            model=d.model,
+            vid=d.vid,
+            pid=d.pid,
+            usb_address=d.usb_address,
+            device_index=device_index,
+            protocol=d.protocol,
+            device_type=d.device_type,
+            implementation=d.implementation,
+            button_image=d.button_image,
+        )
 
     @classmethod
     def from_dict(cls, d: dict) -> DeviceInfo:
@@ -189,13 +233,13 @@ class DeviceInfo:
         return cls(
             name=d.get('name', 'LCD'),
             path=d.get('path', ''),
-            resolution=d.get('resolution', (0, 0)),
+            resolution=d.get('resolution', _DEFAULT_RESOLUTION),
             vendor=d.get('vendor'),
             product=d.get('product'),
             model=d.get('model'),
             vid=d.get('vid', 0),
             pid=d.get('pid', 0),
-            addr=UsbAddress.parse(d.get('path', '')),
+            usb_address=UsbAddress.parse(d.get('path', '')),
             device_index=d.get('device_index', 0),
             protocol=d.get('protocol', 'scsi'),
             device_type=d.get('device_type', 1),
@@ -208,8 +252,8 @@ class DeviceInfo:
         """Serialize for IPC transport.
 
         ``dataclasses.asdict`` recursively dictifies nested dataclasses
-        (notably ``addr: UsbAddress``), and tuples become lists — both
-        round-trip cleanly through JSON.  Pair with ``from_wire_dict``.
+        (notably ``usb_address: UsbAddress``) and turns tuples into lists —
+        both round-trip cleanly through JSON. Pair with ``from_wire_dict``.
         """
         import dataclasses
         return dataclasses.asdict(self)
@@ -221,19 +265,19 @@ class DeviceInfo:
         Restores the nested ``UsbAddress`` dataclass and converts the
         ``resolution`` list back to a tuple — JSON has no tuple type.
         """
-        addr_dict = d.get('addr')
-        addr = UsbAddress(**addr_dict) if addr_dict else None
-        res = d.get('resolution', (0, 0))
+        addr_dict = d.get('usb_address')
+        usb_address = UsbAddress(**addr_dict) if addr_dict else None
+        res = d.get('resolution', _DEFAULT_RESOLUTION)
         return cls(
             name=d.get('name', ''),
             path=d.get('path', ''),
-            resolution=(res[0], res[1]) if isinstance(res, list | tuple) else (0, 0),
+            resolution=(res[0], res[1]) if isinstance(res, list | tuple) else _DEFAULT_RESOLUTION,
             vendor=d.get('vendor'),
             product=d.get('product'),
             model=d.get('model'),
             vid=d.get('vid', 0),
             pid=d.get('pid', 0),
-            addr=addr,
+            usb_address=usb_address,
             device_index=d.get('device_index', 0),
             fbl_code=d.get('fbl_code'),
             protocol=d.get('protocol', 'scsi'),
@@ -245,27 +289,8 @@ class DeviceInfo:
             led_style_id=d.get('led_style_id'),
             led_style_sub=d.get('led_style_sub', 0),
             connected=d.get('connected', True),
-            brightness=d.get('brightness', 65),
-            rotation=d.get('rotation', 0),
-        )
-
-    @classmethod
-    def from_detected(cls, d: DetectedDevice, device_index: int = 0) -> DeviceInfo:
-        """Create DeviceInfo from a DetectedDevice."""
-        return cls(
-            name=f"{d.vendor_name} {d.product_name}",
-            path=d.path,
-            vendor=d.vendor_name,
-            product=d.product_name,
-            model=d.model,
-            vid=d.vid,
-            pid=d.pid,
-            addr=d.addr,
-            device_index=device_index,
-            protocol=d.protocol,
-            device_type=d.device_type,
-            implementation=d.implementation,
-            button_image=d.button_image,
+            brightness=d.get('brightness', _DEFAULT_BRIGHTNESS),
+            rotation=d.get('rotation', _DEFAULT_ROTATION),
         )
 
     @property

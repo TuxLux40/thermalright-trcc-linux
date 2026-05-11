@@ -1185,8 +1185,8 @@ class TestLEDServiceProtocolAndConfig:
         led_svc.send_tick()
         assert proto.send_data.call_count >= 1
 
-    def test_initialize_no_get_protocol_returns_message(self):
-        """initialize returns 'LED protocol factory not configured' when get_protocol is None."""
+    def test_initialize_no_protocol_returns_message(self):
+        """initialize returns 'LED protocol not injected' when protocol DI is absent."""
         svc = LEDService()
         dev_info = MagicMock()
         dev_info.device_index = 0
@@ -1194,14 +1194,13 @@ class TestLEDServiceProtocolAndConfig:
         dev_info.pid = 0x5678
         dev_info.led_style_sub = 0
         result = svc.initialize(dev_info, led_style=1)
-        assert 'not configured' in result
+        assert 'not injected' in result
 
     def test_initialize_protocol_error_returns_error_message(self):
-        """initialize returns error message when protocol raises."""
-        def bad_protocol(_):
-            raise RuntimeError("USB error")
-
-        svc = LEDService(get_protocol=bad_protocol)
+        """initialize returns error message when protocol.handshake() raises."""
+        proto = MagicMock()
+        proto.handshake.side_effect = RuntimeError("USB error")
+        svc = LEDService(protocol=proto)
         dev_info = MagicMock()
         dev_info.device_index = 0
         dev_info.vid = 0x1234
@@ -1214,7 +1213,7 @@ class TestLEDServiceProtocolAndConfig:
         """initialize returns LED device name on success."""
         proto = MagicMock()
         proto.handshake.return_value = None
-        svc = LEDService(get_protocol=lambda _: proto)
+        svc = LEDService(protocol=proto)
         dev_info = MagicMock()
         dev_info.device_index = 0
         dev_info.vid = 0x1234
@@ -1234,7 +1233,7 @@ class TestLEDServiceProtocolAndConfig:
         )
         proto = MagicMock()
         proto.handshake.return_value = hs
-        svc = LEDService(get_protocol=lambda _: proto)
+        svc = LEDService(protocol=proto)
         dev_info = MagicMock()
         dev_info.device_index = 0
         dev_info.vid = 0x0416
@@ -1250,7 +1249,7 @@ class TestLEDServiceProtocolAndConfig:
         """When handshake returns None, uses the led_style param."""
         proto = MagicMock()
         proto.handshake.return_value = None
-        svc = LEDService(get_protocol=lambda _: proto)
+        svc = LEDService(protocol=proto)
         dev_info = MagicMock()
         dev_info.device_index = 0
         dev_info.vid = 0x1234

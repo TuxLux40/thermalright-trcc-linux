@@ -49,13 +49,12 @@ class LEDService:
     })
 
     def __init__(self, state: LEDState | None = None,
-                 get_protocol: Any = None,
+                 protocol: Any = None,
                  led_config: Any = None) -> None:
         self.state = state or LEDState()
         self._metrics: HardwareMetrics = HardwareMetrics()
         self._engine = LEDEffectEngine(self.state, self._metrics)
-        self._protocol: Any = None
-        self._get_protocol = get_protocol
+        self._protocol: Any = protocol  # DI'd by the owning LEDDevice
         self._led_config = led_config
 
         # Segment display state (styles 1-11 — all digit-display LED devices)
@@ -435,13 +434,12 @@ class LEDService:
         if self._led_config:
             self._device_key = self._led_config.device_key(device_info)
 
-        # Handshake first — PM byte is the source of truth for device identity
+        # Handshake first — PM byte is the source of truth for device identity.
+        # The protocol was DI'd at construction (Phase 4) — no lazy fetch needed.
         try:
-            if self._get_protocol is None:
-                return "LED protocol factory not configured"
-            protocol = self._get_protocol(device_info)
-            hs = protocol.handshake()
-            self.set_protocol(protocol)
+            if self._protocol is None:
+                return "LED protocol not injected"
+            hs = self._protocol.handshake()
 
             if hs and getattr(hs, 'style', None):
                 led_style = hs.style.style_id

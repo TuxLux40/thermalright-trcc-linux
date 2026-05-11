@@ -144,8 +144,8 @@ class DataManager:
 
     @staticmethod
     def _7z_install_help() -> str:
-        from trcc.adapters.system import make_platform
-        return make_platform().archive_tool_install_help()
+        from trcc.adapters.system import PlatformFactory
+        return PlatformFactory.current().archive_tool_install_help()
 
     # ------------------------------------------------------------------
     # Archive safety

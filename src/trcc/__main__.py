@@ -41,7 +41,8 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
     handlers=[
         _rotating_handler_cls(
-            _log_path, maxBytes=1_000_000, backupCount=3),
+            _log_path, maxBytes=1_000_000, backupCount=3,
+            encoding='utf-8', errors='replace'),
     ],
 )
 log = logging.getLogger('trcc.main')

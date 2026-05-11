@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from trcc.core.models import HandshakeResult
+from trcc.core.models import HandshakeResult, UsbAddress
 
 from .factory import DeviceProtocolFactory, LazyTransportProtocol, ProtocolInfo
 
@@ -21,22 +21,34 @@ class ScsiProtocol(LazyTransportProtocol):
     """LCD communication via SCSI protocol — transport-agnostic.
 
     Lazy-opens a SCSI transport via the Platform-injected factory.
-    Delegates framing, handshake, and frame chunking to `scsi.py::ScsiDevice`.
+    Delegates framing, handshake, and frame chunking to ``scsi.py::ScsiDevice``.
+
+    ``usb_address`` is accepted for signature uniformity with the other
+    protocol classes and forwarded to the platform's SCSI transport factory.
+    Linux kernel SCSI passthrough ignores it (``/dev/sgN`` is the binding);
+    macOS / BSD USB BOT use it to disambiguate dual same-VID/PID coolers (#128).
     """
 
-    def __init__(self, path: str, vid: int, pid: int):
+    def __init__(
+        self, path: str, vid: int, pid: int,
+        *, usb_address: UsbAddress | None = None,
+    ):
         super().__init__()
         self._path = path
         self._vid = vid
         self._pid = pid
+        self._usb_address = usb_address
 
     def _open_transport(self) -> Any:
         fn = DeviceProtocolFactory._scsi_transport_fn
         if fn is None:
             log.error("SCSI transport factory not injected")
             return None
-        log.debug("Opening SCSI transport: %s", self._path)
-        transport = fn(self._path, self._vid, self._pid)
+        log.debug("Opening SCSI transport: %s%s",
+                  self._path,
+                  f" @ {self._usb_address}" if self._usb_address else "")
+        transport = fn(self._path, self._vid, self._pid,
+                       usb_address=self._usb_address)
         transport.open()
         return transport
 

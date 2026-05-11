@@ -99,10 +99,10 @@ class TestControllerBuilderLed(unittest.TestCase):
         device = _make_builder().build_device(self._led_detected())
         self.assertIsNotNone(device)
 
-    def test_build_led_wires_get_protocol(self):
-        """LED Device gets the protocol factory wired."""
+    def test_build_led_injects_protocol(self):
+        """LED Device gets a Protocol DI'd at construction (by name, via factory)."""
         device = _make_builder().build_device(self._led_detected())
-        self.assertIsNotNone(device._get_protocol)
+        self.assertIsNotNone(device._protocol)
 
     def test_build_led_injects_device_svc(self):
         """build_device(led) injects a DeviceService so connect() works."""

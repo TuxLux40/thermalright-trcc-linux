@@ -155,10 +155,10 @@ def test_build_device_wires_device_service(vid_pid, entry, linux_builder):
 
 @pytest.mark.parametrize("vid_pid,entry", list(LED_DEVICES.items()),
                          ids=[f"{v:04X}:{p:04X}" for v, p in LED_DEVICES])
-def test_led_devices_wire_get_protocol(vid_pid, entry, linux_builder):
+def test_led_devices_inject_protocol(vid_pid, entry, linux_builder):
     detected = _detected_for(*vid_pid, entry)
     device = linux_builder.build_device(detected)
-    assert device._get_protocol is not None
+    assert device._protocol is not None
 
 
 def test_build_device_no_detected_builds_lcd(linux_builder):

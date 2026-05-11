@@ -12,7 +12,7 @@ Usage in tests:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from trcc.adapters.device.factory import DeviceProtocol, ProtocolInfo
 from trcc.core.ports import (
@@ -161,10 +161,11 @@ class MockPlatform(Platform):
         return LinuxSensors()
 
     def create_scsi_transport(self, path: str,
-                              vid: int = 0, pid: int = 0) -> Any:
+                              vid: int = 0, pid: int = 0,
+                              *, usb_address=None) -> Any:
         return None  # noop — protocols handle everything
 
-    def create_detect_fn(self) -> Callable[[], list]:
+    def detect_devices(self) -> list:
         from trcc.core.models import ALL_DEVICES, DetectedDevice
 
         devices: list[DetectedDevice] = []
@@ -203,7 +204,7 @@ class MockPlatform(Platform):
                     button_image=entry.button_image if entry else "",
                 ))
 
-        return lambda: devices
+        return devices
 
     def run_setup(self, auto_yes: bool = False) -> int:
         return 0

@@ -17,8 +17,8 @@ class TestMacOSPlatformContract:
     def setup_method(self):
         self._p = MacOSPlatform()
 
-    def test_create_detect_fn_exists(self):
-        assert callable(self._p.create_detect_fn)
+    def test_detect_devices_exists(self):
+        assert callable(self._p.detect_devices)
 
     def test_create_sensor_enumerator_exists(self):
         assert callable(self._p.create_sensor_enumerator)

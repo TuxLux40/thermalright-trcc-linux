@@ -103,8 +103,8 @@ def _wire_bulk_like(protocol_cls, fbl: int) -> None:
     from trcc.core.models import fbl_to_resolution
     resolution = fbl_to_resolution(fbl, 32)
 
-    def _factory(vid, pid, *, addr=None):
-        return NoopBulkLikeDevice(vid, pid, addr=addr, resolution=resolution)
+    def _factory(vid, pid, *, usb_address=None):
+        return NoopBulkLikeDevice(vid, pid, usb_address=usb_address, resolution=resolution)
     protocol_cls._make_device = staticmethod(_factory)
 
 

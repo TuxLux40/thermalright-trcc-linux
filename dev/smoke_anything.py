@@ -172,11 +172,14 @@ def probe_video_target_portrait(_platform, _device) -> ProbeResult:
         return _err(f"{type(e).__name__}: {e}")
 
 
-def probe_deviceinfo_addr(_platform, _device) -> ProbeResult:
-    """DeviceInfo must carry an ``addr`` field.
+def probe_deviceinfo_usb_address(_platform, _device) -> ProbeResult:
+    """DeviceInfo must carry a ``usb_address`` field.
 
     Caught #131 lallemandgianni / #130 juanito54jm:
-    ``'DeviceInfo' object has no attribute 'addr'`` on v9.5.0/v9.5.2.
+    ``'DeviceInfo' object has no attribute 'addr'`` on v9.5.0/v9.5.2
+    (the field was missing for the LED protocol path). Renamed to
+    ``usb_address`` in Phase 2 with the conversion chokepoint locked
+    in ``DeviceInfo.from_detected``.
     """
     from trcc.core.models import DetectedDevice, DeviceInfo
     detected = DetectedDevice(
@@ -188,10 +191,10 @@ def probe_deviceinfo_addr(_platform, _device) -> ProbeResult:
     )
     try:
         info = DeviceInfo.from_detected(detected)
-        _ = info.addr
-        return _ok(f"DeviceInfo.addr = {info.addr}")
+        _ = info.usb_address
+        return _ok(f"DeviceInfo.usb_address = {info.usb_address}")
     except AttributeError as e:
-        return _bad(f"AttributeError on DeviceInfo.addr: {e}")
+        return _bad(f"AttributeError on DeviceInfo.usb_address: {e}")
     except Exception as e:
         return _err(f"{type(e).__name__}: {e}")
 
@@ -360,19 +363,19 @@ def _make_protocol(device):
                 if device.device_type == 3
                 else build_hid_type2_response(pm=32, sub=0))
         DeviceProtocolFactory.create_usb_transport = staticmethod(  # type: ignore[method-assign]
-            lambda vid, pid, *, addr=None: NoopUsbTransport(resp)
+            lambda vid, pid, *, usb_address=None: NoopUsbTransport(resp)
         )
     elif proto_name == "led":
         DeviceProtocolFactory.create_usb_transport = staticmethod(  # type: ignore[method-assign]
-            lambda vid, pid, *, addr=None: NoopUsbTransport(
+            lambda vid, pid, *, usb_address=None: NoopUsbTransport(
                 build_led_response(pm=32, sub=0))
         )
     elif proto_name in ("bulk", "ly"):
         cls = BulkProtocol if proto_name == "bulk" else LyProtocol
         resolution = fbl_to_resolution(device.fbl, 32)
         cls._make_device = staticmethod(  # type: ignore[method-assign]
-            lambda vid, pid, *, addr=None: NoopBulkLikeDevice(
-                vid, pid, addr=addr, resolution=resolution)
+            lambda vid, pid, *, usb_address=None: NoopBulkLikeDevice(
+                vid, pid, usb_address=usb_address, resolution=resolution)
         )
     else:
         return None
@@ -411,9 +414,9 @@ PROBES: list[Probe] = [
     Probe("video.target.portrait",
           "VideoDecoder handles portrait dimensions",
           probe_video_target_portrait),
-    Probe("model.deviceinfo.addr",
-          "DeviceInfo carries the addr field for non-SCSI devices",
-          probe_deviceinfo_addr),
+    Probe("model.deviceinfo.usb_address",
+          "DeviceInfo carries the usb_address field for non-SCSI devices",
+          probe_deviceinfo_usb_address),
     Probe("sensors.rapl.permission",
           "RAPL discovery survives PermissionError on /sys",
           probe_rapl_permission),

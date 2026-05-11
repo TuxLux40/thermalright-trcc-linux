@@ -129,7 +129,7 @@ class TestDeviceInfoWireRoundTrip(unittest.TestCase):
         # All identity + state fields preserved through the round-trip.
         for field in (
             'name', 'path', 'resolution', 'vendor', 'product', 'model',
-            'vid', 'pid', 'addr', 'device_index', 'fbl_code', 'protocol',
+            'vid', 'pid', 'usb_address', 'device_index', 'fbl_code', 'protocol',
             'device_type', 'implementation', 'button_image', 'pm_byte',
             'sub_byte', 'led_style_id', 'led_style_sub',
             'connected', 'brightness', 'rotation',
@@ -144,7 +144,7 @@ class TestDeviceInfoWireRoundTrip(unittest.TestCase):
         self._equal(original, restored)
 
     def test_full_scsi_device_round_trip(self):
-        """SCSI device — addr=None, all identity fields populated."""
+        """SCSI device — usb_address=None, all identity fields populated."""
         from trcc.core.models.device import DeviceInfo
         original = DeviceInfo(
             name='Frozen Warframe Pro',
@@ -154,7 +154,7 @@ class TestDeviceInfoWireRoundTrip(unittest.TestCase):
             product='Xsail',
             model='FROZEN_WARFRAME',
             vid=0x0402, pid=0x3922,
-            addr=None,
+            usb_address=None,
             device_index=0,
             fbl_code=100,
             protocol='scsi',
@@ -175,7 +175,7 @@ class TestDeviceInfoWireRoundTrip(unittest.TestCase):
             path='usb:5:2',
             resolution=(1280, 480),
             vid=0x0418, pid=0x5303,
-            addr=UsbAddress(bus=5, address=2),
+            usb_address=UsbAddress(bus=5, address=2),
             device_index=1,
             fbl_code=128,
             protocol='hid',
@@ -185,9 +185,9 @@ class TestDeviceInfoWireRoundTrip(unittest.TestCase):
         restored = DeviceInfo.from_wire_dict(original.to_wire_dict())
         self._equal(original, restored)
         # Specifically verify UsbAddress is fully reconstructed (not a dict).
-        assert restored.addr is not None
-        self.assertEqual(restored.addr.bus, 5)
-        self.assertEqual(restored.addr.address, 2)
+        assert restored.usb_address is not None
+        self.assertEqual(restored.usb_address.bus, 5)
+        self.assertEqual(restored.usb_address.address, 2)
 
     def test_resolution_tuple_survives_json_listification(self):
         """JSON has no tuple type; from_wire_dict must coerce list → tuple."""
@@ -250,11 +250,12 @@ class TestDeviceInfoFromDetected(unittest.TestCase):
         self.assertIsNone(info.led_style_id)
         self.assertEqual(info.led_style_sub, 0)
 
-    def test_addr_threaded_for_non_scsi(self):
-        """Regression #133: addr must survive DetectedDevice → DeviceInfo
-        for every non-SCSI protocol, otherwise the factory's bulk/hid/ly/led
-        lambdas raise AttributeError on di.addr. Cycles ALL_DEVICES so any
-        new device added to the registry inherits the regression check."""
+    def test_usb_address_threaded_for_non_scsi(self):
+        """Regression #133: ``usb_address`` must survive DetectedDevice →
+        DeviceInfo for every non-SCSI protocol, otherwise the factory's
+        bulk/hid/ly/led lambdas raise AttributeError on ``di.usb_address``.
+        Cycles ALL_DEVICES so any new device added to the registry inherits
+        the regression check."""
         for (vid, pid), entry in ALL_DEVICES.items():
             if entry.protocol == 'scsi':
                 continue
@@ -268,12 +269,12 @@ class TestDeviceInfoFromDetected(unittest.TestCase):
                     button_image=entry.button_image, model=entry.model,
                 )
                 info = DeviceInfo.from_detected(d, device_index=0)
-                self.assertEqual(info.addr, UsbAddress(3, 12))
+                self.assertEqual(info.usb_address, UsbAddress(3, 12))
                 self.assertEqual(info.path, "usb:3:12")
 
-    def test_addr_threaded_for_scsi(self):
-        """SCSI path wins for DeviceInfo.path, but addr still carries the
-        physical USB location parsed from usb_path."""
+    def test_usb_address_threaded_for_scsi(self):
+        """SCSI path wins for DeviceInfo.path, but usb_address still carries
+        the physical USB location parsed from usb_path."""
         for (vid, pid), entry in SCSI_DEVICES.items():
             with self.subTest(vid=vid, pid=pid):
                 d = self._make_detected(
@@ -286,12 +287,12 @@ class TestDeviceInfoFromDetected(unittest.TestCase):
                 )
                 info = DeviceInfo.from_detected(d)
                 self.assertEqual(info.path, "/dev/sg0")
-                self.assertEqual(info.addr, UsbAddress(1, 5))
+                self.assertEqual(info.usb_address, UsbAddress(1, 5))
 
-    def test_addr_none_when_usb_path_unparseable(self):
+    def test_usb_address_none_when_usb_path_unparseable(self):
         d = self._make_detected(usb_path="2-1.4")  # legacy, not 'usb:bus:addr'
         info = DeviceInfo.from_detected(d)
-        self.assertIsNone(info.addr)
+        self.assertIsNone(info.usb_address)
 
 
 # =============================================================================

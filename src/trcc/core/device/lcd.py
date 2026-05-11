@@ -11,35 +11,36 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .._logging import tagged_logger
+from .base import Device
 from .lcd_persistence import LCDPersistence
 from .lcd_theme_workflow import LCDThemeWorkflow
+
+if TYPE_CHECKING:
+    from ..ports import DeviceProtocol
 
 log = logging.getLogger(__name__)
 
 
-class LCDDevice:
+class LCDDevice(Device):
     """A USB LCD device. Discovered, handshaked, passed around.
 
     Owns image frames, themes, overlays, masks, video playback, and LCD
-    persistence. Separate from LEDDevice (core/led_device.py) — each has
-    distinct services and method surface.
+    persistence. Construction (via builder — the only correct way):
 
-    Construction (via builder — the only correct way):
         device = ControllerBuilder.for_current_os().build_device(detected)
         device.connect(detected)
     """
 
-    # Type query constants — match LEDDevice's shape so handler code can
-    # ask either `is_led` / `is_lcd` uniformly without isinstance checks.
     is_lcd = True
     is_led = False
 
     def __init__(
         self,
         *,
+        protocol: Any = None,
         device_svc: Any = None,
         display_svc: Any = None,
         theme_svc: Any = None,
@@ -51,6 +52,7 @@ class LCDDevice:
         build_services_fn: Any = None,
         events: Any = None,
     ) -> None:
+        self._protocol = protocol  # DI'd by name via DeviceProtocolFactory
         self._device_svc = device_svc
         self._display_svc = display_svc
         self._theme_svc = theme_svc
@@ -65,6 +67,11 @@ class LCDDevice:
         self.log: logging.Logger = log
         self._persistence = LCDPersistence(device_svc, lcd_config)
         self._theme = LCDThemeWorkflow(self)
+
+    @property
+    def protocol(self) -> DeviceProtocol | None:
+        """The wire protocol (Scsi/HID/Bulk/Ly) DI'd by name at construction."""
+        return self._protocol
 
     # ══════════════════════════════════════════════════════════════════════
     # Shared lifecycle (DeviceInfo)

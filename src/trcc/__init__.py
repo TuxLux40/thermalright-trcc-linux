@@ -40,8 +40,8 @@ def detect_devices():
     Convenience for library users — wraps a one-shot platform build +
     detect. For sustained use, build a Trcc explicitly:
         from trcc.core.trcc import Trcc
-        from trcc.adapters.system import make_platform
-        trcc = Trcc(make_platform())
+        from trcc.adapters.system import PlatformFactory
+        trcc = Trcc(PlatformFactory.current())
         trcc.discover()
     """
     from trcc.core.ports import Platform

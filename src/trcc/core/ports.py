@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from trcc.core.models import JPEG_MAX_BYTES, DetectedDevice
 
 if TYPE_CHECKING:
-    from trcc.core.models import SensorInfo
+    from trcc.core.models import SensorInfo, UsbAddress
 
 
 @dataclass(frozen=True, slots=True)
@@ -477,17 +477,17 @@ class Platform(ABC):
             platform = Platform.for_current_os()
             for device in platform: ...
         """
-        from trcc.adapters.system import make_platform
-        return make_platform()
+        from trcc.adapters.system import PlatformFactory
+        return PlatformFactory.current()
 
     def __iter__(self) -> Iterator[DetectedDevice]:
         """Enumerate every USB device present right now.
 
         Re-runs detection on every call — there's no caching, the host
         OS may have hot-plugged or unplugged devices.  Equivalent to
-        ``self.create_detect_fn()()`` but reads as ``for d in platform``.
+        ``self.detect_devices()`` but reads as ``for d in platform``.
         """
-        return iter(self.create_detect_fn()())
+        return iter(self.detect_devices())
 
     @cached_property
     def sensors(self) -> SensorEnumerator:
@@ -638,12 +638,24 @@ class Platform(ABC):
 
     @abstractmethod
     def create_scsi_transport(self, path: str,
-                              vid: int = 0, pid: int = 0) -> Any:
-        """Create OS-specific SCSI transport for a device path."""
+                              vid: int = 0, pid: int = 0,
+                              *, usb_address: UsbAddress | None = None) -> Any:
+        """Create OS-specific SCSI transport for a device path.
+
+        ``usb_address`` disambiguates dual same-VID/PID coolers (#128). Linux
+        and Windows kernel SCSI passthrough bind by path and ignore it;
+        macOS / BSD USB BOT use it to pick the right physical device.
+        """
 
     @abstractmethod
-    def create_detect_fn(self) -> Callable[[], list[DetectedDevice]]:
-        """Return a device detection callable for this OS."""
+    def detect_devices(self) -> list[DetectedDevice]:
+        """Discover USB devices currently plugged in (per-OS implementation).
+
+        Each Platform subclass implements this with its native discovery
+        (sysfs / WMI / IOKit / sysctl). Callers iterate ``for d in platform``
+        or call this directly; either way the return shape is identical
+        across the 4 supported OSes — that's what makes the chain work.
+        """
 
     @abstractmethod
     def run_setup(self, auto_yes: bool = False) -> int:

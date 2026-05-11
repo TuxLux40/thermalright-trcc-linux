@@ -481,7 +481,7 @@ def lcd_device(mock_lcd_platform, tmp_config):
 
     init_settings(mock_lcd_platform)
     builder = ControllerBuilder(mock_lcd_platform).with_renderer(QtRenderer())
-    detected = mock_lcd_platform.create_detect_fn()()[0]
+    detected = mock_lcd_platform.detect_devices()[0]
     device = builder.build_device(detected)
     device.connect(detected)
     return device
@@ -495,7 +495,7 @@ def led_device(mock_led_platform, tmp_config):
 
     init_settings(mock_led_platform)
     builder = ControllerBuilder(mock_led_platform)
-    detected = mock_led_platform.create_detect_fn()()[0]
+    detected = mock_led_platform.detect_devices()[0]
     device = builder.build_device(detected)
     device.connect(detected)
     return device

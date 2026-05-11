@@ -179,14 +179,14 @@ class NoopBulkLikeDevice:
         vid: int,
         pid: int,
         *,
-        addr=None,
+        usb_address=None,
         resolution: tuple[int, int] = (480, 480),
         model_id: int = 32,
     ) -> None:
         from trcc.core.models import HandshakeResult
         self.vid = vid
         self.pid = pid
-        self.addr = addr
+        self.usb_address = usb_address
         self._handshake_result = HandshakeResult(
             resolution=resolution, model_id=model_id,
         )

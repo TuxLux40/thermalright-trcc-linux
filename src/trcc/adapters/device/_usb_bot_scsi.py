@@ -38,11 +38,11 @@ class UsbBotScsiTransport(ScsiTransport):
 
     def __init__(
         self, vid: int, pid: int,
-        *, addr: UsbAddress | None = None,
+        *, usb_address: UsbAddress | None = None,
     ) -> None:
         self._vid = vid
         self._pid = pid
-        self._addr = addr  # bind to specific (bus, address) — issue #128
+        self._usb_address = usb_address  # bind to specific (bus, address) — issue #128
         self._dev: Any = None
         self._ep_out: int | None = None
         self._ep_in: int | None = None
@@ -58,11 +58,11 @@ class UsbBotScsiTransport(ScsiTransport):
             return False
 
         kwargs: dict[str, Any] = {'idVendor': self._vid, 'idProduct': self._pid}
-        if self._addr is not None:
-            kwargs['custom_match'] = self._addr.matches
+        if self._usb_address is not None:
+            kwargs['custom_match'] = self._usb_address.matches
         dev: Any = usb.core.find(**kwargs)
         if dev is None:
-            where = f" @ {self._addr}" if self._addr else ""
+            where = f" @ {self._usb_address}" if self._usb_address else ""
             log.error("Device %04X:%04X%s not found", self._vid, self._pid, where)
             return False
 
