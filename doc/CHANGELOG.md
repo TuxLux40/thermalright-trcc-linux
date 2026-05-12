@@ -1,5 +1,65 @@
 # Changelog
 
+## v9.6.1
+
+Architecture refactor + Windows sensor strategy chain + per-OS smoke
+harnesses. No user-facing behavior change for shipping users on
+Linux / Windows / macOS / BSD — every gate green: ruff, pyright
+0/0/0, smoke 42/42, pytest 5663 passed.
+
+**Three-factory chain (foundation).** ``PlatformFactory`` /
+``ProtocolFactory`` / ``DeviceFactory`` now share one idiom: ABC +
+``@register`` self-registering subclasses + classmethod chokepoint.
+``Device`` ABC (``core/device/base.py``) replaces the
+``LCDDevice|LEDDevice`` union alias; ``protocol`` is DI'd at Device
+construction via ``ProtocolFactory.for_info(info)`` lookup-by-name.
+``addr → usb_address`` rename + ``DeviceInfo.from_detected`` DTO
+chokepoint structurally close the #130/#131 dual-VID/PID bug class.
+Uniform ``Platform.detect_devices()`` across all 4 OSes; smoke
+``dev/smoke_platforms.py`` verifies 42 contract assertions.
+
+**Windows sensor strategy chain.** ``WindowsSensorSource`` ABC with
+``@register('key')`` self-registering subclasses, mirroring the
+factory pattern. Three sources today, each with a DI'd I/O port:
+
+  - ``HWiNFOSource`` (priority 10) — reads
+    ``Global\HWiNFO_SENS_SM2`` MMF directly when HWiNFO64 is
+    installed. ``_MappingPort`` ABC + two adapters (ctypes prod +
+    in-memory for tests). Parser verifiable on Linux without a live
+    MMF via fixture-based tests.
+  - ``LHMSource`` (priority 20) — bundled LHM subprocess +
+    ``root\LibreHardwareMonitor`` WMI namespace.
+  - ``MSAcpiSource`` (priority 30) — last-resort native ACPI
+    thermal zones via ``root\wmi``.
+
+OS-isolated: concrete sources only import on Windows. Fixture-based
+parser tests under ``tests/fixtures/hwinfo/``;
+``dev/dump_hwinfo_shm.py`` lets contributors submit MMF dumps.
+
+**Per-OS runtime smoke harnesses.** Four new scripts under
+``dev/``: ``smoke_linux.py`` / ``smoke_windows.py`` /
+``smoke_macos.py`` / ``smoke_bsd.py``. Each runs on its target OS,
+exercises the real ``PlatformFactory.current()`` →
+``detect_devices()`` → enumerator → ``read_all()`` chain, prints a
+paste-ready ``[OK]/[WARN]/[SKIP]/[FAIL]`` report. Hardware-optional
+(probes that need the LCD report SKIP). Self-locating: wrong-OS
+exits cleanly.
+
+**Documentation.** ``claude21.md`` codifies the OS smoke-testing
+law (harness map, verification gates per change shape).
+``doc/SENSOR_RESEARCH.md`` is the standing reference for what each
+supported OS exposes, by which API, with what permissions, with
+≥2 citations per fact and a verdict matrix per OS × metric.
+
+**Windows log-file robustness.** ``RotatingFileHandler`` opens log
+file with ``encoding='utf-8'``, ``errors='replace'`` — closes the
+residual cp1252 file-write crash window the console-side
+reconfigure didn't cover.
+
+**Style.** New sensor source code uses explicit ternary + explicit
+comparisons (``X if cond else Y`` over ``X or Y``; ``== 0`` over
+bare truthy on ints; ``!= ''`` over bare truthy on strings).
+
 ## v9.6.0
 
 Windows runtime: bundle LibreHardwareMonitor + silence log-rotation noise.
