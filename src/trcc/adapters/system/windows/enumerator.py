@@ -137,10 +137,12 @@ class WindowsSensorEnumerator(SensorEnumeratorBase):
         and finally ``Win32_VideoController`` for universal coverage.
         """
         for src in self._live_sources:
-            if (gpus := _source_gpu_list(src)):
-                return gpus
-        if (gpus := super().get_gpu_list()):
-            return gpus
+            source_gpus = _source_gpu_list(src)
+            if len(source_gpus) > 0:
+                return source_gpus
+        nvidia_gpus = super().get_gpu_list()
+        if len(nvidia_gpus) > 0:
+            return nvidia_gpus
         return _wmi_video_controller_gpus()
 
     # ══════════════════════════════════════════════════════════════════════
@@ -218,7 +220,7 @@ class WindowsSensorEnumerator(SensorEnumeratorBase):
                 category='temperature',
                 name_contains=name_contains,
             )
-            if sid:
+            if sid != '':
                 return sid
         return ''
 
@@ -227,7 +229,7 @@ class WindowsSensorEnumerator(SensorEnumeratorBase):
         *, category: str = '', source: str = '',
     ) -> str:
         """Find by name across either a single source or the priority chain."""
-        if source:
+        if source != '':
             return self._find_first(
                 self._sensors, source=source,
                 category=category, name_contains=name_contains,
@@ -237,7 +239,7 @@ class WindowsSensorEnumerator(SensorEnumeratorBase):
                 self._sensors, source=src,
                 category=category, name_contains=name_contains,
             )
-            if sid:
+            if sid != '':
                 return sid
         return ''
 
@@ -247,7 +249,7 @@ class WindowsSensorEnumerator(SensorEnumeratorBase):
             if self._find_first(
                 self._sensors, source=src,
                 category='temperature', name_contains='gpu',
-            ):
+            ) != '':
                 return src
             # NVIDIA sensors are registered with source='nvidia' and have
             # GPU in their name implicitly (e.g. "GeForce RTX 4090 Temp"),
@@ -255,7 +257,7 @@ class WindowsSensorEnumerator(SensorEnumeratorBase):
             # nvidia label doesn't include "GPU".  Allow plain-source match.
             if src == 'nvidia' and self._find_first(
                 self._sensors, source='nvidia', category='temperature',
-            ):
+            ) != '':
                 return 'nvidia'
         return ''
 
@@ -286,11 +288,15 @@ def _wmi_video_controller_gpus() -> list[tuple[str, str]]:
     try:
         from trcc.adapters.system._windows_wmi import wmi_handle
         w = wmi_handle()
-        return [
-            (f'wmi:{i}', str(vc.Name).strip() or f'GPU {i}')
-            for i, vc in enumerate(w.Win32_VideoController())
-            if vc.Name
-        ]
+        out: list[tuple[str, str]] = []
+        for i, vc in enumerate(w.Win32_VideoController()):
+            if vc.Name is None:
+                continue
+            stripped = str(vc.Name).strip()
+            display = stripped if stripped != '' else f'GPU {i}'
+            if stripped != '':
+                out.append((f'wmi:{i}', display))
+        return out
     except ImportError:
         log.debug("wmi package unavailable — no WMI GPU enumeration")
         return []

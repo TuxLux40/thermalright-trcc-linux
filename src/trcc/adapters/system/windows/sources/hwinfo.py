@@ -190,10 +190,11 @@ class _HWiNFOMapping(_MappingPort):
         self._kernel32.OpenFileMappingW.argtypes = [
             ctypes.c_uint32, ctypes.c_int, ctypes.c_wchar_p,
         ]
-        self._handle = self._kernel32.OpenFileMappingW(
+        handle_result = self._kernel32.OpenFileMappingW(
             _FILE_MAP_READ, False, _MMF_NAME,
-        ) or 0
-        if not self._handle:
+        )
+        self._handle = handle_result if handle_result is not None else 0
+        if self._handle == 0:
             return False
 
         # MapViewOfFile(hMap, dwAccess, offHigh, offLow, bytesToMap) → LPVOID
@@ -203,10 +204,11 @@ class _HWiNFOMapping(_MappingPort):
             ctypes.c_uint32, ctypes.c_uint32, ctypes.c_size_t,
         ]
         # bytesToMap=0 → map until end of file mapping object.
-        self._view = self._kernel32.MapViewOfFile(
+        view_result = self._kernel32.MapViewOfFile(
             self._handle, _FILE_MAP_READ, 0, 0, 0,
-        ) or 0
-        if not self._view:
+        )
+        self._view = view_result if view_result is not None else 0
+        if self._view == 0:
             self.close()
             return False
         return True
@@ -214,13 +216,13 @@ class _HWiNFOMapping(_MappingPort):
     def close(self) -> None:
         if self._kernel32 is None:
             return
-        if self._view:
+        if self._view != 0:
             try:
                 self._kernel32.UnmapViewOfFile(ctypes.c_void_p(self._view))
             except OSError:
                 pass
             self._view = 0
-        if self._handle:
+        if self._handle != 0:
             try:
                 self._kernel32.CloseHandle(ctypes.c_void_p(self._handle))
             except OSError:
@@ -228,7 +230,7 @@ class _HWiNFOMapping(_MappingPort):
             self._handle = 0
 
     def read(self, offset: int, size: int) -> bytes:
-        if not self._view:
+        if self._view == 0:
             return b''
         return ctypes.string_at(self._view + offset, size)
 
@@ -360,8 +362,10 @@ class HWiNFOSource(WindowsSensorSource):
             if len(raw) < sensor_struct_size:
                 continue
             _id, _inst, name_orig, name_user = struct.unpack_from(_SENSOR_FMT, raw, 0)
-            label = _decode_cstr(name_user) or _decode_cstr(name_orig)
-            self._sensor_names[i] = label or f'Sensor {i}'
+            user_name = _decode_cstr(name_user)
+            orig_name = _decode_cstr(name_orig)
+            label = user_name if user_name != '' else orig_name
+            self._sensor_names[i] = label if label != '' else f'Sensor {i}'
 
     def _register_entries(
         self, enum: WindowsSensorEnumerator, header: _Header,
@@ -386,9 +390,16 @@ class HWiNFOSource(WindowsSensorSource):
             if mapping is None:
                 continue  # None / Other — skip
             category, default_unit = mapping
-            unit = _decode_cstr(unit_blob) or default_unit
-            entry_name = (_decode_cstr(name_user) or _decode_cstr(name_orig)
-                          or f'Reading {entry_id}')
+            decoded_unit = _decode_cstr(unit_blob)
+            unit = decoded_unit if decoded_unit != '' else default_unit
+            user_name = _decode_cstr(name_user)
+            orig_name = _decode_cstr(name_orig)
+            if user_name != '':
+                entry_name = user_name
+            elif orig_name != '':
+                entry_name = orig_name
+            else:
+                entry_name = f'Reading {entry_id}'
             parent = self._sensor_names.get(sensor_index, f'Sensor {sensor_index}')
             label = f'{parent} {entry_name}'.strip()
             sid = f'hwinfo:{sensor_index}:{entry_id}'

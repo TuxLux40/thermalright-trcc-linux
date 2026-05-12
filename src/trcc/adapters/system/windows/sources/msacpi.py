@@ -77,7 +77,7 @@ class MSAcpiSource(WindowsSensorSource):
         except Exception as e:
             log.debug("MSAcpi_ThermalZoneTemperature query failed: %s", e)
             return False
-        if not zones:
+        if len(zones) == 0:
             log.debug("MSAcpi tier: namespace responded but 0 zones — skipping")
             return False
         self._zones = [str(z.InstanceName) for z in zones]
@@ -115,8 +115,9 @@ def _pretty_zone_label(instance_name: str) -> str:
         ACPI\\ThermalZone\\TZ00_0 → Thermal Zone TZ00
     """
     leaf = instance_name.rsplit('\\', 1)[-1]
-    cleaned = leaf.rstrip('_0').strip() or leaf
-    return f"Thermal Zone {cleaned}" if cleaned else "Thermal Zone"
+    stripped = leaf.rstrip('_0').strip()
+    cleaned = stripped if stripped != '' else leaf
+    return f"Thermal Zone {cleaned}" if cleaned != '' else "Thermal Zone"
 
 
 __all__ = ['MSAcpiSource']
