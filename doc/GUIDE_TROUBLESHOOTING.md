@@ -260,6 +260,65 @@ trcc setup
 
 If colors are still wrong, [open an issue](https://github.com/Lexonight1/thermalright-trcc-linux/issues) with `trcc report` output.
 
+### `trccd` service running but segment/LED display is completely blank
+
+**Affected hardware:** HID LED devices — Assassin X 120R Digital, and any cooler
+using `0416:8001` (model `LED_DIGITAL`). The cooler connects and trcc reports it
+as found, but the segment display shows nothing.
+
+**Symptoms:**
+- `systemctl status trccd.service` → active (running)
+- `lsusb | grep 0416:8001` → device present
+- `trcc status` → shows device connected, brightness 100%, global on: True
+- The physical display on the cooler is blank
+
+**Cause:** `trcc daemon` (the process run by `trccd.service`) discovers devices
+and starts the IPC socket, but never calls `start_metrics_loop()`. That is the
+50ms background thread that reads sensor data and sends LED/segment frames to
+the hardware. Without it the device is connected but receives no updates — the
+display stays dark. This bug is present through at least v9.5.11.
+
+The GUI (`trcc gui`) and API server (`trcc api`) both start this loop correctly
+on launch. Only the bare `trcc daemon` command is missing the call.
+
+**Quick check** — if you see no `Frame sent` lines, the loop is not running:
+```bash
+tail -20 ~/.trcc/trcc.log | grep "Frame sent"
+```
+
+**Fix:** Add the missing `start_metrics_loop()` call to the installed daemon:
+```bash
+sudo python3 -c "
+import pathlib
+p = pathlib.Path(next(
+    __import__('importlib.util', fromlist=['util']).util.find_spec('trcc.daemon').origin
+    for _ in [None]
+))
+txt = p.read_text()
+old = '    trcc = _build_trcc()\n\n    server = IPCServer'
+new = '    trcc = _build_trcc()\n    trcc.start_metrics_loop()\n\n    server = IPCServer'
+if new in txt:
+    print('Already patched.')
+elif old in txt:
+    p.write_text(txt.replace(old, new, 1))
+    print('Patched OK')
+else:
+    print('Pattern not found — daemon.py layout may have changed. Search for _build_trcc() and add trcc.start_metrics_loop() on the next line.')
+"
+sudo systemctl restart trccd.service
+```
+
+**Verify:**
+```bash
+sleep 3 && tail -5 ~/.trcc/trcc.log
+# Should show: Frame sent: LED
+```
+
+**Note for package managers:** This patch modifies the installed `daemon.py`.
+It will be overwritten on the next `trcc-linux` upgrade — reapply after upgrades.
+
+---
+
 ### Device detected but nothing displays / sg_raw errors
 
 **Cause:** UAS (USB Attached SCSI) kernel driver interferes with LCD devices.
