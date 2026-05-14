@@ -993,7 +993,7 @@ def test_factory_threads_addr_to_usb_protocols(vid, pid, entry):
         return
 
     expected = UsbAddress(7, 42)
-    assert protocol._addr == expected, (
+    assert protocol._usb_address == expected, (
         f"{entry.protocol} protocol for {vid:04x}:{pid:04x} did not receive "
-        f"addr — got {protocol._addr!r}, expected {expected!r}"
+        f"usb_address — got {protocol._usb_address!r}, expected {expected!r}"
     )

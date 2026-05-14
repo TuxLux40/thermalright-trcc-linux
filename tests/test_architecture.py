@@ -366,9 +366,11 @@ class TestSensorEnumeratorABC(unittest.TestCase):
         self.assertTrue(issubclass(SensorEnumerator, ABC))
 
     def test_windows_implements_abc(self):
-        from trcc.adapters.system.windows_platform import SensorEnumerator
+        from trcc.adapters.system.windows.enumerator import (
+            WindowsSensorEnumerator,
+        )
         from trcc.core.ports import SensorEnumerator as ABC
-        self.assertTrue(issubclass(SensorEnumerator, ABC))
+        self.assertTrue(issubclass(WindowsSensorEnumerator, ABC))
 
     def test_macos_implements_abc(self):
         # Native sensor enumeration was extracted from macos_platform.py

@@ -56,8 +56,8 @@ def launch(verbosity: int = 0, decorated: bool = False,
     # trcc, idx) constructor instead of holding an LCDDevice reference.
 
     # ── Platform first — needed for lock check, DPI config, autostart, etc.
-    from trcc.adapters.system import make_platform
-    platform = make_platform()
+    from trcc.adapters.system import PlatformFactory
+    platform = PlatformFactory.current()
 
     # ── Single-instance lock — acquire before any heavy setup ────────────
     lock = platform.acquire_instance_lock()

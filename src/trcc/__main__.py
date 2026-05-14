@@ -17,17 +17,70 @@ _log_dir = Path.home() / '.trcc'
 _log_dir.mkdir(parents=True, exist_ok=True)
 _log_path = _log_dir / 'trcc.log'
 
+
+# Windows-only: stdlib RotatingFileHandler can't rotate a file that's open
+# in another process — ``os.rename`` fails with WinError 32 and the default
+# error path prints the traceback to stderr *and* drops the log record.
+# Linux/macOS rename of an open file works, so they use the stdlib handler.
+if sys.platform == 'win32':
+    class _SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
+        def doRollover(self) -> None:
+            try:
+                super().doRollover()
+            except (PermissionError, OSError):
+                pass
+
+    _rotating_handler_cls: type[logging.handlers.RotatingFileHandler] = _SafeRotatingFileHandler
+else:
+    _rotating_handler_cls = logging.handlers.RotatingFileHandler
+
+
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s [%(levelname)s] %(name)s.%(funcName)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     handlers=[
-        logging.handlers.RotatingFileHandler(
-            _log_path, maxBytes=1_000_000, backupCount=3),
+        _rotating_handler_cls(
+            _log_path, maxBytes=1_000_000, backupCount=3,
+            encoding='utf-8', errors='replace'),
     ],
 )
 log = logging.getLogger('trcc.main')
 log.info("Starting TRCC — platform=%s, executable=%s", sys.platform, sys.executable)
+
+# Windows: stdout/stderr default to cp1252, which can't encode common
+# Unicode chars used in log messages (e.g. ``→``, ``°``).  ``reconfigure``
+# is a silent no-op on some Python deployments (Windows Store), so on
+# top of that we monkey-patch ``logging.StreamHandler.emit`` to wrap the
+# write call in its own ``except UnicodeEncodeError`` that re-encodes
+# with ``errors='replace'``.  This catches EVERY StreamHandler — ours,
+# stdlib lastResort, third-party — at the class level, no matter when
+# or where they're instantiated.
+if sys.platform == 'win32':
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, 'reconfigure'):
+            try:
+                _stream.reconfigure(encoding='utf-8', errors='replace')
+            except (AttributeError, OSError, ValueError):
+                pass
+
+    def _safe_stream_emit(self: logging.StreamHandler, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            stream = self.stream
+            try:
+                stream.write(msg + self.terminator)
+            except UnicodeEncodeError:
+                encoding = getattr(stream, 'encoding', 'ascii') or 'ascii'
+                safe = msg.encode(encoding, errors='replace').decode(encoding)
+                stream.write(safe + self.terminator)
+            self.flush()
+        except RecursionError:
+            raise
+        except Exception:
+            self.handleError(record)
+
+    logging.StreamHandler.emit = _safe_stream_emit  # type: ignore[method-assign]
 
 # Windows: ensure libusb-1.0.dll is findable by pyusb (ctypes).
 # PyInstaller bundles the DLL next to the exe, but Python 3.8+ on Windows

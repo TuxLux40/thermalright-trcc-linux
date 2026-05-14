@@ -28,18 +28,18 @@ class _BulkLikeProtocol(DeviceProtocol):
 
     def __init__(
         self, vid: int, pid: int,
-        *, addr: UsbAddress | None = None,
+        *, usb_address: UsbAddress | None = None,
     ):
         super().__init__()
         self._vid = vid
         self._pid = pid
-        self._addr = addr  # disambiguates dual same-VID/PID coolers (#128)
+        self._usb_address = usb_address  # disambiguates dual same-VID/PID coolers (#128)
         self._device: Any | None = None
 
     @staticmethod
     def _make_device(
         vid: int, pid: int,
-        *, addr: UsbAddress | None = None,
+        *, usb_address: UsbAddress | None = None,
     ) -> Any:
         raise NotImplementedError
 
@@ -47,8 +47,8 @@ class _BulkLikeProtocol(DeviceProtocol):
         if self._device is None:
             log.debug("%s: creating device %04X:%04X%s",
                       self._label, self._vid, self._pid,
-                      f" @ {self._addr}" if self._addr else "")
-            self._device = self._make_device(self._vid, self._pid, addr=self._addr)
+                      f" @ {self._usb_address}" if self._usb_address else "")
+            self._device = self._make_device(self._vid, self._pid, usb_address=self._usb_address)
             assert self._device is not None
             log.debug("%s: starting handshake", self._label)
             result = self._device.handshake()
@@ -98,10 +98,10 @@ class BulkProtocol(_BulkLikeProtocol):
     @staticmethod
     def _make_device(
         vid: int, pid: int,
-        *, addr: UsbAddress | None = None,
+        *, usb_address: UsbAddress | None = None,
     ) -> Any:
         from .bulk import BulkDevice
-        return BulkDevice(vid, pid, addr=addr)
+        return BulkDevice(vid, pid, usb_address=usb_address)
 
     def get_info(self) -> ProtocolInfo:
         return self._build_usb_protocol_info(

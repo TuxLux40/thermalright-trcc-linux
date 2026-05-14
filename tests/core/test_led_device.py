@@ -19,7 +19,7 @@ def _make_led(**overrides) -> Device:
     svc.apply_mask.return_value = [(255, 0, 0)]
     svc.has_protocol = True
 
-    defaults = {'led_svc': svc, 'get_protocol': MagicMock()}
+    defaults = {'led_svc': svc, 'protocol': MagicMock()}
     defaults.update(overrides)
     led = Device(**defaults)
     return led
@@ -42,10 +42,10 @@ class TestLEDDeviceConstruction(unittest.TestCase):
         led = Device(led_svc=svc)
         self.assertIs(led._led_svc, svc)
 
-    def test_with_get_protocol(self):
-        gp = MagicMock()
-        led = Device(get_protocol=gp)
-        self.assertIs(led._get_protocol, gp)
+    def test_with_protocol(self):
+        proto = MagicMock()
+        led = Device(protocol=proto)
+        self.assertIs(led._protocol, proto)
 
     def test_connect_requires_device_svc(self):
         """connect() raises RuntimeError without injected device_svc."""
@@ -78,7 +78,7 @@ class TestLEDDeviceConnectIsolation(unittest.TestCase):
         svc = MagicMock()
         svc.initialize.return_value = "LED: AX120 (30 LEDs)"
         return Device(
-            get_protocol=MagicMock(),
+            protocol=MagicMock(),
             led_svc_factory=lambda **kw: svc,
             led_config=MagicMock(),
         )
@@ -112,7 +112,7 @@ class TestLEDDeviceConnectIsolation(unittest.TestCase):
         dev_svc.devices = []  # No LED devices found
         led = Device(
             device_svc=dev_svc,
-            get_protocol=MagicMock(),
+            protocol=MagicMock(),
         )
 
         result = led.connect()
@@ -563,7 +563,7 @@ class TestInitialize(unittest.TestCase):
     """Device.initialize_led() — GUI path with pre-detected device."""
 
     def test_initialize_creates_service_if_needed(self):
-        led = Device(get_protocol=MagicMock())
+        led = Device(protocol=MagicMock())
         device = MagicMock()
         led._led_svc = None  # force creation
         # Phase 9: Device is now a Union alias of LCDDevice|LEDDevice; patch

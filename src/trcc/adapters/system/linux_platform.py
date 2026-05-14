@@ -14,9 +14,12 @@ import site
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import psutil
+
+if TYPE_CHECKING:
+    from trcc.core.models import UsbAddress
 
 # Re-exported for back-compat: tests + callers import SensorEnumerator and
 # `_ensure_nvml` from this module. The implementation lives in
@@ -630,10 +633,10 @@ class LinuxPlatform(Platform):
 
     # ── Hardware discovery ────────────────────────────────────
 
-    def create_detect_fn(self):
+    def detect_devices(self):
         from trcc.adapters.device.detector import DeviceDetector
         from trcc.adapters.device.linux.detector import linux_scsi_resolver
-        return DeviceDetector.make_detect_fn(scsi_resolver=linux_scsi_resolver)
+        return DeviceDetector.make_detect_fn(scsi_resolver=linux_scsi_resolver)()
 
     def _make_sensor_enumerator(self) -> SensorEnumerator:
         return SensorEnumerator()
@@ -641,7 +644,9 @@ class LinuxPlatform(Platform):
     # ── Transport creation ────────────────────────────────────
 
     def create_scsi_transport(self, path: str,
-                              vid: int = 0, pid: int = 0) -> Any:
+                              vid: int = 0, pid: int = 0,
+                              *, usb_address: UsbAddress | None = None) -> Any:
+        # Kernel SG_IO binds by /dev/sgN — usb_address is irrelevant here.
         from trcc.adapters.device.linux.scsi import LinuxScsiTransport
         return LinuxScsiTransport(path)
 

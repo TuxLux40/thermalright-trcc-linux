@@ -1,7 +1,7 @@
 """FreeBSD USB device detection utilities.
 
 Device detection on FreeBSD uses the cross-platform DeviceDetector
-(pyusb-based) via BSDPlatform.create_detect_fn(). SCSI devices are
+(pyusb-based) via BSDPlatform.detect_devices(). SCSI devices are
 addressed by VID:PID through pyusb — no /dev/pass* mapping needed.
 
 This module provides diagnostic utilities only.

@@ -24,9 +24,9 @@ class LedProtocol(UsbProtocol):
 
     def __init__(
         self, vid: int, pid: int,
-        *, addr: UsbAddress | None = None,
+        *, usb_address: UsbAddress | None = None,
     ):
-        super().__init__(vid, pid, addr=addr)
+        super().__init__(vid, pid, usb_address=usb_address)
         self._sender = None
 
     def send_data(

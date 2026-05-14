@@ -39,7 +39,7 @@ def _connect_lcd(spec: dict, tmp_path):
 
     init_settings(platform)
     builder = ControllerBuilder(platform).with_renderer(QtRenderer())
-    detected = platform.create_detect_fn()()[0]
+    detected = platform.detect_devices()[0]
     device = builder.build_device(detected)
     result = device.connect(detected)
     return device, result
@@ -56,7 +56,7 @@ def _connect_led(spec: dict, tmp_path):
 
     init_settings(platform)
     builder = ControllerBuilder(platform)
-    detected = platform.create_detect_fn()()[0]
+    detected = platform.detect_devices()[0]
     device = builder.build_device(detected)
     result = device.connect(detected)
     return device, result

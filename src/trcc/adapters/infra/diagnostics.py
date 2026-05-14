@@ -571,8 +571,8 @@ def get_module_version(import_name: str) -> str | None:
 def get_setup_info(doctor_config: DoctorPlatformConfig | None = None) -> SetupInfo:
     """Get system info for setup wizard."""
     if doctor_config is None:
-        from trcc.adapters.system import make_platform
-        doctor_config = make_platform().doctor_config()
+        from trcc.adapters.system import PlatformFactory
+        doctor_config = PlatformFactory.current().doctor_config()
     v = sys.version_info
     return SetupInfo(
         distro=doctor_config.distro_name,
@@ -587,8 +587,8 @@ def check_system_deps(
 ) -> list[DepResult]:
     """Check all dependencies and return structured results."""
     if doctor_config is None:
-        from trcc.adapters.system import make_platform
-        doctor_config = make_platform().doctor_config()
+        from trcc.adapters.system import PlatformFactory
+        doctor_config = PlatformFactory.current().doctor_config()
     if pm is None:
         pm = doctor_config.pkg_manager
     results: list[DepResult] = []
@@ -811,8 +811,8 @@ def check_desktop_entry() -> bool:
 def run_doctor(doctor_config: DoctorPlatformConfig | None = None) -> int:
     """Run dependency health check. Returns 0 if all required deps pass."""
     if doctor_config is None:
-        from trcc.adapters.system import make_platform
-        doctor_config = make_platform().doctor_config()
+        from trcc.adapters.system import PlatformFactory
+        doctor_config = PlatformFactory.current().doctor_config()
 
     if doctor_config.enable_ansi:
         _enable_ansi_windows()
@@ -1307,8 +1307,8 @@ class DebugReport:
 
     def _get_config(self) -> ReportPlatformConfig:
         if self._config is None:
-            from trcc.adapters.system import make_platform
-            self._config = make_platform().report_config()
+            from trcc.adapters.system import PlatformFactory
+            self._config = PlatformFactory.current().report_config()
         return self._config
 
     def _get_detect_fn(self) -> Callable[[], list[Any]]:

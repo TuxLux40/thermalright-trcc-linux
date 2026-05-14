@@ -1,23 +1,26 @@
 """LEDDevice — LED controller device (RGB / zones / segments / clock).
 
-A USB device with LED-specific concerns. Separate from LCDDevice because
-the two have distinct responsibilities (pixel frames vs color arrays).
-Both inherit no shared base — the small lifecycle duplication is cheaper
-than adding a fourth abstraction layer. The builder picks the right class
-based on detected.protocol.
+A USB device with LED-specific concerns. Subclasses the ``Device`` ABC
+shared with ``LCDDevice``; LED-specific surface (zone/color/mode/segment
+updaters) lives here. The builder picks LCDDevice vs LEDDevice based on
+``detected.protocol``.
 """
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .._logging import tagged_logger
 from ..models import LEDMode
+from .base import Device
+
+if TYPE_CHECKING:
+    from ..ports import DeviceProtocol
 
 log = logging.getLogger(__name__)
 
 
-class LEDDevice:
+class LEDDevice(Device):
     """A USB LED controller. Discovered, handshaked, DI'd to handlers.
 
     Builder wiring:
@@ -25,28 +28,31 @@ class LEDDevice:
         device.connect(detected)
     """
 
-    # Type query constants — match LCDDevice's shape so handler code can
-    # ask either `is_led` / `is_lcd` uniformly without isinstance checks.
     is_lcd = False
     is_led = True
 
     def __init__(
         self,
         *,
+        protocol: Any = None,
         device_svc: Any = None,
         led_svc: Any = None,
-        get_protocol: Any = None,
         led_svc_factory: Any = None,
         led_config: Any = None,
     ) -> None:
+        self._protocol = protocol  # DI'd by name via DeviceProtocolFactory
         self._device_svc = device_svc
         self._led_svc = led_svc
-        self._get_protocol = get_protocol
         self._led_svc_factory = led_svc_factory
         self._led_config = led_config
         self._info: Any = None
         self._init_status: str | None = None
         self.log: logging.Logger = log
+
+    @property
+    def protocol(self) -> DeviceProtocol | None:
+        """The LED wire protocol DI'd by name at construction."""
+        return self._protocol
 
     # ══════════════════════════════════════════════════════════════════════
     # Shared lifecycle (DeviceInfo)
@@ -110,7 +116,7 @@ class LEDDevice:
                 return {"success": False, "error": "No LED device found"}
 
         self._led_svc = self._led_svc_factory(
-            get_protocol=self._get_protocol,
+            protocol=self._protocol,
             led_config=self._led_config,
         )
         self._init_status = self._led_svc.initialize(self._info)
@@ -161,7 +167,7 @@ class LEDDevice:
         """Initialize for a known LED device (GUI — device already detected)."""
         if not self._led_svc:
             self._led_svc = self._led_svc_factory(
-                get_protocol=self._get_protocol,
+                protocol=self._protocol,
                 led_config=self._led_config,
             )
         self._info = device

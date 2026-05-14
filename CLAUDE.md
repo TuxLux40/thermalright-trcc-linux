@@ -106,6 +106,31 @@ Every piece of data has exactly ONE owner. Violations = bugs.
 - Services own ALL business logic — pure Python, no Qt, no framework deps
 - Views own ONLY rendering — read from Settings/Models, call Services, display results
 
+### Three-Factory Chain (OS → Protocol → Device)
+
+The composition pipeline is a chain of three factories, **same idiom** in every layer: ABC + `@<Name>Factory.register(key)` self-registering subclasses + a single classmethod chokepoint that dispatches by name. Read one, you've read all three.
+
+| Factory | Defined in | Subclasses | Dispatch key | Chokepoint |
+|---|---|---|---|---|
+| `PlatformFactory` | `adapters/system/__init__.py` | `WindowsFactory`, `MacOSFactory`, `LinuxFactory`, `BSDFactory` | `sys.platform` | `.current()` |
+| `ProtocolFactory` | `adapters/device/factory.py` | `ScsiProtocolFactory`, `HidProtocolFactory`, `BulkProtocolFactory`, `LyProtocolFactory`, `LedProtocolFactory` | `info.protocol` (string from registry) | `.for_info(info)` |
+| `DeviceFactory` | `core/device/factory.py` | `LCDDeviceFactory`, `LEDDeviceFactory` | device kind, derived from `PROTOCOL_TRAITS[info.protocol].is_led` | `.for_info(info, builder)` |
+
+**The chain** (top to bottom of the composition root):
+
+```
+PlatformFactory.current()              ← OS dispatch     → Platform
+    Platform.detect_devices()          ← OS-specific     → list[DetectedDevice]
+        DeviceInfo.from_detected(d)    ← typed DTO chokepoint
+            ProtocolFactory.for_info(info) ← protocol by name  → DeviceProtocol
+                DeviceFactory.for_info(info, builder) ← device by kind
+                    LCDDevice(protocol=…, …)  OR  LEDDevice(protocol=…, …)
+```
+
+**Why three factories**: OCP at every layer. New OS = `@PlatformFactory.register('haiku')` + subclass. New protocol = `@ProtocolFactory.register('whatever')` + subclass. New Device kind = `@DeviceFactory.register('seven_segment')` + subclass. Zero touchpoints in callers.
+
+**Verification**: `dev/smoke_platforms.py` asserts all three registries are populated and dispatch correctly — 42 checks total, runs on the dev box without any OS-specific tooling installed.
+
 ## Daemon Mode (`TRCC_DAEMON`)
 
 Opt-in singleton background process that owns USB and serves CLI / API / GUI clients over a Unix domain socket. Toggled by `TRCC_DAEMON=1`. Off by default during cutover. Falls back to in-process silently on platforms where `AF_UNIX` is unavailable (Windows < build 17063), so the flag is safe to leave set on every OS.
@@ -275,6 +300,50 @@ Before adding code that writes a file another tool reads (legacy ↔ next/ shari
 
 ### Network Retries ↔ UI Locks
 If you lengthen a timeout or add retry on a network call, audit every UI state that gates on "busy". A 120s retry chain with `_downloading=True` locking clicks is worse UX than 30s fail-fast.
+
+### Cross-Platform Fixes (Windows / macOS / BSD)
+Non-Linux bugs get the slowest, most disciplined approach in this repo. The Linux dev does not run these OSes day-to-day, so guessing wastes commits, releases, and reporter trust.
+
+**Protocol — every cross-platform bug, every time:**
+
+1. **Reproduce or get a log first.** No code changes until you have either a stack trace from the reporter / VM, or a deterministic repro. "I think Windows does X" without a log = stop.
+2. **Read the log to find the broken link.** Trace `OS → memory → transport → device` in that order. Fix the FIRST broken step, not the loudest symptom.
+3. **Web-research the canonical pattern before inventing.** For any claim of the form "Windows/macOS/BSD doesn't support X" or "this API behaves differently on Y":
+   - Step 1: Check the C# decompile (`/home/ignorant/Downloads/v2.1.4_decompiled/`) — the original Windows app already solved it.
+   - Step 2: Web-search authoritative docs (MSDN, Apple Developer, FreeBSD handbook) AND how shipping projects in the same space solve it (Rainmeter, Hass.Agent, OpenRGB, OpenHardwareMonitor, Zabbix, Glances).
+   - Step 3: Propose the canonical pattern. **Only invent a custom approach when nothing fits** — and document why in the commit.
+   - Past failure: v9.6.0 added pythonnet + HardwareMonitor (50 MB, 3 deps) for a Windows sensor problem the WMI namespace pattern already solved cleanly.
+4. **One canonical fix, not a chain.** If you find yourself writing fix N+1 that modifies the same code as fix N (e.g. five `StreamHandler.emit` overrides in a row), STOP. Revert the chain, read the actual API contract, ship one fix that addresses the root cause.
+5. **Architecture lens before the patch:**
+   - **SRP**: Windows-specific console encoding belongs in ONE place — the logging adapter — not scattered across handlers, modules, and entry points.
+   - **OCP**: A platform-specific behavior is a subclass under `adapters/system/{os}_platform.py` or a gated module, not `if sys.platform == 'win32'` smeared through core or services.
+   - **DIP**: Core never imports `winreg`, `wmi`, `pywin32`, `pyobjc`, `IOKit`, or `dbus`. Adapters do. Core consumes the `Platform` port.
+   - **DRY**: If two OSes need similar adapter logic, extract the shared piece to `adapters/system/_base.py` plugin discovery — don't copy-paste between platform files.
+6. **Verify before declaring done.** A Windows fix is "done" when a reporter confirms on real hardware or you've reproduced + verified in the Windows VM. Green CI + green tests prove the code compiles and types match — they do NOT prove the bug is fixed.
+
+**Antipattern shortlist (do not repeat):**
+- Five-commit fix chains where each commit reworks the previous one — root cause was never found.
+- Reaching for chmod / sudo / pythonnet / monkey-patches when the kernel/OS has a native solution one config change away.
+- "Windows is weird" / "macOS is weird" as a reason to skip research — those OSes have 30 years of documented patterns; find the right one.
+
+**Verification reality (what we can actually test):**
+
+| OS | VM on dev box? | Verification path | Iteration speed |
+|---|---|---|---|
+| Linux | Native | Dev box | Fast |
+| Windows | Yes (VM) | Windows VM on Linux host | Medium — can repro in-house |
+| macOS | **No** — Apple licensing + hardware lock | Reporter only | Slow — every fix needs a reporter cycle |
+| FreeBSD / OpenBSD | Possible (lightweight VM) but not set up yet | Reporter only for now | Slow |
+
+**Implications:**
+- **Windows**: get the VM repro before claiming a fix. If you can't repro in the VM, the bug report is either incomplete or the fix is unverified — say so.
+- **macOS**: extra weight on research + canonical-pattern discipline because we cannot self-verify. Draft reply, ship to a single reporter with `awaiting-reporter` label, wait for confirmation BEFORE generalizing the fix to a release. Never post "try vX.Y.Z" for macOS until at least one reporter has confirmed; one anecdotal pass is the gate.
+- **BSD**: same reporter-dependent loop as macOS until we set up a VM.
+
+**Per-OS metrics ecosystem notes:**
+- **Windows** has clear winners: LibreHardwareMonitor (WMI namespace `root\LibreHardwareMonitor`), OpenHardwareMonitor, Hass.Agent, HWiNFO64 shared memory. Pick the one that matches user install state — don't ship our own kernel driver.
+- **macOS metrics is FRAGMENTED — extra research required.** No single canonical source like LHM. Candidates to evaluate before any code: IOKit SMC keys (Intel vs Apple Silicon differ, and Apple Silicon SMC keys are largely undocumented), `powermetrics` CLI (root-only), `macmon` (Apple Silicon focused), `iStats`/`iStatistica`, `osx-cpu-temp`, `stats` (menubar app, no API). Read what each actually exposes, on which CPU family, with what permissions, before deciding. Do NOT assume Intel SMC keys work on Apple Silicon.
+- **BSD** uses `sysctl` for almost everything (`hw.sensors`, `dev.cpu.N.temperature`). FreeBSD ≠ OpenBSD ≠ NetBSD — verify the sysctl name on the target distro.
 
 ### Two Modes
 

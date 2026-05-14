@@ -126,7 +126,7 @@ def _reset_and_refind(dev: Any, vid: int, pid: int) -> Any:
 
 def open_usb_device(
     vid: int, pid: int,
-    *, addr: UsbAddress | None = None,
+    *, usb_address: UsbAddress | None = None,
 ) -> tuple[Any, Any]:
     """Find, configure, and claim a vendor-class USB device.
 
@@ -134,9 +134,9 @@ def open_usb_device(
       find -> detach kernel drivers -> configure
       -> find vendor interface -> claim (with EBUSY retry) -> return
 
-    ``addr`` (bus + address) binds to a specific physical USB device when two
-    coolers share VID:PID (issue #128). Without it, pyusb returns the first
-    match — fine for single-device users, ambiguous for dual.
+    ``usb_address`` (bus + address) binds to a specific physical USB device
+    when two coolers share VID:PID (issue #128). Without it, pyusb returns
+    the first match — fine for single-device users, ambiguous for dual.
 
     Returns:
         (device, interface) tuple ready for endpoint detection.
@@ -149,11 +149,11 @@ def open_usb_device(
     import usb.util  # type: ignore[import-untyped]
 
     kwargs: dict[str, Any] = {'idVendor': vid, 'idProduct': pid}
-    if addr is not None:
-        kwargs['custom_match'] = addr.matches
+    if usb_address is not None:
+        kwargs['custom_match'] = usb_address.matches
     dev = usb.core.find(**kwargs)
     if dev is None:
-        where = f" @ {addr}" if addr else ""
+        where = f" @ {usb_address}" if usb_address else ""
         raise RuntimeError(_ERR_NOT_FOUND.format(vid=vid, pid=pid) + where)
 
     # 1. Detach kernel drivers (post-verification included)
@@ -204,12 +204,12 @@ class BulkFrameDevice:
 
     def __init__(
         self, vid: int, pid: int, usb_path: str = "",
-        *, addr: UsbAddress | None = None,
+        *, usb_address: UsbAddress | None = None,
     ):
         self.vid = vid
         self.pid = pid
         self.usb_path = usb_path
-        self.addr = addr  # bus+addr — disambiguates dual same-VID/PID coolers (#128)
+        self.usb_address = usb_address  # disambiguates dual same-VID/PID coolers (#128)
         self._dev: Any = None
         self._ep_out: Any = None
         self._ep_in: Any = None
@@ -225,7 +225,7 @@ class BulkFrameDevice:
         """Find and claim the USB device, discover bulk IN/OUT endpoints."""
         import usb.util
 
-        dev, intf = open_usb_device(self.vid, self.pid, addr=self.addr)
+        dev, intf = open_usb_device(self.vid, self.pid, usb_address=self.usb_address)
 
         self._ep_out = usb.util.find_descriptor(
             intf,

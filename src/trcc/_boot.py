@@ -106,7 +106,7 @@ def trcc(
 
     Parameters:
         platform: DI override. ``None`` triggers OS detection via
-            ``make_platform()``.  Tests pass ``MockPlatform`` to skip USB.
+            ``PlatformFactory.current()``.  Tests pass ``MockPlatform`` to skip USB.
         renderer: DI override. ``None`` builds an offscreen ``QtRenderer``.
             The GUI passes its own windowed renderer.
         discover_now: When True (default), runs ``Trcc.discover()`` so
@@ -143,8 +143,8 @@ def trcc(
 
         # 2. Resolve / accept the Platform.
         if platform is None:
-            from trcc.adapters.system import make_platform
-            platform = make_platform()
+            from trcc.adapters.system import PlatformFactory
+            platform = PlatformFactory.current()
 
         # 3. Bootstrap the process: logging, OS-specific stdout config,
         # settings file, first-run setup hook. All idempotent — safe

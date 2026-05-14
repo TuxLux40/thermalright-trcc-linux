@@ -1,4 +1,11 @@
-"""Windows Platform — single file, single class, all Windows logic."""
+"""Windows Platform — single class with a strategy-chain sensor enumerator.
+
+Sensor enumeration moved out to ``trcc/adapters/system/windows/`` as a
+sub-package; this file owns the ``WindowsPlatform`` adapter only.  Add
+new sensor sources by dropping a module under ``windows/sources/``
+decorated with ``@WindowsSensorSource.register('key')`` — zero
+touchpoints here.
+"""
 from __future__ import annotations
 
 import logging
@@ -6,17 +13,19 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import psutil
 
-from trcc.adapters.system._base import SensorEnumeratorBase
+if TYPE_CHECKING:
+    from trcc.adapters.system.windows.enumerator import WindowsSensorEnumerator
+    from trcc.core.models import UsbAddress
+
 from trcc.adapters.system._shared import (
     _confirm,
     _copy_assets_to_user_dir,
     _print_summary,
 )
-from trcc.core.models import SensorInfo
 from trcc.core.ports import (
     DoctorPlatformConfig,
     Platform,
@@ -32,27 +41,6 @@ log = logging.getLogger(__name__)
 
 _REG_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
 _REG_VALUE = 'TRCC Linux'
-
-# LHM SensorType → (category, unit)
-_LHM_TYPE_MAP: dict[str, tuple[str, str]] = {
-    'Temperature': ('temperature', '°C'),
-    'Fan': ('fan', 'RPM'),
-    'Clock': ('clock', 'MHz'),
-    'Load': ('usage', '%'),
-    'Power': ('power', 'W'),
-    'Voltage': ('voltage', 'V'),
-    'SmallData': ('memory', 'MB'),
-    'Data': ('memory', 'GB'),
-    'Throughput': ('throughput', 'B/s'),
-}
-
-# ── Optional: LibreHardwareMonitor via pythonnet ──────────────────────
-try:
-    from HardwareMonitor.Hardware import Computer  # pyright: ignore[reportMissingImports]
-    LHM_AVAILABLE = True
-except (ImportError, RuntimeError, OSError) as _lhm_err:
-    LHM_AVAILABLE = False
-    log.debug("LibreHardwareMonitor unavailable (pythonnet/CLR not loaded): %s", _lhm_err)
 
 
 # =========================================================================
@@ -175,255 +163,34 @@ def get_disk_info() -> list[dict[str, str]]:
 
 
 # =========================================================================
-# SensorEnumerator — file-scoped
-# =========================================================================
-
-class SensorEnumerator(SensorEnumeratorBase):
-    """Windows sensor discovery: LHM > pynvml > psutil > WMI."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._lhm_computer: Any = None
-        self._lhm_gpu_used = False
-
-    def discover(self) -> list[SensorInfo]:
-        self._sensors.clear()
-        self._lhm_gpu_used = False
-        self._discover_psutil_win()
-        self._discover_lhm()
-        if not self._lhm_gpu_used:
-            self._discover_nvidia()
-        self._discover_wmi()
-        self._discover_computed()
-        log.info("Windows sensor discovery: %d sensors", len(self._sensors))
-        return self._sensors
-
-    def _on_stop(self) -> None:
-        if self._lhm_computer is not None:
-            try:
-                self._lhm_computer.Close()
-            except Exception as e:
-                # .NET/CLR teardown can throw arbitrary System.* exceptions; log and move on.
-                log.debug("LHM Computer.Close() failed during teardown: %s", e)
-            self._lhm_computer = None
-
-    def _discover_psutil_win(self) -> None:
-        self._discover_psutil_base()
-        temps = psutil.sensors_temperatures() if hasattr(psutil, 'sensors_temperatures') else {}
-        for chip, entries in temps.items():
-            for i, entry in enumerate(entries):
-                sid = f'psutil:temp:{chip}:{i}'
-                label = entry.label or f'{chip} temp{i}'
-                self._sensors.append(SensorInfo(sid, label, 'temperature', '°C', 'psutil'))
-
-    def _discover_lhm(self) -> None:
-        if not LHM_AVAILABLE:
-            return
-        try:
-            computer = Computer()
-            computer.IsGpuEnabled = True
-            computer.IsCpuEnabled = True
-            computer.IsMotherboardEnabled = True
-            computer.Open()
-            self._lhm_computer = computer
-
-            for hw in computer.Hardware:
-                hw.Update()
-                hw_type = str(hw.HardwareType)
-                hw_name = str(hw.Name)
-                if 'Gpu' in hw_type:
-                    self._lhm_gpu_used = True
-                hw_key = hw_name.lower().replace(' ', '_')[:20]
-                self._register_lhm_sensors(hw_key, hw)
-                for sub in hw.SubHardware:
-                    sub.Update()
-                    sub_key = str(sub.Name).lower().replace(' ', '_')[:20]
-                    self._register_lhm_sensors(sub_key, sub)
-
-            log.info("LHM discovery: %d sensors (GPU via NVAPI: %s)",
-                     len(self._sensors), self._lhm_gpu_used)
-        except Exception:
-            log.warning("LibreHardwareMonitor discovery failed", exc_info=True)
-
-    def _register_lhm_sensors(self, hw_key: str, hw: Any) -> None:
-        hw_name = str(hw.Name)
-        for sensor in hw.Sensors:
-            s_type = str(sensor.SensorType)
-            s_name = str(sensor.Name)
-            if not (mapping := _LHM_TYPE_MAP.get(s_type)):
-                continue
-            category, unit = mapping
-            sid = f'lhm:{hw_key}:{s_name.lower().replace(" ", "_")}'
-            self._sensors.append(SensorInfo(sid, f'{hw_name} {s_name}', category, unit, 'lhm'))
-
-    def _discover_wmi(self) -> None:
-        try:
-            from ._windows_wmi import wmi_handle
-            w = wmi_handle(namespace='root\\WMI')
-            try:
-                for tz in w.MSAcpi_ThermalZoneTemperature():
-                    sid = f'wmi:thermal:{tz.InstanceName}'
-                    self._sensors.append(SensorInfo(sid, 'Thermal Zone', 'temperature', '°C', 'wmi'))
-            except Exception:
-                log.debug("WMI thermal zones not accessible")
-        except ImportError:
-            log.debug("wmi package not available")
-        except Exception:
-            log.debug("WMI sensor discovery failed")
-
-    def _poll_platform(self, readings: dict[str, float]) -> None:
-        if hasattr(psutil, 'sensors_temperatures'):
-            temps = psutil.sensors_temperatures()
-            for chip, entries in temps.items():
-                for i, entry in enumerate(entries):
-                    readings[f'psutil:temp:{chip}:{i}'] = entry.current
-        if self._lhm_computer is not None:
-            self._poll_lhm(readings)
-
-    def _poll_lhm(self, readings: dict[str, float]) -> None:
-        try:
-            for hw in self._lhm_computer.Hardware:
-                hw.Update()
-                hw_key = str(hw.Name).lower().replace(' ', '_')[:20]
-                self._read_lhm_node(readings, hw_key, hw)
-                for sub in hw.SubHardware:
-                    sub.Update()
-                    sub_key = str(sub.Name).lower().replace(' ', '_')[:20]
-                    self._read_lhm_node(readings, sub_key, sub)
-        except Exception:
-            log.debug("LHM poll failed", exc_info=True)
-
-    @staticmethod
-    def _read_lhm_node(readings: dict[str, float], hw_key: str, hw: Any) -> None:
-        for sensor in hw.Sensors:
-            val = sensor.Value
-            if val is None:
-                continue
-            s_name = str(sensor.Name).lower().replace(' ', '_')
-            readings[f'lhm:{hw_key}:{s_name}'] = float(val)
-
-    def get_gpu_list(self) -> list[tuple[str, str]]:
-        """Enumerate GPUs on Windows.
-
-        Order of preference:
-            1. **LibreHardwareMonitor** — covers NVIDIA/AMD/Intel WITH sensor
-               metrics (temp, usage, clock, power). Best UX when present.
-            2. **pynvml** — NVIDIA-only, no LHM dependency.
-            3. **WMI Win32_VideoController** — universal fallback. Detects
-               every GPU Windows knows about (AMD/Intel/NVIDIA, integrated +
-               discrete) but offers NO sensor data. The user can still
-               select the GPU; metrics show as ``--`` until LHM is added.
-               Closes #131 for AMD-on-Windows users without LHM running.
-        """
-        gpus: list[tuple[str, str]] = []
-        if self._lhm_computer is not None:
-            try:
-                for hw in self._lhm_computer.Hardware:
-                    if 'Gpu' in str(hw.HardwareType):
-                        hw_name = str(hw.Name)
-                        hw_key = hw_name.lower().replace(' ', '_')[:20]
-                        gpus.append((f'lhm:{hw_key}', hw_name))
-            except Exception:
-                log.debug("LHM GPU enumeration failed")
-        if not gpus:
-            gpus = super().get_gpu_list()
-        if not gpus:
-            gpus = self._wmi_get_gpu_list()
-        return gpus
-
-    @staticmethod
-    def _wmi_get_gpu_list() -> list[tuple[str, str]]:
-        """Enumerate every video controller via ``Win32_VideoController``.
-
-        Microsoft's Win32_VideoController.AdapterRAM is a 32-bit unsigned
-        int — it caps at 4 GiB on cards with more VRAM (a known WMI
-        limitation, not a code bug). We accept that and just show the
-        name; sensor data lives in LHM/ADLX, not here.
-        """
-        try:
-            from ._windows_wmi import wmi_handle
-            w = wmi_handle()
-            return [
-                (f'wmi:{i}', str(vc.Name).strip() or f'GPU {i}')
-                for i, vc in enumerate(w.Win32_VideoController())
-                if vc.Name
-            ]
-        except ImportError:
-            log.debug("wmi package unavailable — no WMI GPU enumeration")
-            return []
-        except Exception:
-            log.exception("WMI Win32_VideoController query failed")
-            return []
-
-    def _build_mapping(self) -> dict[str, str]:
-        sensors = self._sensors
-        _ff = self._find_first
-        mapping: dict[str, str] = {}
-        self._map_common(mapping)
-
-        mapping['cpu_temp'] = (
-            _ff(sensors, source='lhm', name_contains='Package', category='temperature')
-            or _ff(sensors, source='lhm', name_contains='CPU', category='temperature')
-            or _ff(sensors, source='psutil', category='temperature')
-        )
-        mapping['cpu_power'] = (
-            _ff(sensors, source='lhm', name_contains='Package', category='power')
-            or _ff(sensors, source='lhm', name_contains='CPU', category='power')
-        )
-
-        lhm_gpu_temp = _ff(sensors, source='lhm', name_contains='GPU', category='temperature')
-        nvidia_gpu_temp = _ff(sensors, source='nvidia', category='temperature')
-        if lhm_gpu_temp:
-            mapping['gpu_temp'] = lhm_gpu_temp
-            mapping['gpu_usage'] = _ff(sensors, source='lhm', name_contains='GPU', category='usage')
-            mapping['gpu_clock'] = _ff(sensors, source='lhm', name_contains='GPU', category='clock')
-            mapping['gpu_power'] = _ff(sensors, source='lhm', name_contains='GPU', category='power')
-        elif nvidia_gpu_temp:
-            mapping['gpu_temp'] = nvidia_gpu_temp
-            mapping['gpu_usage'] = _ff(sensors, source='nvidia', category='gpu_busy')
-            mapping['gpu_clock'] = _ff(sensors, source='nvidia', category='clock')
-            mapping['gpu_power'] = _ff(sensors, source='nvidia', category='power')
-        else:
-            mapping['gpu_temp'] = ''
-            mapping['gpu_usage'] = ''
-            mapping['gpu_clock'] = ''
-            mapping['gpu_power'] = ''
-
-        mapping['mem_temp'] = _ff(sensors, source='lhm', name_contains='Memory', category='temperature')
-        mapping['disk_temp'] = (
-            _ff(sensors, source='lhm', name_contains='Drive', category='temperature')
-            or _ff(sensors, source='lhm', name_contains='SSD', category='temperature')
-            or _ff(sensors, source='lhm', name_contains='NVMe', category='temperature')
-        )
-
-        self._map_fans(mapping, fan_sources=('lhm', 'nvidia'))
-        return mapping
-
-
-# =========================================================================
 # WindowsPlatform — THE one class
 # =========================================================================
 
 class WindowsPlatform(Platform):
-    """Windows Platform — all OS logic inline."""
+    """Windows Platform — sensor work delegated to ``windows.WindowsSensorEnumerator``."""
 
     def __init__(self) -> None:
         super().__init__()
 
     # ── Sensor enumerator ─────────────────────────────────────
 
-    def _make_sensor_enumerator(self) -> SensorEnumerator:
-        return SensorEnumerator()
+    def _make_sensor_enumerator(self) -> WindowsSensorEnumerator:
+        from trcc.adapters.system.windows.enumerator import (
+            WindowsSensorEnumerator,
+        )
+        return WindowsSensorEnumerator()
 
     # ── Device detection ──────────────────────────────────────
 
-    def create_detect_fn(self):
+    def detect_devices(self):
         from trcc.adapters.device.windows.detector import WindowsDeviceDetector
-        return WindowsDeviceDetector.detect
+        return WindowsDeviceDetector.detect()
 
     # ── Transport creation ────────────────────────────────────
 
-    def create_scsi_transport(self, path: str, vid: int = 0, pid: int = 0) -> Any:
+    def create_scsi_transport(self, path: str, vid: int = 0, pid: int = 0,
+                              *, usb_address: UsbAddress | None = None) -> Any:
+        # DeviceIoControl binds by \\.\PhysicalDriveN — usb_address is irrelevant.
         from trcc.adapters.device.windows.scsi import WindowsScsiTransport
         return WindowsScsiTransport(path)
 

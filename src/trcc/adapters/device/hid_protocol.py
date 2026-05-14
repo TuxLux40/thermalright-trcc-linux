@@ -26,9 +26,9 @@ class HidProtocol(UsbProtocol):
 
     def __init__(
         self, vid: int, pid: int, device_type: int,
-        *, addr: UsbAddress | None = None,
+        *, usb_address: UsbAddress | None = None,
     ):
-        super().__init__(vid, pid, addr=addr)
+        super().__init__(vid, pid, usb_address=usb_address)
         self._device_type = device_type
         self._handler: HidDevice | None = None
 

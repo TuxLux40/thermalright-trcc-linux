@@ -60,12 +60,12 @@ class ControllerBuilder:
     def for_current_os(cls) -> ControllerBuilder:
         """Create a builder with the OS-appropriate Platform.
 
-        Delegates to ``make_platform()`` — the single OS-detection
-        chokepoint. Honors ``TRCC_MOCK`` so test/dev runs get
-        ``MockPlatform`` without the caller knowing or caring.
+        Delegates to ``PlatformFactory.current()`` — the single OS chokepoint.
+        Honors ``TRCC_MOCK`` so test/dev runs get ``MockPlatform`` without
+        the caller knowing or caring.
         """
-        from trcc.adapters.system import make_platform
-        return cls(make_platform())
+        from trcc.adapters.system import PlatformFactory
+        return cls(PlatformFactory.current())
 
     def bootstrap(self, verbosity: int = 0) -> None:
         """Bootstrap the platform: logging → OS setup → settings.
@@ -104,7 +104,7 @@ class ControllerBuilder:
         from ..services import DeviceService
         DeviceProtocolFactory.set_scsi_transport(self._os.create_scsi_transport)
         return DeviceService(
-            detect_fn=self._os.create_detect_fn(),
+            detect_fn=self._os.detect_devices,
             probe_led_fn=probe_led_model,
             get_protocol=DeviceProtocolFactory.get_protocol,
             get_protocol_info=DeviceProtocolFactory.get_protocol_info,
@@ -122,65 +122,33 @@ class ControllerBuilder:
     # ── Build methods ──────────────────────────────────────────────
 
     def build_device(self, detected: Any = None) -> Device:
-        """Build a Device from detected hardware or config.
+        """Build a Device — orchestrates the three-factory chain.
 
-        ProtocolTraits.is_led drives what services get injected.
-        One method, one class. The config tells us what to build.
+            detected (DetectedDevice / DeviceInfo / None)
+              → DeviceInfo.from_detected          (typed DTO chokepoint)
+              → DeviceFactory.for_info(info, self) — dispatches by *kind*
+                    ↳ LEDDeviceFactory   → LEDDevice(protocol=…, …)
+                    ↳ LCDDeviceFactory   → LCDDevice(protocol=…, …)
+
+        The DeviceFactory subclass internally calls
+        ``DeviceProtocolFactory.get_protocol(info)`` so the protocol is
+        DI'd by name into the Device's constructor.
+
+        ``detected=None`` (API standalone) → LCDDevice with no protocol;
+        discovers later via ``device.connect(detected)``.
         """
-        from ..adapters.device.factory import DeviceProtocolFactory
-        from .models import PROTOCOL_TRAITS
+        from .device.factory import DeviceFactory
+        from .models import DetectedDevice, DeviceInfo
 
-        device_svc = self._build_device_svc()
-        cfg = self._build_config_callables()
+        info: DeviceInfo | None
+        if isinstance(detected, DetectedDevice):
+            info = DeviceInfo.from_detected(detected)
+        elif isinstance(detected, DeviceInfo):
+            info = detected
+        else:
+            info = None
 
-        is_led = (
-            detected is not None
-            and PROTOCOL_TRAITS.get(detected.protocol, PROTOCOL_TRAITS['scsi']).is_led
-        )
-
-        if is_led:
-            from ..services import LEDService
-            from ..services.led_config import LEDConfigService
-            from .device.led import LEDDevice
-            return LEDDevice(
-                device_svc=device_svc,
-                get_protocol=DeviceProtocolFactory.get_protocol,
-                led_svc_factory=LEDService,
-                led_config=LEDConfigService(**cfg),
-            )
-
-        from ..conf import Settings
-        from ..services.image import ImageService
-        from ..services.lcd_config import LCDConfigService
-        from ..services.theme import theme_info_from_directory
-        build_fn = self._make_build_services_fn()
-        renderer = self._renderer
-        if renderer is None:
-            raise RuntimeError(
-                "ControllerBuilder: renderer not set. "
-                "Dispatch InitPlatformCommand with renderer_factory before building devices.")
-        ImageService.set_renderer(renderer)
-        lcd_config = LCDConfigService(
-            **cfg,
-            apply_format_prefs_fn=Settings.apply_format_prefs,
-        )
-        from .device.lcd import LCDDevice
-        result = build_fn(device_svc, renderer)
-        device = LCDDevice(
-            device_svc=device_svc,
-            display_svc=result['display_svc'],
-            theme_svc=result['theme_svc'],
-            renderer=renderer,
-            dc_config_cls=result['dc_config_cls'],
-            load_config_json_fn=result['load_config_json_fn'],
-            theme_info_from_dir_fn=theme_info_from_directory,
-            lcd_config=lcd_config,
-            build_services_fn=build_fn,
-            events=self._events,
-        )
-        if self._data_dir:
-            device.initialize(self._data_dir)
-        return device
+        return DeviceFactory.for_info(info, self)
 
     def build_system(self, settings: Any = None) -> SystemService:
         """Build and return a SystemService.
@@ -200,7 +168,7 @@ class ControllerBuilder:
     # in Phase 3 — callers now go straight to the source:
     #   ensure_data_fn         → DataManager.ensure_all
     #   download_fns           → from theme_downloader import download_pack, list_available
-    #   detect_fn              → list(platform)  (or platform.create_detect_fn())
+    #   detect_fn              → list(platform)  (or platform.detect_devices())
     #   device_svc             → builder._build_device_svc()  (still internal)
     #   memory/disk_info       → platform.get_memory_info / platform.get_disk_info
 

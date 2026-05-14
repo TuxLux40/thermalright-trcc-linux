@@ -13,7 +13,10 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from trcc.core.models import UsbAddress
 
 from trcc.adapters.system._base import SUBPROCESS_EXC, SensorEnumeratorBase
 from trcc.adapters.system._shared import (
@@ -311,18 +314,21 @@ class BSDPlatform(Platform):
 
     # ── Hardware discovery ────────────────────────────────────
 
-    def create_detect_fn(self):
+    def detect_devices(self):
         from trcc.adapters.device.detector import DeviceDetector
-        return DeviceDetector.make_detect_fn(scsi_resolver=None)
+        return DeviceDetector.make_detect_fn(scsi_resolver=None)()
 
     # ── Transport creation ────────────────────────────────────
 
     def create_scsi_transport(self, path: str,
-                              vid: int = 0, pid: int = 0) -> Any:
+                              vid: int = 0, pid: int = 0,
+                              *, usb_address: UsbAddress | None = None) -> Any:
         from trcc.adapters.device.bsd.scsi import BSDScsiTransport
-        from trcc.core.models import UsbAddress
-        # path is usb:bus:address on BSD — bind to that physical device.
-        return BSDScsiTransport(vid, pid, addr=UsbAddress.parse(path))
+        from trcc.core.models import UsbAddress as _UsbAddress
+        # BSD USB BOT binds by (bus, address). Prefer the explicit kwarg
+        # threaded from DeviceInfo; fall back to parsing path for legacy callers.
+        bound = usb_address or _UsbAddress.parse(path)
+        return BSDScsiTransport(vid, pid, usb_address=bound)
 
     # ── Directories ───────────────────────────────────────────
 

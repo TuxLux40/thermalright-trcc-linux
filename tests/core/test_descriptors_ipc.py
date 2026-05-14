@@ -21,7 +21,7 @@ def _make_descriptor(idx: int, vid: int, pid: int, **overrides) -> DeviceInfo:
         'path': f'mock:lcd:{idx}:{vid:04x}:{pid:04x}',
         'resolution': (320, 320),
         'vid': vid, 'pid': pid,
-        'addr': UsbAddress(bus=1, address=idx + 5),
+        'usb_address': UsbAddress(bus=1, address=idx + 5),
         'device_index': idx,
         'fbl_code': 100,
         'protocol': 'scsi',
@@ -49,7 +49,7 @@ class TestDescriptorIPCDispatch(unittest.TestCase):
 
     def _equal(self, a: DeviceInfo, b: DeviceInfo) -> None:
         for field in (
-            'name', 'path', 'resolution', 'vid', 'pid', 'addr',
+            'name', 'path', 'resolution', 'vid', 'pid', 'usb_address',
             'device_index', 'fbl_code', 'protocol', 'device_type',
             'implementation', 'button_image', 'pm_byte', 'sub_byte',
         ):
@@ -70,7 +70,7 @@ class TestDescriptorIPCDispatch(unittest.TestCase):
 
     def test_lcd_descriptors_dispatch_round_trip(self):
         """One LCD's descriptor goes out as wire dicts, comes back as DeviceInfo."""
-        original = _make_descriptor(0, 0x0402, 0x3922, addr=None)
+        original = _make_descriptor(0, 0x0402, 0x3922, usb_address=None)
         server = IPCServer(trcc=self._stub_trcc(lcd_infos=[original]))
         response = server._dispatch_meta("lcd_descriptors", (), {})
 
@@ -85,7 +85,7 @@ class TestDescriptorIPCDispatch(unittest.TestCase):
         original = _make_descriptor(
             0, 0x0416, 0x8001,
             protocol='hid', device_type=2,
-            addr=UsbAddress(bus=2, address=7),
+            usb_address=UsbAddress(bus=2, address=7),
         )
         server = IPCServer(trcc=self._stub_trcc(led_infos=[original]))
         response = server._dispatch_meta("led_descriptors", (), {})
@@ -93,13 +93,13 @@ class TestDescriptorIPCDispatch(unittest.TestCase):
         self.assertTrue(response['success'])
         restored = DeviceInfo.from_wire_dict(response['descriptors'][0])
         self._equal(original, restored)
-        assert restored.addr is not None
-        self.assertEqual(restored.addr.bus, 2)
-        self.assertEqual(restored.addr.address, 7)
+        assert restored.usb_address is not None
+        self.assertEqual(restored.usb_address.bus, 2)
+        self.assertEqual(restored.usb_address.address, 7)
 
     def test_multiple_lcd_descriptors_preserve_order(self):
         """List order matters — devices are addressed by index throughout the GUI."""
-        a = _make_descriptor(0, 0x0402, 0x3922, addr=None)
+        a = _make_descriptor(0, 0x0402, 0x3922, usb_address=None)
         b = _make_descriptor(
             1, 0x0418, 0x5303,
             resolution=(1280, 480),

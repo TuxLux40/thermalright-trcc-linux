@@ -481,7 +481,7 @@ def probe_led_model(vid: int = LED_VID, pid: int = LED_PID,
     try:
         from .factory import DeviceProtocolFactory
         transport = DeviceProtocolFactory.create_usb_transport(
-            vid, pid, addr=UsbAddress.parse(usb_path),
+            vid, pid, usb_address=UsbAddress.parse(usb_path),
         )
         transport.open()
         sender = LedHidSender(transport)

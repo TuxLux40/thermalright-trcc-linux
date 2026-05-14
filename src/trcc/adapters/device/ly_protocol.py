@@ -24,10 +24,10 @@ class LyProtocol(_BulkLikeProtocol):
     @staticmethod
     def _make_device(
         vid: int, pid: int,
-        *, addr: UsbAddress | None = None,
+        *, usb_address: UsbAddress | None = None,
     ) -> Any:
         from .ly import LyDevice
-        return LyDevice(vid, pid, addr=addr)
+        return LyDevice(vid, pid, usb_address=usb_address)
 
     def get_info(self) -> ProtocolInfo:
         return self._build_usb_protocol_info(

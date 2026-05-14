@@ -10,9 +10,12 @@ import shutil
 import struct
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import psutil
+
+if TYPE_CHECKING:
+    from trcc.core.models import UsbAddress
 
 from trcc.adapters.system._base import SensorEnumeratorBase
 from trcc.adapters.system._shared import (
@@ -396,17 +399,21 @@ class MacOSPlatform(Platform):
 
     # ── Hardware discovery ────────────────────────────────────
 
-    def create_detect_fn(self):
+    def detect_devices(self):
         from trcc.adapters.device.detector import DeviceDetector
-        return DeviceDetector.make_detect_fn(scsi_resolver=None)
+        return DeviceDetector.make_detect_fn(scsi_resolver=None)()
 
     # ── Transport creation ────────────────────────────────────
 
-    def create_scsi_transport(self, path: str, vid: int = 0, pid: int = 0) -> Any:
+    def create_scsi_transport(self, path: str, vid: int = 0, pid: int = 0,
+                              *, usb_address: UsbAddress | None = None) -> Any:
         from trcc.adapters.device.macos.scsi import MacOSScsiTransport
-        from trcc.core.models import UsbAddress
-        # path is usb:bus:address on macOS — bind to that physical device.
-        return MacOSScsiTransport(vid=vid, pid=pid, addr=UsbAddress.parse(path))
+        from trcc.core.models import UsbAddress as _UsbAddress
+        # macOS USB BOT binds by (bus, address). Prefer the explicit kwarg
+        # threaded from DeviceInfo; fall back to parsing the path if a legacy
+        # caller didn't pass it.
+        bound = usb_address or _UsbAddress.parse(path)
+        return MacOSScsiTransport(vid=vid, pid=pid, usb_address=bound)
 
     # ── Directories ───────────────────────────────────────────
 

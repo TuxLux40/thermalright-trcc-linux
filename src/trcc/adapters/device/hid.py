@@ -603,12 +603,12 @@ class PyUsbTransport(UsbTransport):
     def __init__(
         self, vid: int, pid: int,
         serial: str | None = None,
-        *, addr: UsbAddress | None = None,
+        *, usb_address: UsbAddress | None = None,
     ):
         self._vid = vid
         self._pid = pid
         self._serial = serial
-        self._addr = addr  # bind to specific (bus, address) — issue #128
+        self._usb_address = usb_address  # bind to specific (bus, address) — issue #128
         self._device = None
         self._is_open = False
         # Auto-detected endpoints (populated on open)
@@ -628,15 +628,15 @@ class PyUsbTransport(UsbTransport):
         kwargs: dict[str, Any] = {'idVendor': self._vid, 'idProduct': self._pid}
         if self._serial:
             kwargs['serial_number'] = self._serial
-        if self._addr is not None:
+        if self._usb_address is not None:
             # custom_match binds us to the exact physical USB device when two
             # coolers share VID:PID (issue #128); pyusb still applies the
             # idVendor/idProduct prefilter for speed.
-            kwargs['custom_match'] = self._addr.matches
+            kwargs['custom_match'] = self._usb_address.matches
 
         self._device = usb.core.find(**kwargs)  # type: ignore[union-attr]
         if self._device is None:
-            where = f" @ {self._addr}" if self._addr else ""
+            where = f" @ {self._usb_address}" if self._usb_address else ""
             raise RuntimeError(
                 f"USB device not found: VID={self._vid:#06x} PID={self._pid:#06x}{where}"
             )
@@ -785,7 +785,7 @@ class HidApiTransport(UsbTransport):
     def __init__(
         self, vid: int, pid: int,
         serial: str | None = None,
-        *, addr: UsbAddress | None = None,
+        *, usb_address: UsbAddress | None = None,
     ):
         if not HIDAPI_AVAILABLE:
             raise ImportError(
@@ -796,14 +796,14 @@ class HidApiTransport(UsbTransport):
         self._vid = vid
         self._pid = pid
         self._serial = serial
-        # hidapi can't bind to (bus, addr) directly — its path format is OS-specific.
+        # hidapi can't bind to (bus, address) directly — its path format is OS-specific.
         # PyUsbTransport (preferred) does enforce this; here we just log when
         # multi-device disambiguation isn't possible (issue #128).
-        if addr is not None:
-            log.warning("HidApiTransport: addr=%s requested but hidapi can't enforce "
+        if usb_address is not None:
+            log.warning("HidApiTransport: usb_address=%s requested but hidapi can't enforce "
                         "(bus, address) binding — install pyusb for reliable "
-                        "multi-device support", addr)
-        self._addr = addr
+                        "multi-device support", usb_address)
+        self._usb_address = usb_address
         self._device = None
         self._is_open = False
 

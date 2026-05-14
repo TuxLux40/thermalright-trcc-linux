@@ -251,9 +251,9 @@ class SetupWizard(QWidget):
             check_udev,
             get_setup_info,
         )
-        from trcc.adapters.system import make_platform
+        from trcc.adapters.system import PlatformFactory
 
-        config = make_platform().doctor_config()
+        config = PlatformFactory.current().doctor_config()
         info = get_setup_info(config)
 
         # System deps — always (already platform-aware via DoctorPlatformConfig)

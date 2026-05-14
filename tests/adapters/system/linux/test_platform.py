@@ -20,8 +20,9 @@ class TestLinuxPlatformContract:
     def setup_method(self):
         self._p = LinuxPlatform()
 
-    def test_create_detect_fn_returns_callable(self):
-        assert callable(self._p.create_detect_fn())
+    def test_detect_devices_returns_list(self):
+        result = self._p.detect_devices()
+        assert isinstance(result, list)
 
     def test_create_sensor_enumerator_returns_sensor_enumerator(self):
         assert isinstance(self._p.create_sensor_enumerator(), SensorEnumerator)
