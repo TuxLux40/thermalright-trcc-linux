@@ -109,6 +109,26 @@ class LEDFacadeProxy(_FacadeProxy):
                  timeout: float = 10.0) -> None:
         super().__init__('led', socket_path, timeout)
 
+    def snapshot(self, led_idx: int = 0) -> Any:
+        """Return an ``LEDSnapshot`` for device ``led_idx`` via meta dispatch."""
+        from ..ipc import send_manifold_request
+        from .results import LEDSnapshot
+        data = send_manifold_request(
+            "_meta", "led_snapshot", (led_idx,), {},
+            socket_path=self._socket_path, timeout=self._timeout,
+        )
+        if not data.get("success"):
+            return LEDSnapshot(
+                connected=False, style_id=0, mode=0, color=(0, 0, 0),
+                brightness=0, global_on=False, zones=[], zone_sync=False,
+                zone_sync_interval=0, selected_zone=0, segment_on=[],
+                clock_24h=True, week_sunday=False, memory_ratio=1,
+                disk_index=0, test_mode=False,
+            )
+        snap_dict = dict(data.get("snapshot", {}))
+        snap_dict['color'] = tuple(snap_dict.get('color', [0, 0, 0]))
+        return LEDSnapshot(**snap_dict)
+
 
 class ControlCenterFacadeProxy(_FacadeProxy):
     """Proxy for ``Trcc.control_center``."""
@@ -211,7 +231,8 @@ class EventBusProxy:
                         try:
                             msg = json.loads(text)
                             payload = self._desanitize_payload(
-                                msg.get("payload", ()))
+                                msg.get("payload", ()),
+                                topic=msg.get("topic", event))
                             callback(*payload)
                         except Exception:
                             log.exception(
@@ -256,7 +277,8 @@ class EventBusProxy:
             "TrccProxy clients cannot publish — events flow daemon → client. "
             "Use Trcc.events.publish from inside the daemon process.")
 
-    def _desanitize_payload(self, payload: list | tuple) -> tuple:
+    def _desanitize_payload(self, payload: list | tuple, *,
+                            topic: str = '') -> tuple:
         """Reverse :meth:`IPCServer._sanitize_payload`.
 
         Walks the payload list and unwraps any ``__surface__`` envelopes
@@ -264,16 +286,27 @@ class EventBusProxy:
         is wired, the envelope dict passes through to the callback —
         callers that don't care about surfaces (e.g. tests subscribing
         only to METRICS) are unaffected.
+
+        For the ``metrics`` topic, dicts are reconstructed into
+        ``HardwareMetrics`` dataclass instances so callers see the same
+        type they would get from a local (non-daemon) Trcc.
         """
+        from .events import Topic
         from .wire import is_surface_envelope, unwrap_surface
 
-        if self._renderer is None:
-            return tuple(payload)
-        return tuple(
-            unwrap_surface(self._renderer, item)
-            if is_surface_envelope(item) else item
-            for item in payload
-        )
+        def _restore(item: Any) -> Any:
+            if topic == Topic.METRICS and isinstance(item, dict):
+                from .models.sensor import HardwareMetrics
+                import dataclasses as _dc
+                known = {f.name for f in _dc.fields(HardwareMetrics)}
+                d = {k: (set(v) if k == '_populated' and isinstance(v, list) else v)
+                     for k, v in item.items() if k in known}
+                return HardwareMetrics(**d)
+            if self._renderer is not None and is_surface_envelope(item):
+                return unwrap_surface(self._renderer, item)
+            return item
+
+        return tuple(_restore(item) for item in payload)
 
     def cleanup(self) -> None:
         """Close every open subscription. Idempotent.
@@ -385,6 +418,21 @@ class TrccProxy:
     def led_devices(self) -> tuple:
         """Empty in daemon mode — use ``led_descriptors()`` for identity."""
         return ()
+
+    @property
+    def settings(self) -> Any:
+        """Local user settings — reads from the per-user config file.
+
+        TrccProxy clients (GUI / CLI) share the same settings file as the
+        daemon, so the global ``conf.settings`` singleton is the right source.
+        Lazily initializes it if the composition root skipped ``init_settings``.
+        """
+        from .. import conf
+        if conf.settings is None:
+            from ..adapters.system import PlatformFactory
+            from ..conf import init_settings
+            init_settings(PlatformFactory.current())
+        return conf.settings
 
     def lcd_descriptors(self) -> list[Any]:
         """Mirror of ``Trcc.lcd_descriptors`` — fetched over IPC.

@@ -22,9 +22,10 @@ log = logging.getLogger(__name__)
 class BaseHandler:
     """Shared handler interface — holds a ``Device``, routes mutual methods."""
 
-    def __init__(self, device: Device, view: str) -> None:
+    def __init__(self, device: Device | None, view: str) -> None:
         self._device = device
         self._view = view
+        self._device_info_override: DeviceInfo | None = None
 
     @property
     def view_name(self) -> str:
@@ -37,6 +38,8 @@ class BaseHandler:
 
     @property
     def device_info(self) -> DeviceInfo | None:
+        if self._device_info_override is not None:
+            return self._device_info_override
         return self._device.device_info if self._device else None
 
     def deactivate(self) -> None:

@@ -45,6 +45,19 @@ log = logging.getLogger(__name__)
 _SOCK_NAME = "trcc-linux.sock"
 
 
+def _json_default(obj: Any) -> Any:
+    """JSON serializer fallback for types not handled by the default encoder.
+
+    Handles: set → sorted list, dataclass → dict.  Keeps wire payloads
+    clean without requiring callers to enumerate every edge-case type.
+    """
+    if isinstance(obj, set):
+        return sorted(obj)
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        return dataclasses.asdict(obj)
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
+
+
 def _socket_path() -> Path:
     return Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / _SOCK_NAME
 
@@ -307,27 +320,53 @@ class IPCServer:
         # client. On write failure, unsubscribes itself.
         sub_id_holder: list[int] = []
 
+        def _cleanup_sub() -> None:
+            """Unsubscribe and close socket for this subscription."""
+            if not sub_id_holder:
+                return
+            sid = sub_id_holder[0]
+            try:
+                self._trcc.events.unsubscribe(sid)
+            except Exception:
+                log.exception("subscribe forwarder: unsubscribe raised")
+            self._event_subs[:] = [
+                (i, c) for (i, c) in self._event_subs if i != sid
+            ]
+            try:
+                client.close()
+            except OSError:
+                log.debug("subscribe forwarder: client.close() failed",
+                          exc_info=True)
+
         def _forward(*payload: Any) -> None:
             wire_payload = self._sanitize_payload(topic, payload)
-            line = json.dumps({"topic": topic, "payload": wire_payload}) + "\n"
+            try:
+                line = json.dumps({"topic": topic, "payload": wire_payload},
+                                  default=_json_default) + "\n"
+            except (TypeError, ValueError):
+                log.warning("_forward: payload for %r is not JSON-serializable — skipping", topic)
+                return
             try:
                 client.sendall(line.encode())
             except OSError:
-                if not sub_id_holder:
-                    return
-                sid = sub_id_holder[0]
-                try:
-                    self._trcc.events.unsubscribe(sid)
-                except Exception:
-                    log.exception("subscribe forwarder: unsubscribe raised")
-                self._event_subs[:] = [
-                    (i, c) for (i, c) in self._event_subs if i != sid
-                ]
-                try:
-                    client.close()
-                except OSError:
-                    log.debug("subscribe forwarder: client.close() failed",
-                              exc_info=True)
+                _cleanup_sub()
+                return
+            # Detect half-closed connections (CLOSE_WAIT) quickly: a
+            # non-blocking recv returning b'' means the remote side
+            # has closed, even though sendall still succeeds.
+            try:
+                client.setblocking(False)
+                data = client.recv(1)
+                client.setblocking(True)
+                if data == b'':
+                    log.debug("subscribe forwarder: remote closed (EOF on recv) — cleaning up")
+                    _cleanup_sub()
+            except BlockingIOError:
+                # No data available — connection is alive
+                client.setblocking(True)
+            except OSError:
+                client.setblocking(True)
+                _cleanup_sub()
 
         sub_id = self._trcc.events.subscribe(topic, _forward)
         sub_id_holder.append(sub_id)
@@ -337,15 +376,14 @@ class IPCServer:
     def _sanitize_payload(self, topic: str, payload: tuple) -> list:
         """Return *payload* in JSON-safe form for transmission.
 
-        Only ``Topic.FRAME`` carries a non-JSON-safe value today: the
-        rendered surface at index 1.  When a renderer is wired in, the
-        surface is wrapped via :func:`trcc.core.wire.wrap_surface`; when
-        not, the surface slot is replaced with ``None`` and a one-shot
-        warning is logged so misconfiguration surfaces during smoke tests
-        rather than as silent dropped frames in production.
+        Only ``Topic.FRAME`` carries a non-JSON-safe value: the rendered
+        surface at index 1.  When a renderer is wired in, the surface is
+        wrapped via :func:`trcc.core.wire.wrap_surface`; when not, the
+        surface slot is replaced with ``None``.
 
-        Other topics flow untouched — their payloads are already JSON-safe
-        (strings, ints, lists, dataclasses-as-dicts).
+        Other topics pass through as a plain list — any remaining
+        non-JSON types are handled by the ``_json_default`` encoder in
+        the caller (``_forward``).
         """
         from .core.events import Topic
 
@@ -355,6 +393,13 @@ class IPCServer:
         # Topic.FRAME contract: (device_path: str, surface: Any | None).
         # Only index 1 needs sanitizing; index 0 is already a string.
         if len(payload) < 2 or payload[1] is None:
+            return list(payload)
+
+        surface = payload[1]
+
+        # LED FRAME events carry a dict (color data) which is already
+        # JSON-safe.  Only Qt surface objects need encode_for_wire.
+        if not hasattr(surface, 'save'):
             return list(payload)
 
         if self._renderer is None:
@@ -369,7 +414,7 @@ class IPCServer:
 
         from .core.wire import wrap_surface
         try:
-            envelope = wrap_surface(self._renderer, payload[1])
+            envelope = wrap_surface(self._renderer, surface)
         except Exception:
             log.exception("_sanitize_payload: encode_for_wire raised — "
                           "dropping surface payload")
@@ -514,6 +559,17 @@ class IPCServer:
                         "error": f"{type(e).__name__}: {e}"}
             return {"success": True,
                     "descriptors": [info.to_wire_dict() for info in infos]}
+        if method == "led_snapshot":
+            try:
+                import dataclasses as _dc
+                idx = int(args[0]) if args else 0
+                snap = self._trcc.led.snapshot(idx)
+                d = _dc.asdict(snap)
+                d['color'] = list(d['color'])
+                return {"success": True, "snapshot": d}
+            except Exception as e:
+                log.exception("_meta.led_snapshot failed")
+                return {"success": False, "error": f"{type(e).__name__}: {e}"}
         return {"success": False,
                 "error": f"Unknown _meta method: {method}"}
 

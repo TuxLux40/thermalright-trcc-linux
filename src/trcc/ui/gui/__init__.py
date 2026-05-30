@@ -101,17 +101,24 @@ def launch(verbosity: int = 0, decorated: bool = False,
 
     # ── Build Trcc with the windowed QApp's renderer; defer discovery so
     # the splash can show progress while USB connect + theme extraction
-    # run in BootstrapWorker.
-    from trcc._boot import trcc as _boot_trcc
+    # run in BootstrapWorker.  In daemon mode pass platform=None so
+    # _boot.trcc() takes the TrccProxy short-circuit instead of
+    # creating a new Trcc that would compete over the USB device.
+    from trcc._boot import daemon_mode_enabled, trcc as _boot_trcc
     from trcc.adapters.render.qt import QtRenderer
     renderer = QtRenderer()
-    t = _boot_trcc(platform, renderer=renderer,
-                   discover_now=False, verbosity=verbosity)
+    _daemon_mode = daemon_mode_enabled()
+    if _daemon_mode:
+        t = _boot_trcc(None, renderer=renderer, discover_now=False, verbosity=verbosity)
+    else:
+        t = _boot_trcc(platform, renderer=renderer,
+                       discover_now=False, verbosity=verbosity)
 
-    # ── Splash + background discover ─────────────────────────────────────
-    from trcc.ui.gui.splash import run_bootstrap_with_splash
-    if not run_bootstrap_with_splash(t):
-        return 1
+    # ── Splash + background discover (non-daemon only) ────────────────────
+    if not _daemon_mode:
+        from trcc.ui.gui.splash import run_bootstrap_with_splash
+        if not run_bootstrap_with_splash(t):
+            return 1
 
     # ── GUI adapter — pulls Trcc handle via _boot.trcc() (cached)  ───────
     from trcc.ui.gui.trcc_app import TRCCApp as _TRCCApp
@@ -123,21 +130,27 @@ def launch(verbosity: int = 0, decorated: bool = False,
     # ── IPC server bound to Trcc — manifold dispatch for clients ────────
     # Renderer is forwarded so Topic.FRAME events get their surface payload
     # encoded into a JSON-safe envelope before reaching TrccProxy clients.
-    from trcc.ipc import IPCServer
-    ipc_server = IPCServer(trcc=t, renderer=renderer)
-    ipc_server.start()
-    window._ipc_server = ipc_server
+    # In daemon mode the daemon already owns the socket — don't rebind it.
+    from trcc.core.trcc_proxy import TrccProxy as _TrccProxy
+    if not isinstance(t, _TrccProxy):
+        from trcc.ipc import IPCServer
+        ipc_server = IPCServer(trcc=t, renderer=renderer)
+        ipc_server.start()
+        window._ipc_server = ipc_server
 
     # ── Replay device list to the window — subscribers run in __init__,
     # so they missed the publish that happened during discover. ─────────
     from itertools import chain
 
     from trcc.core.events import Topic
-    t.events.publish(
-        Topic.DEVICE_LIST,
-        tuple(chain(t.lcd_devices, t.led_devices)),
-    )
-    t.start_metrics_loop()
+    if isinstance(t, _TrccProxy):
+        window.populate_from_descriptors()
+    else:
+        t.events.publish(
+            Topic.DEVICE_LIST,
+            tuple(chain(t.lcd_devices, t.led_devices)),
+        )
+        t.start_metrics_loop()
 
     # ── IPC raise + signals ───────────────────────────────────────────────
     signal.signal(signal.SIGINT, lambda *_: qapp.quit())

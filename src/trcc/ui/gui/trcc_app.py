@@ -281,9 +281,16 @@ class TRCCApp(QMainWindow):
         # device lists, and command facades come off it.
         from trcc._boot import trcc as _boot_trcc
 
+        from ...core.trcc_proxy import TrccProxy as _TrccProxy
         from ...services.system import SystemService
         self._trcc = _boot_trcc()
-        sys_svc = self._trcc._system_svc
+        sys_svc = getattr(self._trcc, '_system_svc', None)
+        if sys_svc is None and isinstance(self._trcc, _TrccProxy):
+            # Daemon mode: TrccProxy has no _system_svc; build one locally
+            # so the GPU panel / system-info dashboard work in the GUI process.
+            from ...adapters.system import PlatformFactory
+            from ...core.builder import ControllerBuilder
+            sys_svc = ControllerBuilder(PlatformFactory.current()).build_system()
         if sys_svc is None:
             raise RuntimeError(
                 "TRCCApp: SystemService missing on Trcc — "
@@ -436,6 +443,48 @@ class TRCCApp(QMainWindow):
             if path != target and isinstance(handler, LCDHandler):
                 log.info("_rebuild_all_handlers: restoring inactive LCD %s", path)
                 handler.restore_inactive_state()
+
+    def populate_from_descriptors(self) -> None:
+        """Build handlers from IPC descriptors — used in daemon mode (10C.6).
+
+        Fetches LED device descriptors over the IPC socket and creates
+        LEDHandlers in daemon-proxy mode instead of from live device objects.
+        """
+        for handler in list(self._handlers.values()):
+            handler.cleanup()
+        self._handlers.clear()
+        self._active_path = ''
+
+        try:
+            led_descs = self._trcc.led_descriptors()
+        except Exception:
+            log.exception("populate_from_descriptors: led_descriptors() failed")
+            led_descs = []
+
+        for idx, desc in enumerate(led_descs):
+            path = desc.path
+            if path not in self._handlers:
+                handler = LEDHandler(
+                    None, self.uc_led_control, self._on_temp_unit_changed,
+                    trcc=self._trcc, led_idx=idx, descriptor=desc,
+                )
+                self._handlers[path] = handler
+                log.info("LED daemon handler added: %s", path)
+
+        self._refresh_sidebar()
+
+        last_idx = Settings.get_last_device()
+        target = next(
+            (p for p, h in self._handlers.items()
+             if h.device_info and h.device_info.device_index == last_idx),
+            None,
+        )
+        if target is None:
+            target = next(iter(self._handlers), None)
+        if target:
+            self._activate_device(target)
+        else:
+            log.warning("populate_from_descriptors: no devices found from daemon")
 
     def _add_handler(self, device: Any) -> None:
         """Create handler for one new device."""
