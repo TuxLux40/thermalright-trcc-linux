@@ -570,6 +570,17 @@ class IPCServer:
             except Exception as e:
                 log.exception("_meta.led_snapshot failed")
                 return {"success": False, "error": f"{type(e).__name__}: {e}"}
+        if method == "app_snapshot":
+            try:
+                import dataclasses as _dc
+                snap = self._trcc.control_center.snapshot()
+                d = _dc.asdict(snap)
+                # gpu_list: list[tuple[str, str]] — dataclasses.asdict converts
+                # tuples to lists, which is fine for JSON. Client restores them.
+                return {"success": True, "snapshot": d}
+            except Exception as e:
+                log.exception("_meta.app_snapshot failed")
+                return {"success": False, "error": f"{type(e).__name__}: {e}"}
         return {"success": False,
                 "error": f"Unknown _meta method: {method}"}
 

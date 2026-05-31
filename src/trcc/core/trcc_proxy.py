@@ -137,6 +137,27 @@ class ControlCenterFacadeProxy(_FacadeProxy):
                  timeout: float = 10.0) -> None:
         super().__init__('control_center', socket_path, timeout)
 
+    def snapshot(self) -> Any:
+        """Return an ``AppSnapshot`` via meta dispatch (not manifold)."""
+        from ..ipc import send_manifold_request
+        from .results import AppSnapshot
+        data = send_manifold_request(
+            "_meta", "app_snapshot", (), {},
+            socket_path=self._socket_path, timeout=self._timeout,
+        )
+        if not data.get("success"):
+            from ..__version__ import __version__
+            return AppSnapshot(
+                version=__version__, autostart=False, temp_unit='C',
+                language='en', hdd_enabled=False, refresh_interval=5,
+                gpu_device=None, gpu_list=[], install_method='pip',
+                distro='unknown',
+            )
+        snap_dict = dict(data.get("snapshot", {}))
+        # JSON turns tuples into lists; restore gpu_list element type.
+        snap_dict['gpu_list'] = [tuple(item) for item in snap_dict.get('gpu_list', [])]
+        return AppSnapshot(**snap_dict)
+
 
 # =============================================================================
 # EventBusProxy — subscribe over IPC. R5 wires the long-lived connection.
