@@ -82,9 +82,12 @@ def status(json_output: bool = False) -> int:
     """Print a full overview: app state + every connected device."""
     trcc = _boot_trcc()
     app_snap = trcc.control_center.snapshot()
-    discovery = trcc.discover()
-    lcd_snaps = [trcc.lcd.snapshot(i) for i in range(len(discovery.lcd_devices))]
-    led_snaps = [trcc.led.snapshot(i) for i in range(len(discovery.led_devices))]
+    trcc.discover()
+    # Use descriptors (works in both in-process and daemon-proxy mode).
+    # discovery.lcd_devices / led_devices are always empty via TrccProxy
+    # because live device objects don't travel over the wire.
+    lcd_snaps = [trcc.lcd.snapshot(i) for i in range(len(trcc.lcd_descriptors()))]
+    led_snaps = [trcc.led.snapshot(i) for i in range(len(trcc.led_descriptors()))]
 
     if json_output:
         return _echo_json({
