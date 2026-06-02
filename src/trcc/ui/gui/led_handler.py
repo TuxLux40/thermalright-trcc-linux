@@ -258,6 +258,14 @@ class LEDHandler(BaseHandler):
     def _on_zone_selected(self, zone_index: int) -> None:
         if self._daemon_mode:
             self._trcc.led.select_zone(self._led_idx, zone_index)
+            # For 4-zone segment display devices (AX120, PA120, etc.) zone
+            # buttons are mode+source selectors: 0=CPU temp, 1=CPU load,
+            # 2=GPU temp, 3=GPU load. Apply mode and source to match C# behavior.
+            _ZONE_FUNC = {0: ('cpu', 4), 1: ('cpu', 5), 2: ('gpu', 4), 3: ('gpu', 5)}
+            if zone_index in _ZONE_FUNC:
+                source, mode = _ZONE_FUNC[zone_index]
+                self._trcc.led.set_sensor_source(self._led_idx, source)
+                self._trcc.led.set_mode(self._led_idx, mode)
             try:
                 snap = self._trcc.led.snapshot(self._led_idx)
                 if snap.zones and 0 <= zone_index < len(snap.zones):

@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 
 # LED animation tick period (ms) — matches trcc_app.py LEDHandler._timer.
 # C# Timer_event runs at ~167ms; our QTimer runs at 150ms.
-_LED_TICK_MS = 150
+_LED_TICK_MS = 50  # matches trcc.py _TICK_INTERVAL (50ms)
 
 
 class LEDService:
