@@ -179,9 +179,9 @@ class LEDCommands(DeviceCommands['LEDDevice']):
             return LEDSnapshot(
                 connected=False, style_id=0, mode=0, color=(0, 0, 0),
                 brightness=0, global_on=False, zones=[], zone_sync=False,
-                zone_sync_interval=0, selected_zone=0, segment_on=[],
-                clock_24h=True, week_sunday=False, memory_ratio=1,
-                disk_index=0, test_mode=False,
+                zone_sync_interval=0, zone_sync_zones=[], selected_zone=0,
+                segment_on=[], clock_24h=True, week_sunday=False,
+                memory_ratio=1, disk_index=0, test_mode=False,
             )
         s = dev.state
         info = dev.device_info
@@ -196,6 +196,7 @@ class LEDCommands(DeviceCommands['LEDDevice']):
                     'brightness': z.brightness, 'on': z.on} for z in s.zones],
             zone_sync=s.zone_sync,
             zone_sync_interval=s.zone_sync_interval,
+            zone_sync_zones=list(s.zone_sync_zones),
             selected_zone=getattr(s, 'selected_zone', 0),
             segment_on=list(s.segment_on),
             clock_24h=getattr(s, 'is_timer_24h', True),

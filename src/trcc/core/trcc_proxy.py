@@ -121,9 +121,9 @@ class LEDFacadeProxy(_FacadeProxy):
             return LEDSnapshot(
                 connected=False, style_id=0, mode=0, color=(0, 0, 0),
                 brightness=0, global_on=False, zones=[], zone_sync=False,
-                zone_sync_interval=0, selected_zone=0, segment_on=[],
-                clock_24h=True, week_sunday=False, memory_ratio=1,
-                disk_index=0, test_mode=False,
+                zone_sync_interval=0, zone_sync_zones=[], selected_zone=0,
+                segment_on=[], clock_24h=True, week_sunday=False,
+                memory_ratio=1, disk_index=0, test_mode=False,
             )
         snap_dict = dict(data.get("snapshot", {}))
         snap_dict['color'] = tuple(snap_dict.get('color', [0, 0, 0]))
@@ -317,8 +317,9 @@ class EventBusProxy:
 
         def _restore(item: Any) -> Any:
             if topic == Topic.METRICS and isinstance(item, dict):
-                from .models.sensor import HardwareMetrics
                 import dataclasses as _dc
+
+                from .models.sensor import HardwareMetrics
                 known = {f.name for f in _dc.fields(HardwareMetrics)}
                 d = {k: (set(v) if k == '_populated' and isinstance(v, list) else v)
                      for k, v in item.items() if k in known}

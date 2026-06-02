@@ -162,6 +162,7 @@ class LEDSnapshot:
     zones: list[dict]
     zone_sync: bool
     zone_sync_interval: int
+    zone_sync_zones: list[bool]
     selected_zone: int
     segment_on: list[bool]
     clock_24h: bool

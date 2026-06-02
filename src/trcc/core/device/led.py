@@ -371,6 +371,7 @@ class LEDDevice(Device):
 
     def set_zone_sync_zone(self, zone: int, selected: bool) -> dict:
         self._led_svc.set_zone_sync_zone(zone, selected)
+        self._led_svc.save_config()
         return {"success": True}
 
     def set_selected_zone(self, zone: int) -> dict:

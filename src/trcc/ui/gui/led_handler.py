@@ -158,10 +158,10 @@ class LEDHandler(BaseHandler):
             else:
                 self._panel.load_zone_state(
                     0, snap.mode, snap.color, snap.brightness, snap.global_on)
-            if snap.zone_sync and snap.zones:
+            if snap.zones:
                 interval_secs = max(1, round(snap.zone_sync_interval * 150 / 1000))
-                zone_sync_zones = [True] * len(snap.zones)
-                self._panel.load_sync_state(snap.zone_sync, zone_sync_zones, interval_secs)
+                zsz = snap.zone_sync_zones if snap.zone_sync_zones else [True] + [False] * (len(snap.zones) - 1)
+                self._panel.load_sync_state(snap.zone_sync, zsz, interval_secs)
             self._panel.set_memory_ratio(snap.memory_ratio)
             log.debug("LED: synced UI from snapshot (zones=%d, sync=%s)",
                       len(snap.zones), snap.zone_sync)
