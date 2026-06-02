@@ -67,6 +67,12 @@ def run_daemon(*, verbosity: int = 0) -> int:
     qapp = _build_qapp()
     trcc = _build_trcc()
 
+    # Start the 50ms tick + sensor-poll loop. Without this nothing drives
+    # the LED segment display / LCD frames in daemon mode and the device
+    # shows a frozen / blank screen. Safe because _build_trcc() builds with
+    # an explicit platform, so system_svc is injected.
+    trcc.start_metrics_loop()
+
     # Renderer flows through so ``Topic.FRAME`` surface payloads get
     # encoded into a JSON-safe envelope before reaching TrccProxy clients.
     server = IPCServer(trcc=trcc, renderer=trcc.renderer)
@@ -179,7 +185,12 @@ def _build_trcc() -> Any:
     set, and theme/data callables injected.
     """
     from ._boot import trcc as _boot_trcc
-    return _boot_trcc(discover_now=True)
+    from .adapters.system import PlatformFactory
+    # Pass an explicit platform so _boot.trcc() skips the daemon-proxy
+    # short circuit. With platform=None and TRCC_DAEMON=1 inherited, that
+    # branch calls ensure_daemon() before our own socket is bound, which
+    # spawns another `trcc daemon` → fork bomb (upstream issue #162).
+    return _boot_trcc(PlatformFactory.current(), discover_now=True)
 
 
 # Module-level holder so the Qt heartbeat timer survives past the function
