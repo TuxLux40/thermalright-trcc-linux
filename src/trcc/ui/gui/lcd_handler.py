@@ -254,6 +254,20 @@ class LCDHandler(BaseHandler):
     def _restore_theme_and_preview(self, cfg: dict) -> None:
         """Restore last theme + overlay, or clear preview if none."""
         self.log.debug("_restore_theme_and_preview: cfg keys=%s", list(cfg.keys()))
+        if self._app is not None:
+            r = self._app.lcd.restore_last_theme(self._lcd_idx)
+            if not r.success:
+                self.log.info("_restore_theme_and_preview: daemon restore failed: %s",
+                              r.error)
+                self._w['preview'].set_image(None)
+            # Frame arrives via Topic.FRAME; read overlay state from local cfg
+            overlay_cfg = cfg.get('overlay', {})
+            overlay_config = overlay_cfg.get('config')
+            overlay_enabled = overlay_cfg.get('enabled', False)
+            if overlay_config:
+                self._w['theme_setting'].load_from_overlay_config(overlay_config)
+            self._w['theme_setting'].set_overlay_enabled(overlay_enabled)
+            return
         result = self._lcd.restore_last_theme()
         if not result.get("success"):
             self.log.info("_restore_theme_and_preview: no saved theme — %s",
@@ -396,8 +410,8 @@ class LCDHandler(BaseHandler):
             # Trcc.lcd.apply_mask persists mask_id/mask_custom itself.
             is_custom = getattr(mask_info, 'is_custom', False)
             if self._app is not None:
-                r = self._app.lcd.apply_mask(self._lcd_idx, mask_dir, is_custom=is_custom)
-                image = r.frame.native if r.frame else None
+                self._app.lcd.apply_mask(self._lcd_idx, mask_dir, is_custom=is_custom)
+                image = None  # frame arrives via Topic.FRAME subscription
             else:
                 result = self._lcd.load_mask_standalone(str(mask_dir))
                 image = result.get('image')
@@ -530,8 +544,8 @@ class LCDHandler(BaseHandler):
 
     def set_video_fit_mode(self, mode: str) -> None:
         if self._app is not None:
-            r = self._app.lcd.set_fit_mode(self._lcd_idx, mode)
-            image = r.frame.native if r.frame else None
+            self._app.lcd.set_fit_mode(self._lcd_idx, mode)
+            image = None  # frame arrives via Topic.FRAME subscription
         else:
             result = self._lcd.set_fit_mode(mode)
             image = result.get('image')
@@ -651,8 +665,8 @@ class LCDHandler(BaseHandler):
         self.log.debug("set_brightness: %d%%", percent)
         self._brightness_level = percent
         if self._app is not None:
-            r = self._app.lcd.set_brightness(self._lcd_idx, percent)
-            image = r.frame.native if r.frame else None
+            self._app.lcd.set_brightness(self._lcd_idx, percent)
+            image = None  # frame arrives via Topic.FRAME subscription
         else:
             result = self._lcd.set_brightness(percent)
             image = result.get('image')
@@ -664,8 +678,8 @@ class LCDHandler(BaseHandler):
     def set_rotation(self, degrees: int) -> None:
         self.log.debug("set_rotation: degrees=%d", degrees)
         if self._app is not None:
-            r = self._app.lcd.set_rotation(self._lcd_idx, degrees)
-            image = r.frame.native if r.frame else None
+            self._app.lcd.set_rotation(self._lcd_idx, degrees)
+            image = None  # frame arrives via Topic.FRAME subscription
         else:
             result = self._lcd.set_rotation(degrees)
             image = result.get('image')
@@ -719,8 +733,8 @@ class LCDHandler(BaseHandler):
         self.log.debug("set_split_mode: mode=%d", mode)
         self._split_mode = mode
         if self._app is not None:
-            r = self._app.lcd.set_split_mode(self._lcd_idx, mode)
-            image = r.frame.native if r.frame else None
+            self._app.lcd.set_split_mode(self._lcd_idx, mode)
+            image = None  # frame arrives via Topic.FRAME subscription
         else:
             result = self._lcd.set_split_mode(mode)
             image = result.get('image')

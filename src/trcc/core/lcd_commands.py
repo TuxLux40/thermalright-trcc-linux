@@ -197,6 +197,7 @@ class LCDCommands(DeviceCommands['LCDDevice']):
 
     @command(result_cls=FrameResult)
     def apply_mask(self, lcd: int, path: Path, *, is_custom: bool = False):
+        path = Path(path)  # IPC wire delivers str; Path(Path(...)) is idempotent
         if (dev := self._get(lcd)) is None:
             return self._missing(lcd, FrameResult)
         r = dev.load_mask_standalone(str(path))

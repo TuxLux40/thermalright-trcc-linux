@@ -641,6 +641,7 @@ class LCDDevice(Device):
         result_img = result["image"]
         if self.connected:
             self.send(result_img)
+        self._publish_frame(result_img)
         return {
             "success": True,
             "image": result_img,
@@ -796,6 +797,7 @@ class LCDDevice(Device):
 
     def set_fit_mode(self, mode: str) -> dict:
         image = self._display_svc.set_video_fit_mode(mode)
+        self._publish_frame(image)
         return {"success": True, "image": image, "message": f"Fit mode: {mode}"}
 
     @property
