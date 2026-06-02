@@ -57,6 +57,11 @@ class LCDThemeWorkflow:
         image = result.get('image')
         is_animated = result.get('is_animated', False)
 
+        # Notify subscribers (GUI preview, IPC, API websocket) that the frame
+        # changed. Safe no-op when events are not injected (CLI/standalone).
+        if not is_animated:
+            d._publish_frame(image)
+
         return {
             "success": True,
             "image": image,

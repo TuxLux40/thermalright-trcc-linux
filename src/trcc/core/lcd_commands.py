@@ -104,6 +104,7 @@ class LCDCommands(DeviceCommands['LCDDevice']):
 
     @command(result_cls=ThemeResult, extras_rename={'interval': 'interval_ms'})
     def load_theme(self, lcd: int, path: Path):
+        path = Path(path)  # IPC wire delivers str; Path(Path(...)) is idempotent
         if (dev := self._get(lcd)) is None:
             return self._missing(lcd, ThemeResult)
         if not path.exists():

@@ -294,6 +294,15 @@ class LCDHandler(BaseHandler):
         """Select theme and handle result."""
         self.log.info("Theme selected: %s (animated=%s)", theme.name, theme.is_animated)
         self._pixmap_cache.clear()
+
+        if self._app is not None:
+            # Daemon mode: route through facade — daemon owns USB + render.
+            # Frame arrives via Topic.FRAME subscription; preview updates there.
+            r = self._app.lcd.load_theme(self._lcd_idx, theme.path)
+            if not r.success:
+                self.log.warning("_select_theme: daemon load_theme failed: %s", r.error)
+            return
+
         payload = self._lcd.select(theme)
         image = payload.get('image')
         is_animated = payload.get('is_animated', False)
