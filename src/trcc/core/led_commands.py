@@ -89,6 +89,12 @@ class LEDCommands(DeviceCommands['LEDDevice']):
             return self._missing(led, OpResult)
         return dev.set_selected_zone(zone)
 
+    @command(result_cls=OpResult)
+    def set_zone_sync_zone(self, led: int, zone: int, selected: bool):
+        if (dev := self._get(led)) is None:
+            return self._missing(led, OpResult)
+        return dev.set_zone_sync_zone(zone, selected)
+
     @command(result_cls=OpResult, topic=Topic.LED_ZONE_SYNC)
     def set_zone_sync(self, led: int, enabled: bool,
                       *, zones: list[int] | None = None,

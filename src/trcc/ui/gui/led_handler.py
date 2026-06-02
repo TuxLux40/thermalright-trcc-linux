@@ -290,7 +290,7 @@ class LEDHandler(BaseHandler):
 
     def _on_carousel_zone_changed(self, zi: int, sel: Any) -> None:
         if self._daemon_mode:
-            log.debug("LED daemon: carousel_zone_changed zi=%d sel=%s", zi, sel)
+            self._trcc.led.set_zone_sync_zone(self._led_idx, zi, sel)
             return
         self._led.update_zone_sync_zone(zi, sel)
 
