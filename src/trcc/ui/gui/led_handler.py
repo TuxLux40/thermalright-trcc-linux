@@ -23,6 +23,7 @@ from typing import Any
 from ..._boot import trcc as _trcc
 from ...core.device.led import LEDDevice
 from ...core.models import LED_STYLES, DeviceInfo
+from ...services.led import _LED_TICK_MS
 from .base_handler import BaseHandler
 from .uc_led_control import UCLedControl
 
@@ -159,7 +160,7 @@ class LEDHandler(BaseHandler):
                 self._panel.load_zone_state(
                     0, snap.mode, snap.color, snap.brightness, snap.global_on)
             if snap.zones:
-                interval_secs = max(1, round(snap.zone_sync_interval * 150 / 1000))
+                interval_secs = max(1, round(snap.zone_sync_interval * _LED_TICK_MS / 1000))
                 zsz = snap.zone_sync_zones if snap.zone_sync_zones else [True] + [False] * (len(snap.zones) - 1)
                 self._panel.load_sync_state(snap.zone_sync, zsz, interval_secs)
             self._panel.set_memory_ratio(snap.memory_ratio)
@@ -179,7 +180,7 @@ class LEDHandler(BaseHandler):
 
         # Restore carousel/sync state (zone_sync_zones empty = single-zone device)
         if state.zone_sync_zones:
-            interval_secs = max(1, round(state.zone_sync_interval * 150 / 1000))
+            interval_secs = max(1, round(state.zone_sync_interval * _LED_TICK_MS / 1000))
             self._panel.load_sync_state(
                 state.zone_sync, state.zone_sync_zones, interval_secs)
 
